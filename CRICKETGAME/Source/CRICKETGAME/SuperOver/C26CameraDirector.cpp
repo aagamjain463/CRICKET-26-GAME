@@ -18,6 +18,8 @@ constexpr float StrikerEnd=900.f;
 // along the ground at about 13 degrees. The previous 26.8 m / 11.8 m placement looked down at 33
 // degrees, which is what turned every tracked shot into a plan view of the outfield.
 const FVector MainTower(700,4200,780);
+const FVector BattingEye(300,2350,360);
+const FVector BattingAim(0,-240,70);
 FVector Ahead(const FVector& Ball,const FVector& Velocity,float Seconds)
 {
     FVector P=Ball+Velocity*Seconds;P.Z=FMath::Max(P.Z,55.f);return P;
@@ -39,6 +41,7 @@ void AC26CameraDirector::Reset()
     Frames.Reset();Live={};RecordClock=RecordAccumulator=ReplayClock=Impulse=Shake=0;
     ContactStamp=-1;ReplayEnd=0;PlaybackRate=1;ReplayShot=0;
     IsReplaying=HasFielder=ShotAerial=Runners=false;
+    ContactPending=false;
     HaveCamera=false;LastPhase=EC26Phase::Result;EventName=NAME_None;
     ContactPoint=FVector::ZeroVector;
 }
@@ -46,7 +49,7 @@ void AC26CameraDirector::SetFieldingTarget(const FVector& Position,bool HasTarge
 {Fielder=Position;HasFielder=HasTarget;Runners=RunnersActive;}
 void AC26CameraDirector::MarkContact(float Quality,bool Aerial,const FVector& Where)
 {
-    ContactStamp=RecordClock;ShotAerial=Aerial;ContactPoint=Where;
+    ContactPending=true;ShotAerial=Aerial;ContactPoint=Where;
     Impulse=Quality>.85f?.30f:Quality>.5f?.17f:.09f;Shake=Impulse;
     UE_LOG(LogC26Camera,Verbose,TEXT("Contact stamped at %.2f quality %.2f"),ContactStamp,Quality);
 }
@@ -137,16 +140,12 @@ void AC26CameraDirector::Direct(EC26Phase Phase,float Time,bool PlayerBatting,co
     {
         if(PlayerBatting)
         {
-            // 4.0 m high, ~14 m behind the striker, long lens. The compression pushes the bowler
-            // to the far end of a full-length pitch and stacks the stand behind him, which is what
-            // gives a televised delivery its depth. A slow push-in through the run-up adds tension
-            // without ever moving the ball off its line.
-            const float Push=Phase==EC26Phase::Ready?0.f:FMath::Clamp(Time/2.5f,0.f,1.f);
-            const float InFlight=Phase==EC26Phase::Delivery?1.f:0.f;
-            const FVector From(310-Push*10.f,2300-Push*95.f-InFlight*45.f,400-Push*9.f);
-            const FVector At=FVector(-16,-580,150)+FVector(0,-Push*180.f,0);
+            // Include the striker's shoes, bat toe and crease in the vertical safe area.
+            // Carry the run-up push through release; phase-local time must not pull the lens back.
+            const float Push=Phase==EC26Phase::Delivery?1.f:Phase==EC26Phase::RunUp?FMath::Clamp(Time/C26Field::RunUpDuration,0.f,1.f):0.f;
+            const FVector From=BattingEye-FVector(8,45,3)*Push;
             Look(Phase==EC26Phase::Delivery?EC26CameraMode::Release:Phase==EC26Phase::RunUp?EC26CameraMode::BatterGameplay:EC26CameraMode::PreDeliveryBroadcast,
-                From,At,36.f-Push*1.6f,false,Dt,3.4f);
+                From,BattingAim,36.f-Push*.5f,false,Dt,3.4f);
         }
         else if(Phase==EC26Phase::RunUp)
         {
@@ -168,7 +167,7 @@ void AC26CameraDirector::Direct(EC26Phase Phase,float Time,bool PlayerBatting,co
         {
             // Stay on the striker through contact and the first of the follow-through, punching in
             // slightly. Cutting away from the bat on impact is what made the old shot feel weightless.
-            Look(EC26CameraMode::BatContact,FVector(304,2240,396),Striker+FVector(0,-90,150),FMath::Lerp(36.f,32.5f,FMath::Clamp(Time/.34f,0.f,1.f)),false,Dt,5.f);
+            Look(EC26CameraMode::BatContact,BattingEye-FVector(8,45,3),BattingAim,35.5f,false,Dt,5.f);
         }
         else if(Time<1.25f&&RopeFraction<.82f)
         {
@@ -246,6 +245,7 @@ FC26ReplayFrame AC26CameraDirector::CaptureState(const FVector& Ball,const TArra
         A.ActionTime=Actor->ActionTime;A.MotionTime=Actor->MotionTime;A.ShotAngle=Actor->ShotAngle;
         A.Contact=Actor->ContactTarget;A.LookAt=Actor->LookAt;A.Loft=Actor->Loft;
         A.Footwork=Actor->FootworkIntent;A.Stride=Actor->StrideIntent;A.Defend=Actor->Defending;A.DeliveryStyle=Actor->DeliveryStyle;
+        A.MoveSpeed=Actor->MoveSpeed;
         F.Athletes.Add(A);
     }
     for(const auto& Prop:ReplayProps)F.Props.Add(Prop->GetComponentTransform());
@@ -253,7 +253,10 @@ FC26ReplayFrame AC26CameraDirector::CaptureState(const FVector& Ball,const TArra
 }
 void AC26CameraDirector::Record(float Dt,const FVector& Ball,const TArray<TObjectPtr<AC26Athlete>>& Actors)
 {
-    RecordClock+=Dt;RecordAccumulator+=Dt;if(RecordAccumulator<1.f/45.f)return;
+    RecordClock+=Dt;RecordAccumulator+=Dt;
+    // Preserve the exact rendered impact even if it falls between regular replay samples.
+    if(ContactPending){ContactStamp=RecordClock;ContactPending=false;}
+    else if(RecordAccumulator<1.f/45.f)return;
     RecordAccumulator=FMath::Fmod(RecordAccumulator,1.f/45.f);
     Frames.Add(CaptureState(Ball,Actors));
     // 16 seconds at 45 Hz covers run-up and the longest fielding sequence; storage stays bounded.
@@ -280,6 +283,7 @@ void AC26CameraDirector::ApplyFrame(const FC26ReplayFrame& A,const FC26ReplayFra
         Actor->MotionTime=FMath::Lerp(X.MotionTime,Y.MotionTime,T);Actor->ShotAngle=Selected.ShotAngle;
         Actor->ContactTarget=Selected.Contact;Actor->LookAt=Selected.LookAt;Actor->Loft=Selected.Loft;
         Actor->FootworkIntent=Selected.Footwork;Actor->StrideIntent=Selected.Stride;Actor->Defending=Selected.Defend;Actor->DeliveryStyle=Selected.DeliveryStyle;
+        Actor->MoveSpeed=FMath::Lerp(X.MoveSpeed,Y.MoveSpeed,T);
         Actor->Animate(0);
     }
     for(int I=0;I<ReplayProps.Num()&&I<A.Props.Num()&&I<B.Props.Num();++I)
@@ -293,7 +297,9 @@ bool AC26CameraDirector::PlayReplay(float Dt,FVector& Ball,const TArray<TObjectP
     const float ToContact=ContactStamp>=0?FMath::Abs(ReplayClock-ContactStamp):BIG_NUMBER;
     PlaybackRate=ToContact<.20f?(Wicket?.28f:.38f):ToContact<.45f?.6f:.9f;
     if(Wicket&&ReplayEnd-ReplayClock<.45f)PlaybackRate=.32f;
-    ReplayClock+=Dt*PlaybackRate;
+    const float NextClock=ReplayClock+Dt*PlaybackRate;
+    // Display the saved impact once instead of interpolating across its velocity discontinuity.
+    ReplayClock=ReplayClock<ContactStamp&&NextClock>=ContactStamp?ContactStamp:NextClock;
     bool Cut=false;
     // Three-shot cut: close on the bat, then the outcome angle, then a wide of the result.
     if(ReplayShot==0&&ContactStamp>=0&&ReplayClock>ContactStamp+.70f){ReplayShot=1;Cut=true;}

@@ -21,7 +21,7 @@ struct FC26ReplayAthlete
     FTransform Transform;
     EC26Action Action=EC26Action::Ready;
     EC26Delivery DeliveryStyle=EC26Delivery::Pace;
-    float ActionTime=0,MotionTime=0,ShotAngle=0,Footwork=0,Stride=0;
+    float ActionTime=0,MotionTime=0,ShotAngle=0,Footwork=0,Stride=0,MoveSpeed=0;
     bool Loft=false,Defend=false;
     FVector Contact=FVector::ZeroVector,LookAt=FVector::ZeroVector;
 };
@@ -64,6 +64,7 @@ private:
     float RecordClock=0,RecordAccumulator=0,ContactStamp=-1,ReplayEnd=0,Impulse=0,Shake=0;
     int32 ReplayShot=0;
     bool HaveCamera=false,HasFielder=false,ShotAerial=false,Runners=false;
+    bool ContactPending=false;
     FVector SmoothedAim=FVector::ZeroVector,Fielder=FVector::ZeroVector,EventFocus=FVector::ZeroVector,ContactPoint=FVector::ZeroVector;
     FName EventName;
     EC26Phase LastPhase=EC26Phase::Result;

@@ -1,5 +1,19 @@
 # CRICKET 26 — AI HANDOFF
 
+## Active continuation — supersedes acceptance claims below
+
+Branch: `work/golden-delivery-contact`. Last tested checkpoint: `322e23c`.
+Milestone: Golden Delivery repair; premium motion gate remains OPEN.
+Fresh baseline build succeeds, automation 3/3 passes, rendered capture 17/17
+completes a Super Over (`audit_baseline_0909`). See `TRANSFORMATION_AUDIT.md` and
+`CURRENT_TASK.md`. Changed so far: seven memory/audit documents; no imported assets.
+Relevant assets: L_SuperOver, SK_Cricketer, four generic animation clips.
+Known issues: procedural cricket motion, cropped striker feet, floating helmet,
+cloth skin exposure, unmeasured rendered contact. Next exact task: deterministic
+runtime contact/release measurement and drive/miss/reset capture before repairs.
+No on-device/mobile performance claim. Historical "golden" claims below are not
+the user's premium quality acceptance.
+
 ## Golden Delivery session — 2026-09-09 (Muse Spark, supersedes nothing, extends the Claude section)
 
 Task: first AAA quality transformation of ONE delivery. The base was already strong (scale,

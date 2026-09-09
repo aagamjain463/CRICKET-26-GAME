@@ -40,7 +40,7 @@ AC26Athlete::AC26Athlete()
     // turning to the middle, the striker facing the bowler, the bowler running in -- points the
     // right way. Without this the whole side stands square to the play.
     Mesh->SetRelativeRotation(FRotator(0,-90,0));
-    static ConstructorHelpers::FObjectFinder<USkeletalMesh> Player(TEXT("/Game/Cricket26/Characters/SK_Cricketer.SK_Cricketer"));
+    static ConstructorHelpers::FObjectFinder<USkeletalMesh> Player(TEXT("/Game/Cricket26/Characters/SK_Cricketer_KitBase.SK_Cricketer_KitBase"));
     if(Player.Succeeded())Mesh->SetSkinnedAssetAndUpdate(Player.Object);
     Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);Mesh->SetCastShadow(true);
     // Equipment rides in mesh space so it shares one frame with the posed skeleton.
@@ -390,11 +390,14 @@ void AC26Athlete::PlaceKit(const FVector& Grip,const FVector& Dir,bool Batting,b
     {
         const FVector L=Reference[Head].GetRotation().UnrotateVector(RigForward);
         const FVector Face=Pose[Head].GetRotation().RotateVector(L).GetSafeNormal();
-        const FRotator Look=FRotationMatrix::MakeFromXZ(Face,FVector::UpVector).Rotator();
-        const FVector Skull=Pose[Head].GetLocation()+FVector(0,0,14.f)+Face*.8f;
+        const FQuat HeadDelta=Pose[Head].GetRotation()*Reference[Head].GetRotation().Inverse();
+        const FVector Up=HeadDelta.RotateVector(FVector::UpVector);
+        const FRotator Look=FRotationMatrix::MakeFromXZ(Face,Up).Rotator();
+        // Crown offset belongs to the head frame, including its nod/roll, not world vertical.
+        const FVector Skull=Pose[Head].GetLocation()+Up*10.5f+Face*.8f;
         Helmet->SetRelativeLocation(Skull);Helmet->SetRelativeRotation(Look);
         Shell->SetRelativeLocation(Skull);Shell->SetRelativeRotation(Look);
-        Peak->SetRelativeLocation(Skull+Face*9.5f+FVector(0,0,2.5f));Peak->SetRelativeRotation(Look);
+        Peak->SetRelativeLocation(Skull+Face*9.5f+Up*2.5f);Peak->SetRelativeRotation(Look);
         Grill->SetRelativeLocation(Skull);Grill->SetRelativeRotation(Look);
     }
     // Everything below hangs off joints that were actually posed, never off the targets the shot
@@ -617,7 +620,7 @@ void AC26Athlete::Animate(float Dt)
         const FVector Out=Grip-Anchor;
         if(const float Span=Out.Size();Span>ArmSpan*.95f)Grip=Anchor+Out/Span*(ArmSpan*.95f);
         // Both hands live on the handle: top hand high, bottom hand a fist below it.
-        LH=Grip-Dir*4.f+Rig(0,-5.f,0);RH=Grip-Dir*14.f+Rig(0,5.f,0);
+        LH=Grip-Dir*4.f;RH=Grip-Dir*14.f;
     }
     if(Batting&&Running){Grip=Rig(24,20,104);Dir=Rig(-.55f,.10f,.83f).GetSafeNormal();RH=Grip-Dir*14.f;}
 
@@ -669,6 +672,30 @@ void AC26Athlete::Animate(float Dt)
     {
         const int F=Bone(Side+TEXT("Foot"));
         if(F>=0){Pose[F].SetRotation(Reference[F].GetRotation());RebuildChildren(F);}
+    }
+    if(Batting&&!Running)
+    {
+        // Refine the existing motion at contact: keep both wrists on one handle within the
+        // *posed* shoulders' reach, and pivot that handle through the incoming ball. Previously
+        // a 10 cm lateral wrist offset tilted the blade ~45 degrees away from the ball.
+        const FVector Contact=Mesh->GetComponentTransform().InverseTransformPosition(ContactTarget);
+        const float ContactWeight=Action==EC26Action::Batting
+            ?1.f-FMath::SmoothStep(0.f,.12f,FMath::Abs(ActionTime-C26Field::BatContactPoseTime)):0.f;
+        const FVector AuthoredDir=Dir;
+        for(int Iteration=0;Iteration<8;++Iteration)
+        {
+            Dir=FMath::Lerp(AuthoredDir,(Grip-Contact).GetSafeNormal(UE_SMALL_NUMBER,AuthoredDir),ContactWeight).GetSafeNormal();
+            for(int Side=0;Side<2;++Side)
+            {
+                const int Shoulder=Bone(Side==0?TEXT("LeftArm"):TEXT("RightArm"));
+                if(Shoulder<0)continue;
+                const FVector Reach=Grip-Dir*(Side==0?4.f:14.f)-Pose[Shoulder].GetLocation();
+                const float Limit=ArmSpan*.98f;
+                if(Reach.Size()>Limit)Grip-=Reach.GetSafeNormal()*(Reach.Size()-Limit);
+            }
+        }
+        Dir=FMath::Lerp(AuthoredDir,(Grip-Contact).GetSafeNormal(UE_SMALL_NUMBER,AuthoredDir),ContactWeight).GetSafeNormal();
+        LH=Grip-Dir*4.f;RH=Grip-Dir*14.f;
     }
     Limb(TEXT("LeftArm"),TEXT("LeftForeArm"),TEXT("LeftHand"),LH,Rig(-.7f,-.5f,-.5f));
     Limb(TEXT("RightArm"),TEXT("RightForeArm"),TEXT("RightHand"),RH,Rig(-.7f,.5f,-.5f));

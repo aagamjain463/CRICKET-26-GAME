@@ -16,6 +16,7 @@
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
+#include "Misc/App.h"
 #include "UnrealClient.h"
 
 namespace
@@ -71,6 +72,24 @@ void AC26MatchGameMode::BeginPlay()
         UE_LOG(LogC26,Display,TEXT("C26_SHOTS_BEGIN: %d visual acceptance beats"),int(UE_ARRAY_COUNT(GC26Beats)));
     }
 #if !UE_BUILD_SHIPPING
+    GoldenGate=FParse::Param(FCommandLine::Get(),TEXT("C26GoldenGate"));
+    if(GoldenGate)
+    {
+        AutoPlay=false;Capture=Smoke=false;PlayerTeam=0;PlayerBatsFirst=true;UseToss=false;
+        Preferences->Difficulty=1;Preferences->Quality=3;Preferences->Apply();Venue->SetQuality(3);
+        GateDirectory=FPaths::ProjectDir()/TEXT("Artifacts/GoldenGate");
+        FParse::Value(FCommandLine::Get(),TEXT("C26GateDir="),GateDirectory);
+        GateNoScreens=FParse::Param(FCommandLine::Get(),TEXT("C26GateNoScreens"));
+        int GateFPS=0;
+        if(FParse::Value(FCommandLine::Get(),TEXT("C26GateFPS="),GateFPS)&&GateFPS>=15&&GateFPS<=120)
+        {
+            // Fixed simulation cadence for regression only; not a performance measurement.
+            FApp::SetFixedDeltaTime(1.0/GateFPS);FApp::SetUseFixedTimeStep(true);
+            UE_LOG(LogC26,Display,TEXT("C26_GATE_FIXED_FPS %d"),GateFPS);
+        }
+        GateStarted=FPlatformTime::Seconds();StartMatch();Skip();GateEpoch=Rules.Epoch;
+        UE_LOG(LogC26,Display,TEXT("C26_GATE_BEGIN drive -> miss -> restart -> drive; epoch=%u"),GateEpoch);
+    }
     if(FParse::Value(FCommandLine::Get(),TEXT("C26Probe="),ProbeName))
     {
         AutoPlay=false;Preferences->Quality=3;Preferences->Apply();Venue->SetQuality(3);
@@ -589,6 +608,7 @@ void AC26MatchGameMode::Tick(float Dt)
     Super::Tick(Dt);if(!Director||Athletes.Num()!=14)return;
     if(HitStopUntil>0&&GetWorld()->GetRealTimeSeconds()>=HitStopUntil)ClearHitStop();
     Dt=FMath::Min(Dt,.05f);Clock+=Dt;UpdateCapture(Dt);if(Paused||SettingsOpen||ControlsOpen)return;
+    const EC26Phase PhaseBeforeUpdate=Phase;
     PhaseTime+=Dt;
     if(Phase==EC26Phase::Intro&&PhaseTime>6.5f)PrepareDelivery();
     else if(Phase==EC26Phase::Ready&&AutoPlay&&PhaseTime>(Capture?1.1f:.45f))StartDelivery();
@@ -632,7 +652,9 @@ void AC26MatchGameMode::Tick(float Dt)
         Athletes[11]->FootworkIntent=Intent.Footwork;Athletes[11]->StrideIntent=Intent.Stride;Athletes[11]->Defending=Intent.Defend;
         if(Phase==EC26Phase::Delivery&&ShotQueued)
             Athletes[11]->ActionTime=C26Field::BatContactPoseTime-FMath::Max(0.f,TimingCountdown())-Dt;
-        if(Phase==EC26Phase::Delivery&&PhaseTime<.65f)
+        const bool ReleasedThisFrame=PhaseBeforeUpdate==EC26Phase::RunUp&&Phase==EC26Phase::Delivery;
+        const bool ContactThisFrame=PhaseBeforeUpdate==EC26Phase::Delivery&&Phase==EC26Phase::InPlay;
+        if(Phase==EC26Phase::Delivery&&PhaseTime<.65f&&!ReleasedThisFrame)
             Athletes[0]->AddActorWorldOffset(FVector(0,330.f*(1.f-PhaseTime/.65f)*Dt,0));
         if(Athletes.IsValidIndex(11)&&Athletes.IsValidIndex(0))
         {
@@ -641,7 +663,10 @@ void AC26MatchGameMode::Tick(float Dt)
             Athletes[0]->LookAt=Athletes[11]->GetActorLocation();
             for(int I=1;I<11;++I)Athletes[I]->LookAt=Simulation.Ball.Active?Simulation.Ball.Position:Athletes[11]->GetActorLocation();
         }
-        for(auto A:Athletes)A->Animate(Dt);
+        // Release/contact already evaluated their exact event poses. Advancing them again here
+        // detaches the visible hand from the ball and skips the actual bat-impact frame.
+        for(int I=0;I<Athletes.Num();++I)
+            Athletes[I]->Animate((I==0&&ReleasedThisFrame)||(I==11&&ContactThisFrame)?0.f:Dt);
         if(Phase==EC26Phase::RunUp||Phase==EC26Phase::Ready)Simulation.Ball.Position=Athletes[0]->HandPosition();
         if(Phase==EC26Phase::Delivery||Phase==EC26Phase::InPlay||Phase==EC26Phase::RunUp)Director->Record(Dt,Simulation.Ball.Position,Athletes);
     }
@@ -660,6 +685,9 @@ void AC26MatchGameMode::Tick(float Dt)
         Effects->Advance(Dt,Lens.GetScaledAxis(EAxis::Y),Lens.GetScaledAxis(EAxis::Z),Lens.GetScaledAxis(EAxis::X));
     }
     if(Smoke){SmokeWatchdog+=Dt;if(SmokeWatchdog>240){UE_LOG(LogC26,Error,TEXT("C26_SMOKE_TIMEOUT phase=%d delivery=%u"),int(Phase),DeliveryId);FPlatformMisc::RequestExit(false);Smoke=false;}}
+#if !UE_BUILD_SHIPPING
+    if(GoldenGate)UpdateGoldenGate(Dt);
+#endif
 }
 void AC26MatchGameMode::UIAction(FName Action)
 {
