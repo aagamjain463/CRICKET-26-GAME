@@ -104,4 +104,9 @@ private:
     void ClearHitStop();
     double HitStopUntil=0;
     bool FootPlanted=false;
+    /** Last bowler Y that produced a footstep; distance-based so steps match stride, not the clock. */
+    float LastStepY=0;
+    /** -C26Debug: persistent release/contact markers plus a ball trail. Dev only, never in shipping. */
+    bool bDebugTrace=false;
+    FVector DebugPrevBall=FVector::ZeroVector;
 };

@@ -1,6 +1,64 @@
 # CRICKET 26 — AI HANDOFF
 
-## Claude (Opus 5) continuation — 2026-09-09, later than the Codex section below
+## Golden Delivery session — 2026-09-09 (Muse Spark, supersedes nothing, extends the Claude section)
+
+Task: first AAA quality transformation of ONE delivery. The base was already strong (scale,
+broadcast lens, hand release, contact-anchored cameras all verified in captures), so this session
+made targeted upgrades and verified each one in rendered frames. Build **succeeds**, automation
+**3/3 PASS** (incl. new `Cricket26.Simulation.GoldenDelivery`), captures **17/17** twice
+(`Artifacts/Captures/golden_01/`, `golden_02/`), smoke **6 full matches clean, 0 errors**
+(killed by operator timeout at match 7, not by a failure — see `Artifacts/smoke_golden.log`).
+
+### What changed (all in `Source/CRICKETGAME/SuperOver/`, rules/scoring untouched)
+
+- `C26MatchGameMode.cpp` — ball render 1.0x → **1.6x** real size (physics stays 3.6 cm; a
+  true-size ball is ~3 px on a phone; old dead 3.5x line removed). Distance-based run-up
+  **footsteps** (`fielder_gather` @ 0.10 vol every ~95 cm from `LastStepY`, init at the mark in
+  `StartDelivery`). **Crowd swell** (`crowd_anticipation`, was shipped but never loaded/cued)
+  under the bat sound, scaled by contact quality. `-C26Debug` trail (RunUp/Delivery/InPlay) +
+  green release sphere + gold contact sphere via `DrawDebugHelpers`; dev only, off in captures.
+- `C26Audio.cpp` — manifest adds `crowd_anticipation`; `fielder_*` joins the pitch/gain-varied
+  impact group so footsteps never machine-gun.
+- `C26CameraDirector.cpp` — batting lens punched in: (310,2300,400) @ **36°** (was
+  (322,2455,432) @ 37°); contact-hold shot matched. Lofted tracking **tightens FOV with height**
+  (tower + chase) instead of zooming out into a pixel-ball. Running/square camera aims at the
+  ball's **ground line** (Z clamped 320) so skiers no longer tilt up into the stands.
+  Replay close-up is **loft-aware** (aim hands to the ball .62/.55 when aerial vs .42/.20).
+- `C26Athlete.cpp` — straight-drive emphasis for |angle|≤15° non-loft: front stride 26→34 cm
+  amplitude, +4° forward lean, squarer chest. Trouser knee/calf radii 7.1/6.4 → 7.8/7.0 to stop
+  skin peeking through in replay close-ups.
+- `Tests/C26Automation.cpp` — new `Cricket26.Simulation.GoldenDelivery`: hand release origin,
+  readable timescale, +Y incoming, pre-contact bounce, contact at striker's end, Perfect/Good
+  `STRAIGHT DRIVE` with quality >.5, contact point == ball (no teleport), -Y redirect with
+  |Vx|<|Vy|, grounded launch, finite 2 s rollout.
+- `C26Stadium.cpp` — unity-build `-Wshadow` fix: `MakeSign` param `Ink` → `Glyph` (baseline did
+  not compile on receipt; `Teal` clash from STATUS was already gone).
+
+### Verified in captures (golden_02 vs fx_01 baseline)
+
+- `08_delivery_batting`: bowler's arm at release, **ball clearly visible mid-pitch** (was ~3 px).
+- `09_in_play`: PERFECT contact, batter follow-through with visible bat, ball readable in flight.
+- `10_fielding`: was a frame of empty stands; now a proper square running-camera frame (both
+  batters, bowler follow-through, umpire, fielders).
+- `12_replay`: was ball stranded near the rope while the bat swung at air; now ball and bat in
+  one slow-mo frame (incl. a bowled at 0.28x with the ball inches from the bat).
+
+### Known visual limits (genuine, not excuses)
+
+- Gloves still read as smooth blobs at replay distance (needs knuckle/cuff silhouette).
+- Tiny skin peek can survive above the front pad in extreme close-ups (thigh vs pad top).
+- Helmet reads as a cap from pure side angles; grille only resolves from the front.
+- No dedicated footstep sample yet — footsteps reuse `fielder_gather` quietly.
+
+### Next, in order
+
+1. Crowd/anticipation mix pass on device speakers; consider one synthesized soft footstep.
+2. Glove silhouette + helmet side profile (cheap geometry, big replay payoff).
+3. `stat unit` profile of a representative delivery; record in SUPER_OVER_STATUS.
+4. HUD safe areas for 19.5:9/20:9; mobile quality tiers → `CrowdQuality`.
+5. Continue brief priorities: backup-fielder polish, running-between-wickets polish.
+
+---## Claude (Opus 5) continuation — 2026-09-09, later than the Codex section below
 
 **This section supersedes the Codex section that follows it.** BUG C (blue ground) is fixed and
 the two root causes Codex identified were both applied and verified in rendered captures.

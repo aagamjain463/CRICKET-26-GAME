@@ -137,16 +137,16 @@ void AC26CameraDirector::Direct(EC26Phase Phase,float Time,bool PlayerBatting,co
     {
         if(PlayerBatting)
         {
-            // 4.3 m high, 15.5 m behind the striker, long lens. The compression pushes the bowler
+            // 4.0 m high, ~14 m behind the striker, long lens. The compression pushes the bowler
             // to the far end of a full-length pitch and stacks the stand behind him, which is what
             // gives a televised delivery its depth. A slow push-in through the run-up adds tension
             // without ever moving the ball off its line.
             const float Push=Phase==EC26Phase::Ready?0.f:FMath::Clamp(Time/2.5f,0.f,1.f);
             const float InFlight=Phase==EC26Phase::Delivery?1.f:0.f;
-            const FVector From(322-Push*10.f,2455-Push*95.f-InFlight*45.f,432-Push*9.f);
-            const FVector At=FVector(-16,-620,142)+FVector(0,-Push*180.f,0);
+            const FVector From(310-Push*10.f,2300-Push*95.f-InFlight*45.f,400-Push*9.f);
+            const FVector At=FVector(-16,-580,150)+FVector(0,-Push*180.f,0);
             Look(Phase==EC26Phase::Delivery?EC26CameraMode::Release:Phase==EC26Phase::RunUp?EC26CameraMode::BatterGameplay:EC26CameraMode::PreDeliveryBroadcast,
-                From,At,37.f-Push*1.6f,false,Dt,3.4f);
+                From,At,36.f-Push*1.6f,false,Dt,3.4f);
         }
         else if(Phase==EC26Phase::RunUp)
         {
@@ -168,7 +168,7 @@ void AC26CameraDirector::Direct(EC26Phase Phase,float Time,bool PlayerBatting,co
         {
             // Stay on the striker through contact and the first of the follow-through, punching in
             // slightly. Cutting away from the bat on impact is what made the old shot feel weightless.
-            Look(EC26CameraMode::BatContact,FVector(316,2395,428),Striker+FVector(0,-90,150),FMath::Lerp(37.f,33.5f,FMath::Clamp(Time/.34f,0.f,1.f)),false,Dt,5.f);
+            Look(EC26CameraMode::BatContact,FVector(304,2240,396),Striker+FVector(0,-90,150),FMath::Lerp(36.f,32.5f,FMath::Clamp(Time/.34f,0.f,1.f)),false,Dt,5.f);
         }
         else if(Time<1.25f&&RopeFraction<.82f)
         {
@@ -177,15 +177,20 @@ void AC26CameraDirector::Direct(EC26Phase Phase,float Time,bool PlayerBatting,co
             if(HasFielder)Aim=FMath::Lerp(Aim,Fielder+FVector(0,0,110),.18f);
             // Hand the frame over from the batter to the ball as the ball runs away. Aiming straight
             // at a ball that is still next to the bat threw the striker out of shot entirely.
+            // A high ball shrinks to a pixel against the stands, so the lens tightens as it climbs.
             const float Handover=FMath::Clamp(Range/2400.f,0.f,1.f);
             Aim=FMath::Lerp(Striker+FVector(0,0,150),Aim,Handover);
+            const float HeightTighten=Aerial?FMath::Clamp((Ball.Z-250.f)/300.f,0.f,9.f):0.f;
             Look(Aerial?EC26CameraMode::LoftedShotTracking:EC26CameraMode::GroundShotTracking,
-                MainTower,Aim,FMath::Clamp(29.f+Range/230.f,32.f,52.f),Mode==EC26CameraMode::BatContact,Dt,5.5f,17.f);
+                MainTower,Aim,FMath::Clamp(29.f+Range/230.f-HeightTighten,26.f,52.f),Mode==EC26CameraMode::BatContact,Dt,5.5f,17.f);
         }
         else if(Runners&&RopeFraction<.55f)
         {
             // Square-of-the-wicket running camera holding both batters and the throw.
-            const FVector Mid=FMath::Lerp(FVector(0,0,120),Ball,.35f);
+            // A skier's apex is above the lens: aiming at the ball itself tilts up into the
+            // stands and loses the field. Hold the ball's ground line instead, the way a
+            // broadcast stays wide on the waiting catcher while the ball descends into frame.
+            FVector Mid=FMath::Lerp(FVector(0,0,120),FVector(Ball.X,Ball.Y,FMath::Min(Ball.Z,320.f)),.35f);
             Look(EC26CameraMode::Running,FVector(3250,240,540),Mid,FMath::Clamp(26.f+Range/210.f,30.f,44.f),Mode!=EC26CameraMode::Running,Dt,4.f,15.f);
         }
         else if(RopeFraction>.82f)
@@ -199,12 +204,14 @@ void AC26CameraDirector::Direct(EC26Phase Phase,float Time,bool PlayerBatting,co
         else
         {
             // Ball-local chase: lateral and behind, low for a driven ball, lifted for a lofted one.
+            // Same height-tightening as the tower: a climbing ball gets a longer lens, not a wider one.
             FVector Aim=Ahead(Ball,Velocity,Aerial?.30f:.22f);
             if(HasFielder)Aim=FMath::Lerp(Aim,Fielder+FVector(0,0,110),Aerial?.20f:.30f);
             FVector From=Aim-Flat*(Aerial?2450.f:1750.f)+Side*(Aerial?1550.f:1180.f);
             From.Z=Aerial?FMath::Clamp(500.f+Ball.Z*.55f,640.f,1900.f):330.f;
+            const float ChaseFov=Aerial?FMath::Clamp(38.f+Range/900.f-FMath::Clamp((Ball.Z-250.f)/300.f,0.f,8.f),30.f,50.f):39.f;
             Look(Aerial?EC26CameraMode::LoftedShotTracking:EC26CameraMode::GroundShotTracking,
-                From,Aim,Aerial?FMath::Clamp(38.f+Range/900.f,38.f,50.f):39.f,
+                From,Aim,ChaseFov,
                 Mode==EC26CameraMode::BatContact||Mode==EC26CameraMode::Running,Dt,5.2f,Aerial?36.f:19.f);
         }
     }
@@ -303,9 +310,12 @@ bool AC26CameraDirector::PlayReplay(float Dt,FVector& Ball,const TArray<TObjectP
         // Tight side-on on the stroke itself: bat, ball and the batter's shape all in one frame.
         // The stand-off is measured from the contact point rather than a fixed world position, so
         // the shot cannot end up inside the batter when the stroke happens away from the crease.
+        // A lofted ball climbs out of a batter-locked frame in a tenth of a second, so the aim
+        // hands over to the ball much faster when the shot went up.
+        const float InnerAe=ShotAerial?.55f:.20f,OuterAe=ShotAerial?.62f:.42f;
         const FVector Eye=FVector(Anchor.X,FMath::Min(Anchor.Y,StrikerEnd),0)+FVector(-745,-190,0)+FVector(0,0,FMath::Max(150.f,Anchor.Z+22.f));
         Look(EC26CameraMode::ReplayClose,Eye,
-            FMath::Lerp(Striker+FVector(0,0,112),FMath::Lerp(Anchor,Ball,.20f),.42f),34,Cut,Dt,6.5f,26.f);
+            FMath::Lerp(Striker+FVector(0,0,112),FMath::Lerp(Anchor,Ball,InnerAe),OuterAe),34,Cut,Dt,6.5f,26.f);
     }
     else if(ReplayShot==1&&Wicket)
     {

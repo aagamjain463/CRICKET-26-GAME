@@ -524,12 +524,12 @@ void AC26Stadium::BuildVenue()
     }
 
     // ================= SIGNAGE AND SCREENS =================
-    auto MakeSign=[&](const FString& Body,const FVector& At,const FRotator& Facing,float Size,FColor Ink)
+    auto MakeSign=[&](const FString& Body,const FVector& At,const FRotator& Facing,float Size,FColor Glyph)
     {
         auto* Text=NewObject<UTextRenderComponent>(this,NAME_None,RF_Transient);Text->SetupAttachment(RootComponent);
         Text->RegisterComponent();AddInstanceComponent(Text);Signs.Add(Text);
         Text->SetText(FText::FromString(Body));Text->SetWorldSize(Size);Text->SetHorizontalAlignment(EHTA_Center);
-        Text->SetVerticalAlignment(EVRTA_TextCenter);Text->SetTextRenderColor(Ink);
+        Text->SetVerticalAlignment(EVRTA_TextCenter);Text->SetTextRenderColor(Glyph);
         Text->SetRelativeLocation(At);Text->SetRelativeRotation(Facing);Text->SetCastShadow(false);
     };
     for(int I=0;I<10;++I)

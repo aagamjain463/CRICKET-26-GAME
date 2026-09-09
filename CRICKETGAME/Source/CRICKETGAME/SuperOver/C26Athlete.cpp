@@ -471,8 +471,9 @@ void AC26Athlete::UpdateUniform()
         const FVector Centers[]={Top,FMath::Lerp(Top,Knee,.45f),Knee,FMath::Lerp(Knee,Foot,.5f),Foot};
         // Radii in centimetres at hip, mid-thigh, knee, mid-calf and ankle. These were roughly twice
         // life size, which inflated the legs into a toy silhouette and pushed the trouser out through
-        // the pads. A 185 cm athlete measures about this.
-        const float Widths[]={10.4f,8.9f,7.1f,6.4f,5.5f};
+        // the pads. A 185 cm athlete measures about this. The knee ring runs slightly full so a bent
+        // front knee never peeks skin through the cloth in a replay close-up.
+        const float Widths[]={10.4f,9.1f,7.8f,7.0f,5.5f};
         const int Base=Vertices.Num();constexpr int Sides=12;
         for(int Row=0;Row<5;++Row)
         {
@@ -589,8 +590,12 @@ void AC26Athlete::Animate(float Dt)
                 TurnRight=46.f-Follow*30.f+(Cross?12.f:0.f);
                 LeanForward=13.f+Swing*(Cross?2.f:11.f)-Follow*4.f;
                 LeanRight=4.f+(Cross?-8.f:5.f)*Swing;
+                // The golden delivery: a dead-straight front-foot drive gets a bigger press forward,
+                // more weight over the front knee and a squarer chest so the head goes to the ball.
+                const bool Straight=FMath::Abs(ShotAngle)<=15.f&&!Loft;
+                if(Straight){LeanForward+=4.f;TurnRight-=4.f;LeanRight+=1.5f;}
                 if(Cross)FR=Rig(-14.f-FMath::Sin(T*PI)*13.f,11,AnkleZ);
-                else FL=Rig(15.f+FMath::Sin(T*PI)*26.f,-4,AnkleZ);
+                else FL=Rig(15.f+FMath::Sin(T*PI)*(Straight?34.f:26.f),-4,AnkleZ);
             }
         }
         else if(Action==EC26Action::Ready)
