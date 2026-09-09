@@ -3,6 +3,8 @@
 #if !UE_BUILD_SHIPPING
 #include "../C26Athlete.h"
 #include "../C26CameraDirector.h"
+#include "../C26Stadium.h"
+#include "Components/StaticMeshComponent.h"
 #include "ProceduralMeshComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "HAL/FileManager.h"
@@ -60,7 +62,23 @@ void AC26MatchGameMode::UpdateGoldenGate(float Dt)
             UE_LOG(LogC26,Display,TEXT("C26_GATE_%s failures=%d frames=%d"),GateFailures?TEXT("FAIL"):TEXT("PASS"),GateFailures,GateShots.Num());
             GoldenGate=false;FPlatformMisc::RequestExitWithStatus(false,GateFailures?1:0);return;
         }
-        if(PhaseTime>.25f)CaptureFrame(TEXT("01_ready"));
+        if(PhaseTime>.25f&&CaptureFrame(TEXT("01_ready")))
+        {
+            auto* PC=GetWorld()->GetFirstPlayerController();int W=0,H=0;PC->GetViewportSize(W,H);
+            FVector2D Feet,Head,Bowler;
+            const FVector Striker=Athletes[11]->GetActorLocation();
+            PC->ProjectWorldLocationToScreen(Striker,Feet);
+            PC->ProjectWorldLocationToScreen(Striker+FVector(0,0,180),Head);
+            PC->ProjectWorldLocationToScreen(Athletes[0]->GetActorLocation()+FVector(0,0,150),Bowler);
+            const float Height=(Feet.Y-Head.Y)/FMath::Max(1,H);
+            UE_LOG(LogC26,Display,TEXT("C26_GATE_COMPOSITION athlete_height_fraction=%.3f feet=%s head=%s bowler=%s"),Height,*Feet.ToString(),*Head.ToString(),*Bowler.ToString());
+            Check(Height>.25f&&Height<.53f,TEXT("human-scale batter occupies readable gameplay frame"));
+            Check(Head.Y>H*.20f&&Feet.Y<H*.90f,TEXT("batter head and feet inside gameplay safe area"));
+            Check(Bowler.X>W*.2f&&Bowler.X<W*.8f&&Bowler.Y>H*.22f&&Bowler.Y<H*.7f,TEXT("bowler clear of top HUD"));
+            Check(Venue&&Venue->Bowl->GetNumSections()==2,TEXT("continuous ground plus crease paint only"));
+            Check(Venue&&Venue->Bowl->GetMaterial(0)&&Venue->Bowl->GetMaterial(0)->GetName().Contains(TEXT("Eclipse")),TEXT("authored playing surface loaded"));
+            Check(Stumps.Num()==10&&FMath::IsNearlyEqual(float(Stumps[0]->Bounds.Origin.Z-Stumps[0]->Bounds.BoxExtent.Z),C26Field::SurfaceZ,.15f),TEXT("wicket base grounded at physics surface"));
+        }
         if(PhaseTime>.8f)
         {
             Bowling=FC26DeliveryPlan();Bowling.Line=18.f;

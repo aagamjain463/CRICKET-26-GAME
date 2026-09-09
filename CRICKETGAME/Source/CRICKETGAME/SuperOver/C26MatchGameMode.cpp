@@ -62,6 +62,7 @@ void AC26MatchGameMode::BeginPlay()
     BuildMatchActors();Audio->Master=Preferences->SoundVolume;Audio->Initialize();
     Rules.Reset();AI.Reset(FMath::Rand());ChangePhase(EC26Phase::Menu);
     Smoke=FParse::Param(FCommandLine::Get(),TEXT("C26Smoke"));
+    if(Smoke&&FParse::Param(FCommandLine::Get(),TEXT("C26SmokeToss")))UseToss=true;
     bDebugTrace=FParse::Param(FCommandLine::Get(),TEXT("C26Debug"));
     if(Smoke){AutoPlay=true;Preferences->Difficulty=1;StartMatch();UE_LOG(LogC26,Display,TEXT("C26_SMOKE_BEGIN: ten complete autonomous matches"));}
     Capture=FParse::Param(FCommandLine::Get(),TEXT("C26Shots"));
@@ -117,6 +118,7 @@ void AC26MatchGameMode::BuildMatchActors()
     AActor* Props=GetWorld()->SpawnActor<AActor>();Props->SetRootComponent(NewObject<USceneComponent>(Props));Props->GetRootComponent()->RegisterComponent();
     BallMesh=NewObject<UStaticMeshComponent>(Props,TEXT("WhiteCricketBall"));BallMesh->SetupAttachment(Props->GetRootComponent());
     BallMesh->SetStaticMesh(Sphere);BallMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);BallMesh->RegisterComponent();
+    BallMesh->SetMobility(EComponentMobility::Movable);BallMesh->SetCastShadow(true);
     auto* Wood=LoadObject<UMaterialInterface>(nullptr,TEXT("/Game/Cricket26/Materials/M_Willow.M_Willow"));
     if(!Wood)Wood=White;
     // Physics stays at the real 3.6 cm radius. The render is a deliberate 1.6x readability cheat:
@@ -168,8 +170,10 @@ void AC26MatchGameMode::ResetStumps()
     for(int End=0;End<2;++End)for(int I=0;I<5;++I)
     {
         auto S=Stumps[End*5+I];const float Y=End?C26Field::WicketY:-C26Field::WicketY;
-        if(I<3){S->SetWorldLocation(FVector((I-1)*10.2f,Y,40.55f));S->SetWorldRotation(FRotator::ZeroRotator);S->SetWorldScale3D(FVector(.038,.038,.711));}
-        else{S->SetWorldLocation(FVector((I==3?-1:1)*5.1f,Y,77.f));S->SetWorldRotation(FRotator(0,0,90));S->SetWorldScale3D(FVector(.026,.026,.1095));}
+        const float Spacing=(C26Field::WicketWidth-C26Field::StumpDiameter)*.5f;
+        S->SetMobility(EComponentMobility::Movable);S->SetCastShadow(true);
+        if(I<3){S->SetWorldLocation(FVector((I-1)*Spacing,Y,C26Field::SurfaceZ+C26Field::StumpHeight*.5f));S->SetWorldRotation(FRotator::ZeroRotator);S->SetWorldScale3D(FVector(.038,.038,C26Field::StumpHeight/100.f));}
+        else{S->SetWorldLocation(FVector((I==3?-1:1)*Spacing*.5f,Y,C26Field::StumpHeight+.8f));S->SetWorldRotation(FRotator(0,0,90));S->SetWorldScale3D(FVector(.022,.022,.1095));}
     }
 }
 void AC26MatchGameMode::BreakWicket(float Y)

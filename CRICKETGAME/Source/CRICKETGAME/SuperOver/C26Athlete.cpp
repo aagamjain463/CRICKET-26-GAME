@@ -1,4 +1,5 @@
 #include "C26Athlete.h"
+#include "C26Types.h"
 #include "Engine/SkeletalMesh.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
@@ -13,7 +14,7 @@ namespace
 // Length from the top of the handle to the toe of the blade, and how far below the hands the ball
 // meets the middle of the blade. Both are real bat dimensions and both are used by the posing code,
 // so bat, hands and contact point can never drift apart.
-constexpr float BatLength=83.f;
+constexpr float BatLength=C26Field::BatLength;
 constexpr float MiddleDrop=62.f;
 /** Mesh-space forward for the imported rig. */
 const FVector RigForward(0,1,0);

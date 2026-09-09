@@ -9,6 +9,9 @@
 #include "Components/SpotLightComponent.h"
 #include "Components/TextRenderComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "DrawDebugHelpers.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogC26Venue,Log,All);
 
@@ -17,19 +20,19 @@ namespace
 // Eclipse Oval, in centimetres. The rope radii live in C26Field and are authoritative for
 // gameplay; everything architectural is derived from them so the bowl can never drift out of
 // proportion with the playing area.
-constexpr float TurfRX=8250.f,TurfRY=8950.f;      // Grass runs well past the rope to the wall.
-constexpr float BoardRX=7050.f,BoardRY=7720.f;    // Perimeter advertising ring.
-constexpr float WallRX=7350.f,WallRY=8050.f;      // Face of the lower stand.
-constexpr float WallTop=345.f;
-constexpr int   LowerRows=22;
-constexpr float LowerDepth=94.f,LowerRise=47.f;
-constexpr float UpperRX=9760.f,UpperRY=10480.f,UpperZ=1660.f;
+constexpr float TurfRX=7270.f,TurfRY=7970.f;
+constexpr float BoardRX=6920.f,BoardRY=7560.f;
+constexpr float WallRX=7210.f,WallRY=7910.f;
+constexpr float WallTop=155.f;
+constexpr int   LowerRows=16;
+constexpr float LowerDepth=90.f,LowerRise=43.f;
+constexpr float UpperRX=8970.f,UpperRY=9670.f,UpperZ=1260.f;
 constexpr int   UpperRows=18;
-constexpr float UpperDepth=98.f,UpperRise=54.f;
-constexpr float RoofInnerZ=2980.f,RoofOuterZ=3520.f;
-constexpr float RoofOuterRX=11950.f,RoofOuterRY=12700.f;
-constexpr int   Segments=176;                     // Bowl tessellation around the full ring.
-constexpr float FloodCandelas=26000.f;            // Per-pylon spot output, in candelas.
+constexpr float UpperDepth=92.f,UpperRise=48.f;
+constexpr float RoofInnerZ=2490.f,RoofOuterZ=2850.f;
+constexpr float RoofOuterRX=11130.f,RoofOuterRY=11830.f;
+constexpr int   Segments=192; // 24 seating bays, eight segments per bay.
+constexpr float FloodCandelas=13000.f;
 
 FVector Oval(float RX,float RY,float Angle,float Z){return FVector(RX*FMath::Cos(Angle),RY*FMath::Sin(Angle),Z);}
 
@@ -103,6 +106,8 @@ AC26Stadium::AC26Stadium()
     // Bowl reference into TRASH_ProceduralMeshComponent while building an invisible venue.
     Bowl=CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("ContinuousStadiumBowl"));Bowl->SetupAttachment(RootComponent);
     Bowl->SetCollisionEnabled(ECollisionEnabled::NoCollision);Bowl->SetCastShadow(false);
+    Architecture=CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("EclipseArchitecture"));Architecture->SetupAttachment(RootComponent);
+    Architecture->SetCollisionEnabled(ECollisionEnabled::NoCollision);Architecture->SetCastShadow(false);
     Sky=CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("NightSky"));Sky->SetupAttachment(RootComponent);
     Sky->SetCollisionEnabled(ECollisionEnabled::NoCollision);Sky->SetCastShadow(false);
     Sky->bReceivesDecals=false;
@@ -174,7 +179,20 @@ AC26Stadium::AC26Stadium()
 void AC26Stadium::OnConstruction(const FTransform& Transform){Super::OnConstruction(Transform);BuildVenue();}
 // Always rebuild in play. Dynamic material instances do not survive map serialization, so a venue
 // restored from the package renders every tinted surface as its parent default.
-void AC26Stadium::BeginPlay(){Super::BeginPlay();ConfigureLighting();BuildVenue();BuildLightShafts();FillLight->RecaptureSky();}
+void AC26Stadium::BeginPlay()
+{
+    Super::BeginPlay();ConfigureLighting();BuildVenue();BuildLightShafts();FillLight->RecaptureSky();
+#if !UE_BUILD_SHIPPING
+    if(FParse::Param(FCommandLine::Get(),TEXT("C26Scale")))
+    {
+        DrawDebugLine(GetWorld(),FVector(0,-C26Field::WicketY,15),FVector(0,C26Field::WicketY,15),FColor::Yellow,true,-1,0,2);
+        DrawDebugString(GetWorld(),FVector(0,0,40),TEXT("20.12 m wicket to wicket / 3.05 m strip"),nullptr,FColor::White,-1);
+        DrawDebugLine(GetWorld(),FVector(280,900,0),FVector(280,900,182),FColor::Cyan,true,-1,0,2);
+        DrawDebugString(GetWorld(),FVector(280,900,200),TEXT("1.82 m athlete reference"),nullptr,FColor::White,-1);
+        for(int I=0;I<128;++I)DrawDebugLine(GetWorld(),C26Field::RopePoint(I*2*PI/128),C26Field::RopePoint((I+1)*2*PI/128),FColor::Yellow,true);
+    }
+#endif
+}
 void AC26Stadium::BuildLightShafts()
 {
     // Six shallow cones of additive haze, one hanging under each pylon head and aimed at the
@@ -187,14 +205,14 @@ void AC26Stadium::BuildLightShafts()
     if(!Base){UE_LOG(LogC26Venue,Warning,TEXT("M_Beam missing; floodlight shafts disabled."));return;}
     ShaftMaterial=UMaterialInstanceDynamic::Create(Base,this);
     ShaftMaterial->SetVectorParameterValue(TEXT("Tint"),FLinearColor(.52,.63,.86));
-    ShaftMaterial->SetScalarParameterValue(TEXT("Glow"),.115f);
+    ShaftMaterial->SetScalarParameterValue(TEXT("Glow"),.018f);
     ShaftMaterial->SetScalarParameterValue(TEXT("Opacity"),1.f);
     TArray<FVector> V,N;TArray<int32> T;TArray<FVector2D> UV;
     TArray<FLinearColor> C;TArray<FProcMeshTangent> Tan;
     for(int I=0;I<6;++I)
     {
-        const float A=2*PI*I/6;
-        const FVector Head=Oval(10250,10980,A,4260);
+        const float A=PI/6+2*PI*I/6;
+        const FVector Head=Oval(10800,11500,A,4360);
         const FVector Aim(0,0,180);
         const FVector Down=(Aim-Head).GetSafeNormal();
         const FVector Side=FVector::CrossProduct(Down,FVector::UpVector).GetSafeNormal();
@@ -223,8 +241,9 @@ void AC26Stadium::ConfigureLighting()
 {
     // Apply the authored setup after map deserialization: saved component overrides from the
     // prototype otherwise restore its 9-lux key and 1.25-strength blue sky over new C++ defaults.
-    KeyLight->SetRelativeRotation(FRotator(-58,-38,0));KeyLight->SetIntensity(3.15f);
-    KeyLight->SetLightColor(FLinearColor(.96,.97,1));KeyLight->SetSpecularScale(.6f);
+    KeyLight->SetMobility(EComponentMobility::Movable);
+    KeyLight->SetRelativeRotation(FRotator(-46,-62,0));KeyLight->SetIntensity(4.0f);
+    KeyLight->SetLightColor(FLinearColor(1,.97,.91));KeyLight->SetSpecularScale(.5f);
     // A stadium lamp bank is a large area source, not a point. Widening the source angle gives the
     // penumbra a soft edge like a real floodlight shadow instead of a hard stencil cutout.
     KeyLight->LightSourceAngle=2.1f;
@@ -235,17 +254,27 @@ void AC26Stadium::ConfigureLighting()
     // and overwrites whatever the constructor set, so an intensity authored up there and not
     // repeated down here is dead code -- which is exactly what happened to the fix that put light
     // back on vertical torsos rather than only on horizontal ground.
-    CrossLight->SetRelativeRotation(FRotator(-33,132,0));CrossLight->SetIntensity(1.85f);
-    CrossLight->SetLightColor(FLinearColor(.84,.90,1));
+    CrossLight->SetRelativeRotation(FRotator(-24,126,0));CrossLight->SetIntensity(1.65f);
+    CrossLight->SetLightColor(FLinearColor(.91,.95,1));
     // The sky fill is deliberately low. Lifting it flattens the key's shadows back out, and a night
     // ground has almost no ambient of its own -- what fills the shadows is bounce off the turf.
-    FillLight->SetIntensity(.24f);FillLight->SetLightColor(FLinearColor(.44,.55,.74));
-    Haze->SetFogDensity(.000021f);Haze->SetFogMaxOpacity(.30f);Haze->SetStartDistance(4200.f);
-    Grade->Settings.AutoExposureBias=-.25f;Grade->Settings.VignetteIntensity=.12f;
+    FillLight->SetIntensity(.44f);FillLight->SetLightColor(FLinearColor(.65,.70,.76));
+    FillLight->SetLowerHemisphereColor(FLinearColor(.06,.065,.046));
+    Haze->SetFogDensity(.000012f);Haze->SetFogMaxOpacity(.18f);Haze->SetStartDistance(6200.f);
+    Grade->Settings.AutoExposureBias=-.35f;Grade->Settings.VignetteIntensity=0.f;
+    Grade->Settings.BloomIntensity=.19f;Grade->Settings.BloomThreshold=2.2f;
     // Turf under floodlights is a saturated green, and the measured capture was reading closer to
     // grey-green than grass. Saturation and a slightly cooler shadow toe restore the broadcast look.
-    Grade->Settings.ColorSaturation=FVector4(1.14,1.14,1.08,1);
-    Grade->Settings.ColorContrast=FVector4(1.07,1.07,1.10,1);
+    Grade->Settings.ColorSaturation=FVector4(1.02,1.02,1.02,1);
+    Grade->Settings.ColorContrast=FVector4(1.02,1.02,1.02,1);
+    Grade->Settings.ColorGamma=FVector4(1,1,1,1);
+    for(int I=0;I<Floods.Num();++I)
+    {
+        const float A=PI/6+I*PI/2;
+        const FVector Head=Oval(10800,11500,A,4360);
+        Floods[I]->SetRelativeLocation(Head);Floods[I]->SetRelativeRotation((FVector(0,0,80)-Head).Rotation());
+        Floods[I]->SetIntensity(FloodCandelas);Floods[I]->SetLightColor(FLinearColor(1,.98,.94));
+    }
 }
 UHierarchicalInstancedStaticMeshComponent* AC26Stadium::Batch(const TCHAR* Name,UStaticMesh* Mesh,UMaterialInterface* Material)
 {
@@ -258,7 +287,7 @@ void AC26Stadium::BuildVenue()
 {
     for(auto& C:Batches)if(C)C->DestroyComponent();Batches.Reset();
     for(auto& C:Signs)if(C)C->DestroyComponent();Signs.Reset();CrowdMaterials.Reset();
-    Bowl->ClearAllMeshSections();Sky->ClearAllMeshSections();
+    Bowl->ClearAllMeshSections();Sky->ClearAllMeshSections();Architecture->ClearAllMeshSections();
     auto Mat=[](const TCHAR* N){return LoadObject<UMaterialInterface>(nullptr,*FString::Printf(TEXT("/Game/Cricket26/Materials/%s.%s"),N,N));};
     auto* Surface=Mat(TEXT("M_Surface"));if(!Surface)return;
     auto* GrassBase=Mat(TEXT("M_Grass"));auto* PitchBase=Mat(TEXT("M_Pitch"));
@@ -271,47 +300,31 @@ void AC26Stadium::BuildVenue()
     };
     auto Colour=[&](FLinearColor C,float Glow=0.f,float Rough=-1.f){return Tinted(Surface,C,Glow,Rough);};
 
-    // ---- Broadcast palette. Field bright, architecture mid, crowd deliberately darker so the
-    // ---- athletes and the ball stay the brightest readable things on screen.
-    // M_Grass and M_Pitch carry a procedural noise chain that never resolves on this renderer, so
-    // anything drawn with them falls back to the default grey material. That fallback -- not the
-    // authored colours -- is what produced the flat outfield and the blown-out white pitch. The
-    // ground is drawn with the plain surface material instead and takes its variation from real
-    // geometry: mowing bands, a watered collar, five prepared strips and worn landing areas.
-    if(!GrassBase||!PitchBase)UE_LOG(LogC26Venue,Warning,TEXT("Turf detail materials unavailable; using surface fallback."));
-    const FLinearColor MowTone[6]={
-        FLinearColor(.0430,.1180,.0450),FLinearColor(.0600,.1620,.0575),
-        FLinearColor(.0465,.1265,.0480),FLinearColor(.0565,.1530,.0545),
-        FLinearColor(.0410,.1105,.0430),FLinearColor(.0625,.1690,.0600)};
-    TArray<UMaterialInstanceDynamic*> Mow;
-    for(int I=0;I<6;++I)Mow.Add(Tinted(GrassBase?GrassBase:Surface,MowTone[I],0,.95f));
-    auto* MowRing   = Colour(FLinearColor(.0330,.0900,.0350),0,.96f);
-    auto* Apron     = Colour(FLinearColor(.0700,.0870,.0470),0,.95f);
-    auto* SquareMat = Tinted(GrassBase?GrassBase:Surface,FLinearColor(.075,.125,.040),0,.94f);
-    auto* PitchMat  = Tinted(PitchBase?PitchBase:Surface,FLinearColor(.270,.220,.135),0,.92f);
-    auto* WornMat   = Tinted(PitchBase?PitchBase:Surface,FLinearColor(.235,.190,.115),0,.94f);
-    auto* RestingMat= Tinted(GrassBase?GrassBase:Surface,FLinearColor(.067,.110,.039),0,.96f);
-    auto* Paint     = Colour(FLinearColor(.3800,.3950,.3750),0,.72f);
-    auto* Concrete  = Colour(FLinearColor(.0480,.0560,.0700),0,.88f);
-    auto* Steel     = Colour(FLinearColor(.0950,.1080,.1300),0,.55f);
-    auto* Facade    = Colour(FLinearColor(.0250,.0330,.0470),0,.72f);
-    auto* RoofUnder = Colour(FLinearColor(.0300,.0355,.0450),0,.80f);
-    auto* RoofTop   = Colour(FLinearColor(.0760,.0850,.0980),0,.62f);
-    auto* Glazing   = Colour(FLinearColor(.0140,.0470,.0620),.55f,.22f);
+    auto* Ground=LoadObject<UMaterialInterface>(nullptr,TEXT("/Game/Cricket26/Environment/Materials/M_Eclipse_PlayingSurface.M_Eclipse_PlayingSurface"));
+    if(!Ground)UE_LOG(LogC26Venue,Error,TEXT("Missing Eclipse playing surface: run Tools/BuildWorldAssets.py"));
+    auto* Paint     = Colour(FLinearColor(.62,.64,.59),0,.87f);
+    auto* Concrete  = Colour(FLinearColor(.16,.16,.145),0,.92f);
+    auto* Steel     = Colour(FLinearColor(.17,.19,.21),0,.52f);
+    auto* Facade    = Colour(FLinearColor(.045,.055,.065),0,.83f);
+    auto* RoofUnder = Colour(FLinearColor(.115,.127,.134),.06f,.82f);
+    auto* RoofTop   = Colour(FLinearColor(.28,.29,.28),0,.72f);
+    auto* Glazing   = Colour(FLinearColor(.095,.13,.145),.22f,.28f);
     auto* Screen    = Colour(FLinearColor(.009,.013,.019),0.f,.94f);
 
     auto* Cube=LoadObject<UStaticMesh>(nullptr,TEXT("/Engine/BasicShapes/Cube.Cube"));
-    auto* Person=LoadObject<UStaticMesh>(nullptr,TEXT("/Game/Cricket26/Stadium/SM_CrowdVolume.SM_CrowdVolume"));
+    auto Mesh=[](const TCHAR* Folder,const TCHAR* Name){return LoadObject<UStaticMesh>(nullptr,*FString::Printf(TEXT("/Game/Cricket26/Environment/%s/SM_Eclipse_%s.SM_Eclipse_%s"),Folder,Name,Name));};
+    auto* Person=Mesh(TEXT("Crowd"),TEXT("SeatedSpectator"));
+    auto* SeatMesh=Mesh(TEXT("Stadium"),TEXT("StadiumSeat"));
     auto* Cylinder=LoadObject<UStaticMesh>(nullptr,TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
     auto* Rails=Batch(TEXT("ArchitectureRails"),Cube,Steel);
     auto* Marks=Batch(TEXT("CreaseAndCircle"),Cube,Paint);
-    auto* SeatsA=Batch(TEXT("SeatsPrimary"),Cube,Colour(FLinearColor(.0120,.0420,.0570),0,.80f));
-    auto* SeatsB=Batch(TEXT("SeatsAccent"),Cube,Colour(FLinearColor(.0180,.0210,.0380),0,.80f));
+    auto* SeatsA=Batch(TEXT("SeatsPrimary"),SeatMesh,Colour(FLinearColor(.035,.12,.19),0,.80f));
+    auto* SeatsB=Batch(TEXT("SeatsAccent"),SeatMesh,Colour(FLinearColor(.25,.27,.26),0,.80f));
     auto* Rope=Batch(TEXT("BoundaryRope"),Cylinder,Colour(FLinearColor(.5000,.5200,.5100),0,.68f));
-    LED=Colour(FLinearColor(.0150,.2600,.3000),1.05f,.30f);
+    LED=Colour(FLinearColor(.013,.17,.19),.42f,.55f);
     auto* Boards=Batch(TEXT("BoundaryLED"),Cube,LED);
     auto* BoardsAlt=Batch(TEXT("BoundaryLEDAlt"),Cube,Colour(FLinearColor(.0180,.0300,.0700),.55f,.30f));
-    LampMaterial=Tinted(Mat(TEXT("M_Light")),FLinearColor(.78,.88,1),7.5f);
+    LampMaterial=Tinted(Mat(TEXT("M_Light")),FLinearColor(1,.93,.79),4.8f);
     auto* Lamps=Batch(TEXT("FloodlightArrays"),Cube,LampMaterial);
     auto* Columns=Batch(TEXT("StadiumColumns"),Cylinder,Steel);
     auto Add=[](UHierarchicalInstancedStaticMeshComponent* B,FVector P,FVector S,FRotator R=FRotator::ZeroRotator)
@@ -319,75 +332,40 @@ void AC26Stadium::BuildVenue()
     auto Beam=[&](UHierarchicalInstancedStaticMeshComponent* B,FVector A,FVector E,float Width)
     {Add(B,(A+E)*.5f,FVector(Width,Width,(E-A).Size()),FRotationMatrix::MakeFromZ(E-A).Rotator());};
 
-    int Section=0;
+    int Section=0;bool Structure=false;
     auto Emit=[&](FC26Surface& S,UMaterialInterface* M)
     {
         if(S.IsEmpty())return;
-        Bowl->CreateMeshSection_LinearColor(Section,S.V,S.T,S.N,S.UV,S.C,S.Tan,false);
-        Bowl->SetMaterial(Section++,M);S=FC26Surface();
+        auto* Target=Structure?Architecture.Get():Bowl.Get();
+        Target->CreateMeshSection_LinearColor(Section,S.V,S.T,S.N,S.UV,S.C,S.Tan,false);
+        Target->SetMaterial(Section++,M);S=FC26Surface();
     };
 
     // ================= PLAYING SURFACE =================
-    FC26Surface Ring,Ap,Sq,Pit,Worn,Mark,Resting;
-    TArray<FC26Surface> Turf;Turf.SetNum(6);
-    // 36 mowing bands across the full turf ellipse, perpendicular to the pitch, cycling through six
-    // tones so the roller pattern reads as real cut grass rather than two alternating stripes. From
-    // behind the striker they recede as banded perspective lines and give the ground its length.
-    const int Bands=36;
-    for(int I=0;I<Bands;++I)
-    {
-        const float Y0=-TurfRY+I*(2*TurfRY/Bands),Y1=Y0+2*TurfRY/Bands;
-        static const int Cycle[6]={0,1,2,3,4,5};
-        Turf[Cycle[I%6]].Band(Y0,Y1,TurfRX,TurfRY,0.f);
-    }
-    for(int I=0;I<6;++I)Emit(Turf[I],Mow[I]);
-    // Darker watered collar just inside the rope, and a dry apron between rope and hoardings.
-    for(int I=0;I<Segments;++I)
-    {
-        const float A=2*PI*I/Segments,B=2*PI*(I+1)/Segments;
-        Ring.Quad(Oval(6060,6660,A,2.f),Oval(6060,6660,B,2.f),Oval(C26Field::RadiusX,C26Field::RadiusY,B,2.f),Oval(C26Field::RadiusX,C26Field::RadiusY,A,2.f),FVector::UpVector,6.f,1.f);
-        Ap.Quad(Oval(C26Field::RadiusX+40,C26Field::RadiusY+40,A,2.5f),Oval(C26Field::RadiusX+40,C26Field::RadiusY+40,B,2.5f),Oval(TurfRX,TurfRY,B,2.5f),Oval(TurfRX,TurfRY,A,2.5f),FVector::UpVector,6.f,1.f);
-    }
-    Emit(Ring,MowRing);Emit(Ap,Apron);
-    // The square is laid flat into the turf, not stacked on it: no floating slab edge anywhere.
-    Sq.Plate(-920,-1220,920,1220,1.0f,6,6);
-    Emit(Sq,SquareMat);
-    // Five prepared strips inside the square; the middle one is today's pitch (3.05 m x 20.12 m).
-    for(int Strip=-2;Strip<=2;++Strip)
-    {
-        if(Strip==0)continue;
-        Resting.Plate(Strip*365-145,-1160,Strip*365+145,1160,1.8f,2,10);
-    }
-    Emit(Resting,RestingMat);
-    Pit.Plate(-152.5f,-1170,152.5f,1170,2.2f,2,12);
-    Emit(Pit,PitchMat);
-    // Wear: bowler landing areas, footmarks outside off, and the batting creases.
+    FC26Surface Turf,Mark;
+    Turf.Band(-TurfRY,TurfRY,TurfRX,TurfRY,C26Field::SurfaceZ,128);
+    Emit(Turf,Ground?Ground:GrassBase);
+    // A 2 mm paint film is the only surface layer. Physics and rendered turf agree at Z=0.
     for(int End:{-1,1})
     {
-        Worn.Plate(-75,End*885,10,End*1010,2.5f);
-        Worn.Plate(-70,End*820,32,End*920,2.6f);
-    }
-    Emit(Worn,WornMat);
-    // Crease paint, flat on the strip.
-    for(int End:{-1,1})
-    {
-        Mark.Plate(-183,End*C26Field::CreaseY-2.5f,183,End*C26Field::CreaseY+2.5f,2.9f);
-        Mark.Plate(-132,End*C26Field::WicketY-2.5f,132,End*C26Field::WicketY+2.5f,2.9f);
-        for(int Side:{-1,1})Mark.Plate(Side*132-2.5f,End*884,Side*132+2.5f,End*1128,2.9f);
+        Mark.Plate(-183,End*C26Field::CreaseY-2.5f,183,End*C26Field::CreaseY+2.5f,.2f);
+        Mark.Plate(-132,End*C26Field::WicketY-2.5f,132,End*C26Field::WicketY+2.5f,.2f);
+        for(int Side:{-1,1})Mark.Plate(Side*132-2.5f,End*884,Side*132+2.5f,End*1249,.2f);
     }
     Emit(Mark,Paint);
+    Structure=true;Section=0;
 
     // Boundary rope, hoardings and the 30-yard ring.
     for(int I=0;I<128;++I)
     {
         const FVector A=C26Field::RopePoint(I*2*PI/128),B=C26Field::RopePoint((I+1)*2*PI/128);
-        Beam(Rope,A+FVector(0,0,4),B+FVector(0,0,4),9);
+        Beam(Rope,A,B,9);
         const float Ang=2*PI*I/128;
         const bool Sight=FMath::Abs(FMath::Cos(Ang))<.20f;
-        if(I%2==0&&!Sight)
+        if(!Sight)
         {
             const FVector P=Oval(BoardRX,BoardRY,Ang,48);
-            Add(I%8==0?BoardsAlt:Boards,P,FVector(330,18,96),FRotator(0,FMath::RadiansToDegrees(Ang)+90,0));
+            Add(I%8<3?BoardsAlt:Boards,P,FVector(330,18,86),FRotator(0,FMath::RadiansToDegrees(Ang)+90,0));
         }
         if(I%4==0)
         {
@@ -395,30 +373,37 @@ void AC26Stadium::BuildVenue()
             Beam(Marks,FVector(2740*FMath::Cos(A0),2740*FMath::Sin(A0),6),FVector(2740*FMath::Cos(A1),2740*FMath::Sin(A1),6),4);
         }
     }
+    auto* Cushions=Batch(TEXT("BoundaryCushions"),Mesh(TEXT("Boundary"),TEXT("BoundaryCushion")),Colour(FLinearColor(.037,.14,.16),0,.82f));
+    for(int I=0;I<128;++I)
+    {
+        const float A=2*PI*(I+.5f)/128;
+        Cushions->AddInstance(FTransform(FRotator(0,FMath::RadiansToDegrees(A)+90,0),Oval(C26Field::RadiusX+35,C26Field::RadiusY+35,A,0)));
+    }
     // Sight screens behind each bowler's arm; the ball needs a clean background to read against.
     for(int End:{-1,1})
     {
         auto* ScreenBatch=Batch(TEXT("SightScreen"),Cube,Screen);
-        Add(ScreenBatch,FVector(0,End*7620,330),FVector(1450,28,560));
-        Add(Rails,FVector(0,End*7660,60),FVector(1900,60,120));
-        for(int Post:{-1,1})Beam(Columns,FVector(Post*860,End*7665,0),FVector(Post*860,End*7665,900),26);
+        Add(ScreenBatch,FVector(0,End*7780,355),FVector(1350,28,620));
+        Add(Rails,FVector(0,End*7810,28),FVector(1500,64,56));
+        for(int Post:{-1,1})Beam(Columns,FVector(Post*710,End*7810,0),FVector(Post*710,End*7810,710),14);
     }
 
     // ================= LOWER BOWL =================
     FC26Surface Con,Stl,Fac,Glass;
-    Fac.Sweep(WallRX,WallRY,0.f,WallRX,WallRY,WallTop,false);                 // Perimeter wall.
+    Fac.Sweep(WallRX,WallRY,0.f,WallRX,WallRY,WallTop,false,Segments,48,1);
     Con.Sweep(WallRX,WallRY,WallTop,WallRX+40,WallRY+40,WallTop,true);        // Wall capping.
     for(int Row=0;Row<LowerRows;++Row)
     {
         const float R=Row*LowerDepth,Z=WallTop+15.f+Row*LowerRise;
-        Con.Sweep(WallRX+R,WallRY+R,Z,WallRX+R+LowerDepth,WallRY+R+LowerDepth,Z,true);
-        Stl.Sweep(WallRX+R+LowerDepth,WallRY+R+LowerDepth,Z,WallRX+R+LowerDepth,WallRY+R+LowerDepth,Z+LowerRise,false);
+        const bool Entrance=Row>=4&&Row<9;
+        Con.Sweep(WallRX+R,WallRY+R,Z,WallRX+R+LowerDepth,WallRY+R+LowerDepth,Z,true,Segments,Entrance?8:-1,1);
+        Stl.Sweep(WallRX+R+LowerDepth,WallRY+R+LowerDepth,Z,WallRX+R+LowerDepth,WallRY+R+LowerDepth,Z+LowerRise,false,Segments,Entrance?8:-1,1);
     }
     const float LowerBackRX=WallRX+LowerRows*LowerDepth,LowerBackRY=WallRY+LowerRows*LowerDepth;
     const float LowerBackZ=WallTop+15.f+LowerRows*LowerRise;
     // Concourse: solid band, glazed hospitality ribbon, then the upper bowl above it.
     Fac.Sweep(LowerBackRX,LowerBackRY,LowerBackZ,LowerBackRX,LowerBackRY,LowerBackZ+120.f,false);
-    Glass.Sweep(LowerBackRX,LowerBackRY,LowerBackZ+120.f,LowerBackRX,LowerBackRY,LowerBackZ+300.f,false);
+    Glass.Sweep(LowerBackRX+100,LowerBackRY+100,LowerBackZ+120.f,LowerBackRX+100,LowerBackRY+100,LowerBackZ+300.f,false);
     Fac.Sweep(LowerBackRX,LowerBackRY,LowerBackZ+300.f,UpperRX,UpperRY,UpperZ,false);
     Con.Sweep(LowerBackRX,LowerBackRY,LowerBackZ,LowerBackRX+320,LowerBackRY+320,LowerBackZ,true);
 
@@ -435,46 +420,82 @@ void AC26Stadium::BuildVenue()
 
     // ================= ROOF =================
     FC26Surface Under,Top;
-    Under.Sweep(UpperRX-320,UpperRY-320,RoofInnerZ,RoofOuterRX,RoofOuterRY,RoofOuterZ,false,Segments);
     for(int I=0;I<Segments;++I)
     {
         const float A=2*PI*I/Segments,B=2*PI*(I+1)/Segments;
-        const FVector P0=Oval(UpperRX-320,UpperRY-320,A,RoofInnerZ),P1=Oval(UpperRX-320,UpperRY-320,B,RoofInnerZ);
+        const float Fold0=FMath::Sin((I%8)*PI/8)*95,Fold1=FMath::Sin(((I%8)+1)*PI/8)*95;
+        const FVector P0=Oval(UpperRX-320,UpperRY-320,A,RoofInnerZ+Fold0),P1=Oval(UpperRX-320,UpperRY-320,B,RoofInnerZ+Fold1);
         const FVector Q0=Oval(RoofOuterRX,RoofOuterRY,A,RoofOuterZ),Q1=Oval(RoofOuterRX,RoofOuterRY,B,RoofOuterZ);
         Under.Quad(P0,P1,Q1,Q0,FVector(0,0,-1),4.f,1.f);
         Top.Quad(P0+FVector(0,0,55),P1+FVector(0,0,55),Q1+FVector(0,0,55),Q0+FVector(0,0,55),FVector::UpVector,4.f,1.f);
     }
     Emit(Under,RoofUnder);Emit(Top,RoofTop);
-    // Illuminated fascia band on the roof lip: the strongest night-stadium read from pitch level.
+    // Pale canopy lip and a thin original teal identity ribbon, with restrained emission.
     FC26Surface Fascia;
-    Fascia.Sweep(UpperRX-360,UpperRY-360,RoofInnerZ-165,UpperRX-360,UpperRY-360,RoofInnerZ,false);
-    Emit(Fascia,LED);
+    Fascia.Sweep(UpperRX-320,UpperRY-320,RoofInnerZ-55,UpperRX-320,UpperRY-320,RoofInnerZ,false);
+    Emit(Fascia,RoofTop);
     Emit(Con,Concrete);Emit(Stl,Steel);Emit(Fac,Facade);Emit(Glass,Glazing);
 
     // Roof trusses only, sitting on top of the canopy. An outer ring of ground-to-roof columns
     // reads as a forest of poles through the seating gaps from every camera, so there is none.
-    for(int I=0;I<28;++I)
+    for(int I=0;I<24;++I)
     {
-        const float A=2*PI*I/28;
+        const float A=2*PI*I/24;
         Beam(Rails,Oval(UpperRX-260,UpperRY-260,A,RoofInnerZ+70),Oval(RoofOuterRX-140,RoofOuterRY-140,A,RoofOuterZ+70),22);
+        Beam(Rails,Oval(UpperRX-260,UpperRY-260,A,RoofInnerZ-95),Oval(RoofOuterRX-140,RoofOuterRY-140,A,RoofOuterZ-95),14);
+        for(int K=0;K<5;++K)
+        {
+            const float T=K/5.f,U=(K+1)/5.f;
+            Beam(Rails,Oval(FMath::Lerp(UpperRX-260,RoofOuterRX-140,T),FMath::Lerp(UpperRY-260,RoofOuterRY-140,T),A,FMath::Lerp(RoofInnerZ,RoofOuterZ,T)+70),
+                Oval(FMath::Lerp(UpperRX-260,RoofOuterRX-140,U),FMath::Lerp(UpperRY-260,RoofOuterRY-140,U),A,FMath::Lerp(RoofInnerZ,RoofOuterZ,U)-95),8);
+        }
+        // Glazing mullions articulate the recessed circulation ribbon.
+        Add(Rails,Oval(LowerBackRX+50,LowerBackRY+50,A,LowerBackZ+205),FVector(34,34,290));
+    }
+
+    // Aisles share the same 24-bay angular grid as the openings and seat exclusions.
+    auto* Aisles=Batch(TEXT("ConcreteAisleSteps"),Cube,Colour(FLinearColor(.24,.235,.208),0,.95f));
+    auto* Openings=Batch(TEXT("VomitoryRecesses"),Cube,Screen);
+    for(int Tier=0;Tier<2;++Tier)for(int Bay=0;Bay<24;++Bay)
+    {
+        const float A=2*PI*(Bay+.0625f)/24;
+        const float RX=Tier?UpperRX:WallRX,RY=Tier?UpperRY:WallRY;
+        const float Z0=Tier?UpperZ:WallTop+15,Depth=Tier?UpperDepth:LowerDepth,Rise=Tier?UpperRise:LowerRise;
+        const int Rows=Tier?UpperRows:LowerRows;
+        const FRotator R(0,FMath::RadiansToDegrees(A),0);
+        for(int S=0;S<Rows*2;++S)
+        {
+            if(!Tier&&S>=8&&S<18)continue;
+            Add(Aisles,Oval(RX+(S+.5f)*Depth*.5f,RY+(S+.5f)*Depth*.5f,A,Z0+(S+.5f)*Rise*.5f),FVector(Depth*.5f,142,Rise*.5f),R);
+            if(S%6==0)
+            {
+                const FVector P=Oval(RX+S*Depth*.5f,RY+S*Depth*.5f,A,Z0+S*Rise*.5f);
+                Beam(Rails,P+R.RotateVector(FVector(0,80,0)),P+R.RotateVector(FVector(0,80,95)),5);
+            }
+        }
+        const FVector Front=Oval(RX,RY,A,Z0+95),Back=Oval(RX+Rows*Depth,RY+Rows*Depth,A,Z0+Rows*Rise+95);
+        Beam(Rails,Front+R.RotateVector(FVector(0,80,0)),Back+R.RotateVector(FVector(0,80,0)),5);
+        if(!Tier)
+        {
+            Add(Openings,Oval(RX+9*Depth,RY+9*Depth,A,Z0+6*Rise),FVector(35,235,245),R);
+            for(int Side:{-1,1})Add(Rails,Oval(RX+7*Depth,RY+7*Depth,A,Z0+6*Rise)+R.RotateVector(FVector(0,Side*118,0)),FVector(400,18,245),R);
+            Add(Aisles,Oval(RX+7*Depth,RY+7*Depth,A,Z0+9*Rise+18),FVector(460,256,35),R);
+        }
     }
 
     // ================= SEATING AND CROWD =================
     const int Density=FMath::Clamp(CrowdQuality,0,3);
-    const float Pitch2=Density>=3?68.f:Density==2?86.f:Density==1?135.f:205.f;
+    const float Pitch2=Density>=3?108.f:Density==2?142.f:Density==1?165.f:220.f;
     const int RowStep=Density>=2?1:2;
     FRandomStream Random(2626);
-    const FLinearColor Shirts[8]={
-        FLinearColor(.0180,.0620,.0760),FLinearColor(.1250,.0180,.0140),FLinearColor(.1400,.1330,.1080),
-        FLinearColor(.0300,.0380,.0560),FLinearColor(.0700,.0740,.0880),FLinearColor(.0900,.0540,.0290),
-        FLinearColor(.0230,.0900,.0700),FLinearColor(.1600,.1000,.0300)};
-    TArray<UHierarchicalInstancedStaticMeshComponent*> Bodies,Heads;
-    for(int G=0;G<8;++G)
+    const FLinearColor Shirts[4]={FLinearColor(.025,.11,.19),FLinearColor(.31,.045,.028),FLinearColor(.42,.38,.28),FLinearColor(.065,.12,.095)};
+    auto* CrowdBase=LoadObject<UMaterialInterface>(nullptr,TEXT("/Game/Cricket26/Environment/Materials/M_Eclipse_Crowd.M_Eclipse_Crowd"));
+    TArray<UHierarchicalInstancedStaticMeshComponent*> Bodies;
+    for(int G=0;G<4;++G)
     {
-        auto* M=Tinted(Mat(TEXT("M_Crowd")),Shirts[G],.02f,.95f);CrowdMaterials.Add(M);
+        auto* M=Tinted(CrowdBase?CrowdBase:Surface,Shirts[G],0,.95f);CrowdMaterials.Add(M);
+        M->SetVectorParameterValue(TEXT("Accent"),Shirts[(G+1)%4]);
         Bodies.Add(Batch(*FString::Printf(TEXT("CrowdGroup%d"),G),Person,M));
-        if(Density>=2)Heads.Add(Batch(*FString::Printf(TEXT("CrowdHeads%d"),G),Person,
-            Colour(FLinearColor(.115f+.028f*G,.072f+.020f*G,.050f+.014f*G),0,.85f)));
     }
     auto PopulateTier=[&](float RX,float RY,float BaseZ,int Rows,float Depth,float Rise)
     {
@@ -485,17 +506,18 @@ void AC26Stadium::BuildVenue()
             const int Count=FMath::Max(24,FMath::RoundToInt(2*PI*RadX/Pitch2));
             for(int J=0;J<Count;++J)
             {
-                const float A=2*PI*J/Count;
-                if(J%18==0)continue;                                // One-seat-wide radial aisles.
+                const float A=2*PI*(J+Random.FRandRange(-.17f,.17f))/Count;
+                const float Bay=FMath::Frac(A/(2*PI)*24);
+                if(Bay<.135f||Bay>.985f)continue;
+                // Pavilion replaces a small portion of the lower seating at square leg.
+                if(RX==WallRX&&FMath::Abs(FMath::UnwindRadians(A))<.14f&&Row>6)continue;
                 const FRotator Face(0,FMath::RadiansToDegrees(A)+90.f,0);
-                const FVector Seat=Oval(RadX+Depth*.55f,RadY+Depth*.55f,A,Z+11.f);
-                if(Row%2==0)Add((J/7)%2?SeatsA:SeatsB,Seat,FVector(46,44,22),Face);
-                if(Random.FRand()<.07f)continue;                     // A handful of empty seats.
-                const int G=Random.RandRange(0,7);
-                const float Lean=Random.FRandRange(-7.f,7.f),Size=Random.FRandRange(.88f,1.12f);
-                const FVector P=Oval(RadX+Depth*.5f,RadY+Depth*.5f,A,Z+42.f*Size);
-                Add(Bodies[G],P,FVector(37,27,54)*Size,FRotator(Lean,FMath::RadiansToDegrees(A)+Random.FRandRange(-14.f,14.f),0));
-                if(Heads.Num())Add(Heads[G],P+FVector(0,0,35*Size),FVector(20,19,22)*Size,Face);
+                const FVector Seat=Oval(RadX+Depth*.5f,RadY+Depth*.5f,A,Z);
+                if(Row%2==0)(int(A*24/(2*PI))%3?SeatsA:SeatsB)->AddInstance(FTransform(Face,Seat));
+                if(Random.FRand()<.065f)continue;
+                const int G=Random.RandRange(0,3);
+                const float Size=Random.FRandRange(.85f,1.10f);
+                Bodies[G]->AddInstance(FTransform(FRotator(Random.FRandRange(-3.f,3.f),Face.Yaw+Random.FRandRange(-12.f,12.f),0),Seat,FVector(Size)));
             }
         }
     };
@@ -503,21 +525,18 @@ void AC26Stadium::BuildVenue()
     PopulateTier(UpperRX,UpperRY,UpperZ,UpperRows,UpperDepth,UpperRise);
 
     // ================= FLOODLIGHT PYLONS =================
+    auto* Towers=Batch(TEXT("FloodlightLatticeTowers"),Mesh(TEXT("Floodlights"),TEXT("FloodlightTower")),Steel);
+    auto* Housings=Batch(TEXT("FloodlightLampHousings"),Mesh(TEXT("Floodlights"),TEXT("LampHousing")),Facade);
+    auto* Arrays=Batch(TEXT("FloodlightLampArrays"),Mesh(TEXT("Floodlights"),TEXT("LampArray")),LampMaterial);
+    Towers->SetCastShadow(Density>=2);
     for(int I=0;I<6;++I)
     {
-        const float A=2*PI*I/6;
-        const FVector Foot=Oval(10250,10980,A,0);
-        Beam(Columns,Foot+FVector(0,0,2450),Foot+FVector(0,0,4180),62);
-        const FRotator R(0,FMath::RadiansToDegrees(A)+90,0);
-        Add(Rails,Foot+FVector(0,0,4240),FVector(940,110,44),R);
-        for(int Row=0;Row<5;++Row)for(int Col=0;Col<10;++Col)
-        {
-            const FVector Offset=R.RotateVector(FVector((Col-4.5f)*88,-52,4110+Row*86));
-            Add(Lamps,Foot+Offset,FVector(74,17,68),R);
-        }
+        const float A=PI/6+2*PI*I/6;
+        const FTransform T(FRotator(0,FMath::RadiansToDegrees(A)+90,0),Oval(10800,11500,A,0));
+        Towers->AddInstance(T);Housings->AddInstance(T);Arrays->AddInstance(T);
     }
     // Continuous roof-edge lighting rig: a bright, even wash that reads across the whole bowl.
-    for(int I=0;I<Segments;I+=2)
+    for(int I=0;I<Segments;I+=4)
     {
         const float A=2*PI*I/Segments;
         Add(Lamps,Oval(UpperRX-330,UpperRY-330,A,RoofInnerZ-235),FVector(150,26,34),FRotator(18,FMath::RadiansToDegrees(A)+90,0));
@@ -532,21 +551,62 @@ void AC26Stadium::BuildVenue()
         Text->SetVerticalAlignment(EVRTA_TextCenter);Text->SetTextRenderColor(Glyph);
         Text->SetRelativeLocation(At);Text->SetRelativeRotation(Facing);Text->SetCastShadow(false);
     };
+    // Square-leg pavilion: recessed glazing, projecting balconies and a slatted media crown.
+    auto* PavilionStone=Batch(TEXT("PavilionStone"),Cube,Colour(FLinearColor(.30,.285,.245),0,.88f));
+    auto* PavilionGlass=Batch(TEXT("PavilionGlass"),Cube,Glazing);
+    for(int Floor=0;Floor<3;++Floor)
+    {
+        const float Z=680+Floor*310;
+        Add(PavilionGlass,FVector(8310,0,Z),FVector(45,2760,260));
+        Add(PavilionStone,FVector(8440,0,Z+148),FVector(940,3180,52));
+        Add(Rails,FVector(7945,0,Z+20),FVector(14,3000,24));
+        for(int J=-5;J<=5;++J)
+        {
+            Add(PavilionStone,FVector(8280,J*255,Z),FVector(100,26,275));
+            Beam(Rails,FVector(7935,J*270,Z-95),FVector(7935,J*270,Z+28),5);
+        }
+    }
+    Add(PavilionStone,FVector(8440,0,1750),FVector(1220,3400,95));
+    for(int J=-15;J<=15;++J)Add(Rails,FVector(7990,J*105,1580),FVector(44,24,200));
+    MakeSign(TEXT("ECLIPSE PAVILION"),FVector(7800,0,1700),FRotator(0,180,0),110,FColor(231,222,195));
+
+    // Player access at the pavilion end, kept outside the sight-screen corridor.
+    Add(Openings,FVector(1270,-7970,150),FVector(310,360,300));
+    Add(PavilionStone,FVector(1270,-7780,315),FVector(400,60,55));
+    for(int Side:{-1,1})Add(PavilionStone,FVector(1270+Side*190,-7780,145),FVector(45,60,290));
+    MakeSign(TEXT("PLAYERS"),FVector(1270,-7740,310),FRotator(0,90,0),49,FColor(214,226,221));
+    auto* Technical=Batch(TEXT("TechnicalAreaCanopies"),Cube,RoofTop);
+    for(int Side:{-1,1})
+    {
+        const float X=Side*2090;
+        Add(Technical,FVector(X,-7460,255),FVector(660,285,22));
+        for(int Post:{-1,1})Beam(Rails,FVector(X+Post*306,-7550,0),FVector(X+Post*306,-7550,255),12);
+        Add(Rails,FVector(X,-7490,48),FVector(530,55,24));
+    }
+    for(int I=0;I<24;++I)
+    {
+        const float A=2*PI*(I+.45f)/24;
+        MakeSign(I%3==0?TEXT("CRICKET 26"):I%3==1?TEXT("ECLIPSE OVAL"):TEXT("THE NIGHT SESSION"),Oval(BoardRX-18,BoardRY-18,A,55),
+            FRotator(0,FMath::RadiansToDegrees(A)+180,0),39,FColor(213,225,216));
+        const float ExitA=2*PI*(I+.0625f)/24;
+        MakeSign(FString::Printf(TEXT("%02d"),I+1),Oval(WallRX+520,WallRY+520,ExitA,WallTop+9*LowerRise+70),
+            FRotator(0,FMath::RadiansToDegrees(ExitA)+180,0),40,FColor(234,222,183));
+    }
     for(int I=0;I<10;++I)
     {
         const float A=2*PI*I/10+.31f;
         MakeSign(I%2?TEXT("ECLIPSE OVAL"):TEXT("CRICKET 26"),Oval(LowerBackRX-24,LowerBackRY-24,A,LowerBackZ+210.f),
-            FRotator(0,FMath::RadiansToDegrees(A)+180,0),132.f,FColor(150,224,220));
+            FRotator(0,FMath::RadiansToDegrees(A)+180,0),76.f,FColor(196,210,207));
     }
     // A live video wall is one of the few things in a night ground that is brighter than the field.
     // At a glow of .30 over a near-black tint these read as holes cut out of the stand.
     auto* Panels=Batch(TEXT("BroadcastScreens"),Cube,Colour(FLinearColor(.026,.070,.092),2.10f,.25f));
     for(int I:{-1,1})
     {
-        const FVector At(I*1100.f,I*(UpperRY+700.f),UpperZ+1500.f);
-        Add(Panels,At,FVector(2600,60,1180),FRotator(0,I>0?-90.f:90.f,0));
-        Add(Rails,At+FVector(0,0,-640),FVector(2700,90,110),FRotator(0,I>0?-90.f:90.f,0));
-        MakeSign(TEXT("CRICKET 26\nSUPER OVER"),At+FVector(I*-40.f,I*-46.f,0),FRotator(0,I>0?-90.f:90.f,0),240.f,FColor(196,240,238));
+        const FVector At(I*1780.f,I*(UpperRY+750.f),UpperZ+1470.f);
+        Add(Panels,At,FVector(1920,60,850));
+        Add(Rails,At+FVector(0,0,-454),FVector(2020,90,70));
+        MakeSign(TEXT("CRICKET 26\nECLIPSE OVAL"),At+FVector(0,I*-38.f,0),FRotator(0,I>0?-90.f:90.f,0),155.f,FColor(206,236,229));
     }
 
     // ================= NIGHT SKY =================
@@ -572,6 +632,10 @@ void AC26Stadium::BuildVenue()
     (void)White;(void)VenueTeal;(void)Navy;(void)GrassBase;(void)PitchBase;
     for(auto& B:Batches){B->bAutoRebuildTreeOnInstanceChanges=true;B->BuildTreeIfOutdated(true,true);}
     int Instances=0;for(auto& B:Batches)Instances+=B->GetInstanceCount();
+    int CrowdCount=0;for(auto& B:Bodies)CrowdCount+=B->GetInstanceCount();
+    UE_LOG(LogC26Venue,Display,TEXT("C26_WORLD scale: wicket_spacing=%.1f strip=%.1fx%.1f stump=%.1f width=%.2f ball=%.1f boundary=%.1fx%.1fm"),
+        C26Field::WicketY*2,C26Field::PitchWidth,C26Field::PitchStripLength,C26Field::StumpHeight,C26Field::WicketWidth,C26Field::BallDiameter,C26Field::RadiusX/100,C26Field::RadiusY/100);
+    UE_LOG(LogC26Venue,Display,TEXT("C26_WORLD quality=%d crowd=%d towers=%d ground_sections=%d architecture_sections=%d"),CrowdQuality,CrowdCount,Towers->GetInstanceCount(),Bowl->GetNumSections(),Architecture->GetNumSections());
     UE_LOG(LogC26Venue,Display,TEXT("Eclipse Oval built: %d mesh sections, %d batches, %d instances."),Section,Batches.Num(),Instances);
     UE_LOG(LogC26Venue,Display,TEXT("Venue surfaces: bowl=%s sections=%d materials=%d sky=%s sections=%d"),
         *Bowl->GetName(),Bowl->GetNumSections(),Bowl->GetNumMaterials(),*Sky->GetName(),Sky->GetNumSections());
@@ -587,9 +651,12 @@ void AC26Stadium::SetQuality(int Level)
     KeyLight->SetCastShadows(true);KeyLight->DynamicShadowCascades=Level<2?2:3;
     KeyLight->DynamicShadowDistanceMovableLight=Level<2?4500:9000;
     KeyLight->ContactShadowLength=Level>0?.045f:0.f;
-    if(CrossLight)CrossLight->SetVisibility(Level>0);
+    if(CrossLight)CrossLight->SetVisibility(true);
+    // Far seating treads are smaller than a cascade texel and self-shadow into moire.
+    // Model their recesses in geometry/material; reserve dynamic maps for the playing area.
+    if(Architecture)Architecture->SetCastShadow(false);
     for(auto& F:Floods)if(F)F->SetVisibility(Level>=2);
-    if(Shafts)Shafts->SetVisibility(Level>0);
+    if(Shafts)Shafts->SetVisibility(Level>=2);
     if(Rebuild&&HasActorBegunPlay()){BuildVenue();BuildLightShafts();}
     for(auto& B:Batches)
     {
@@ -606,7 +673,6 @@ void AC26Stadium::UpdateAtmosphere(float Time)
     const float Step=AtmosphereUpdateAccumulator;AtmosphereUpdateAccumulator=0;
     CrowdReaction=FMath::Max(0.f,CrowdReaction-Step*.42f);
     const float Pulse=FMath::Max(0.f,FMath::Sin(Time*4.1f));
-    if(LED)LED->SetScalarParameterValue(TEXT("Glow"),1.05f+CrowdReaction*Pulse*1.5f);
-    if(LampMaterial)LampMaterial->SetScalarParameterValue(TEXT("Glow"),7.5f+CrowdReaction*2.5f);
-    for(auto M:CrowdMaterials)if(M)M->SetScalarParameterValue(TEXT("Glow"),.02f+CrowdReaction*.30f);
+    if(LED)LED->SetScalarParameterValue(TEXT("Glow"),.42f+CrowdReaction*Pulse*.18f);
+    // Lamp exposure and crowd albedo remain stable during score events.
 }

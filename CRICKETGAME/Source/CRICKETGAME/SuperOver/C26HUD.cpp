@@ -120,7 +120,7 @@ void AC26HUD::Controls()
             Text(TEXT("SWIPE TO PLAY"),1390,831,25,Paper,true);
             Button(TEXT("loft"),Match->Intent.Loft?TEXT("LOFTED  ON"):TEXT("LOFTED"),1269,565,244,54,false,Match->Intent.Loft);
             Button(TEXT("defend"),TEXT("DEFEND"),78,573,178,53,false,Match->Intent.Defend);
-            if(Phase==EC26Phase::Ready)Button(TEXT("ready"),TEXT("FACE DELIVERY  >"),592,676,416,73,true);
+            if(Phase==EC26Phase::Ready)Button(TEXT("ready"),TEXT("FACE DELIVERY  >"),1110,340,402,66,true);
             else if(Phase==EC26Phase::Delivery)
             {
                 const float T=Match->TimingCountdown();float P=FMath::Clamp(1-T/.45f,0.f,1.f);

@@ -25,6 +25,7 @@ public:
     void React(float Intensity);
     void UpdateAtmosphere(float Time);
     UPROPERTY(VisibleAnywhere) TObjectPtr<UProceduralMeshComponent> Bowl;
+    UPROPERTY(VisibleAnywhere) TObjectPtr<UProceduralMeshComponent> Architecture;
     UPROPERTY(VisibleAnywhere) TObjectPtr<UProceduralMeshComponent> Sky;
     /** Additive haze cones hanging under each pylon. Six long, very faint quads sell a floodlit
         night far more cheaply than volumetric fog, and they are the element that makes the venue

@@ -2,6 +2,8 @@
 #include "C26Athlete.h"
 #include "Camera/CameraComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogC26Camera,Log,All);
 DEFINE_LOG_CATEGORY_STATIC(LogC26Replay,Log,All);
@@ -18,8 +20,6 @@ constexpr float StrikerEnd=900.f;
 // along the ground at about 13 degrees. The previous 26.8 m / 11.8 m placement looked down at 33
 // degrees, which is what turned every tracked shot into a plan view of the outfield.
 const FVector MainTower(700,4200,780);
-const FVector BattingEye(300,2350,360);
-const FVector BattingAim(0,-240,70);
 FVector Ahead(const FVector& Ball,const FVector& Velocity,float Seconds)
 {
     FVector P=Ball+Velocity*Seconds;P.Z=FMath::Max(P.Z,55.f);return P;
@@ -35,6 +35,9 @@ AC26CameraDirector::AC26CameraDirector()
     Camera->PostProcessBlendWeight=1.f;
     Camera->PostProcessSettings.bOverride_DepthOfFieldFocalDistance=true;
     Camera->PostProcessSettings.DepthOfFieldFocalDistance=0.f;
+    BattingRig.Eye=FVector(160,1885,165);BattingRig.Aim=FVector(0,-280,152);BattingRig.FOV=48;
+    BowlingRig.Eye=FVector(-225,-3440,235);BowlingRig.Aim=FVector(0,480,235);BowlingRig.FOV=46;
+    ReleaseRig.Eye=FVector(-215,-1900,235);ReleaseRig.Aim=FVector(0,790,195);ReleaseRig.FOV=46;
 }
 void AC26CameraDirector::Reset()
 {
@@ -104,6 +107,19 @@ void AC26CameraDirector::Look(EC26CameraMode NewMode,const FVector& From,const F
 void AC26CameraDirector::Direct(EC26Phase Phase,float Time,bool PlayerBatting,const FVector& Ball,const FVector& Velocity,bool Aerial,float Dt)
 {
     if(IsReplaying)return;
+#if !UE_BUILD_SHIPPING
+    // Repeatable world inspection from the actual playable map, without editor-only cameras.
+    FString View;
+    if(FParse::Value(FCommandLine::Get(),TEXT("C26WorldView="),View))
+    {
+        if(View==TEXT("wide"))Look(EC26CameraMode::Establishing,FVector(8200,-10800,7200),FVector(0,0,200),66,true,Dt);
+        else if(View==TEXT("pitch"))Look(EC26CameraMode::PreDeliveryBroadcast,FVector(510,1770,315),FVector(0,610,15),48,true,Dt);
+        else if(View==TEXT("boundary"))Look(EC26CameraMode::Establishing,FVector(-3700,-5350,180),FVector(-1200,-9500,1780),64,true,Dt);
+        else if(View==TEXT("bowling"))Look(EC26CameraMode::BowlerGameplay,BowlingRig.Eye,BowlingRig.Aim,BowlingRig.FOV,true,Dt);
+        else Look(EC26CameraMode::BatterGameplay,BattingRig.Eye,BattingRig.Aim,BattingRig.FOV,true,Dt);
+        return;
+    }
+#endif
     const bool Cut=LastPhase!=Phase;LastPhase=Phase;
     if(Phase==EC26Phase::Menu)
     {
@@ -143,19 +159,22 @@ void AC26CameraDirector::Direct(EC26Phase Phase,float Time,bool PlayerBatting,co
             // Include the striker's shoes, bat toe and crease in the vertical safe area.
             // Carry the run-up push through release; phase-local time must not pull the lens back.
             const float Push=Phase==EC26Phase::Delivery?1.f:Phase==EC26Phase::RunUp?FMath::Clamp(Time/C26Field::RunUpDuration,0.f,1.f):0.f;
-            const FVector From=BattingEye-FVector(8,45,3)*Push;
+            const FVector From=BattingRig.Eye-FVector(3,20,0)*Push;
             Look(Phase==EC26Phase::Delivery?EC26CameraMode::Release:Phase==EC26Phase::RunUp?EC26CameraMode::BatterGameplay:EC26CameraMode::PreDeliveryBroadcast,
-                From,BattingAim,36.f-Push*.5f,false,Dt,3.4f);
+                From,BattingRig.Aim,BattingRig.FOV-Push*.3f,Mode!=EC26CameraMode::PreDeliveryBroadcast&&Phase==EC26Phase::Ready,Dt,3.4f);
         }
         else if(Phase==EC26Phase::RunUp)
         {
             // Trail the bowler in. Ball position is the bowling hand during the approach.
             const FVector Hand=Ball.IsZero()?FVector(-20,-2250,150):Ball;
-            Look(EC26CameraMode::BowlerRunup,FVector(Hand.X-235,Hand.Y-690,318),FVector(-10,FMath::Max(Hand.Y+900.f,-260.f),128),40,Mode!=EC26CameraMode::BowlerRunup,Dt,4.2f);
+            Look(EC26CameraMode::BowlerRunup,FVector(-215,FMath::Min(Hand.Y-910.f,-1900.f),235),ReleaseRig.Aim,46,Mode!=EC26CameraMode::BowlerRunup,Dt,4.2f);
         }
         else
+        {
+            const auto& Rig=Phase==EC26Phase::Ready?BowlingRig:ReleaseRig;
             Look(Phase==EC26Phase::Ready?EC26CameraMode::BowlerGameplay:EC26CameraMode::Release,
-                FVector(-296,-3560,392),FVector(-24,660,128),35,Mode!=EC26CameraMode::BowlerGameplay&&Mode!=EC26CameraMode::Release,Dt,3.2f);
+                Rig.Eye,Rig.Aim,Rig.FOV,Phase==EC26Phase::Ready&&Cut,Dt,4.5f);
+        }
     }
     else if(Phase==EC26Phase::InPlay)
     {
@@ -167,7 +186,8 @@ void AC26CameraDirector::Direct(EC26Phase Phase,float Time,bool PlayerBatting,co
         {
             // Stay on the striker through contact and the first of the follow-through, punching in
             // slightly. Cutting away from the bat on impact is what made the old shot feel weightless.
-            Look(EC26CameraMode::BatContact,BattingEye-FVector(8,45,3),BattingAim,35.5f,false,Dt,5.f);
+            const auto& Rig=PlayerBatting?BattingRig:ReleaseRig;
+            Look(EC26CameraMode::BatContact,Rig.Eye-(PlayerBatting?FVector(3,20,0):FVector::ZeroVector),Rig.Aim,Rig.FOV-.3f,false,Dt,5.f);
         }
         else if(Time<1.25f&&RopeFraction<.82f)
         {

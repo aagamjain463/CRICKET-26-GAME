@@ -16,6 +16,16 @@ enum class EC26CameraMode : uint8
     Celebration, InningsTransition, MatchResult
 };
 
+/** All lenses live in the director. Phase logic supplies context, never view transforms. */
+USTRUCT(BlueprintType)
+struct FC26BroadcastRig
+{
+    GENERATED_BODY()
+    UPROPERTY(EditAnywhere,BlueprintReadWrite) FVector Eye=FVector::ZeroVector;
+    UPROPERTY(EditAnywhere,BlueprintReadWrite) FVector Aim=FVector::ZeroVector;
+    UPROPERTY(EditAnywhere,BlueprintReadWrite,meta=(ClampMin="20",ClampMax="80")) float FOV=48.f;
+};
+
 struct FC26ReplayAthlete
 {
     FTransform Transform;
@@ -41,6 +51,9 @@ public:
     AC26CameraDirector();
     UPROPERTY(VisibleAnywhere) TObjectPtr<UCameraComponent> Camera;
     UPROPERTY(BlueprintReadOnly) EC26CameraMode Mode=EC26CameraMode::Establishing;
+    UPROPERTY(EditAnywhere,Category="Broadcast|Gameplay") FC26BroadcastRig BattingRig;
+    UPROPERTY(EditAnywhere,Category="Broadcast|Gameplay") FC26BroadcastRig BowlingRig;
+    UPROPERTY(EditAnywhere,Category="Broadcast|Gameplay") FC26BroadcastRig ReleaseRig;
     UPROPERTY() TArray<TObjectPtr<UStaticMeshComponent>> ReplayProps;
     void Reset();
     void Direct(EC26Phase Phase,float PhaseTime,bool PlayerBatting,const FVector& Ball,const FVector& Velocity,bool Aerial,float Dt=1.f/60.f);

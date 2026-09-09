@@ -114,7 +114,7 @@ void FC26Simulation::Step(float Dt)
             const float T=(Y-Prev.Position.Y)/Travel;
             if(T<0||T>1)continue;
             const FVector P=FMath::Lerp(Prev.Position,Ball.Position,T);
-            if(FMath::Abs(P.X)<11.43f+Tuning.BallRadius&&P.Z>=0&&P.Z<71.1f+Tuning.BallRadius)
+            if(FMath::Abs(P.X)<C26Field::WicketWidth*.5f+Tuning.BallRadius&&P.Z>=0&&P.Z<C26Field::StumpHeight+Tuning.BallRadius)
             {StumpEvent=true;Ball.Position=P;Ball.Active=false;break;}
         }
         if(Ball.Active&&CrossesRope(Prev.Position,Ball.Position)){BoundaryEvent=true;Ball.Active=false;}
