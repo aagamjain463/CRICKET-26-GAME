@@ -1,6 +1,7 @@
 #include "C26HUD.h"
 #include "C26MatchGameMode.h"
 #include "C26Settings.h"
+#include "C26CameraDirector.h"
 #include "Engine/Canvas.h"
 #include "Engine/Font.h"
 #include "CanvasItem.h"
@@ -160,7 +161,11 @@ void AC26HUD::Controls()
         Text(Match->Callout,800,Y+9,89,Paper,true);Text(Match->Detail,800,Y+122,26,Muted,true);
     }
     if(Phase==EC26Phase::Replay)
-    {Rect(690,215,220,53,Ink);Text(TEXT("REPLAY  /  0.65x"),800,224,29,Paper,true);Button(TEXT("skip"),TEXT("SKIP REPLAY  >"),1240,774,275,60);}
+    {
+        Rect(676,215,248,53,Ink);Rect(676,215,5,53,Coral);
+        Text(FString::Printf(TEXT("REPLAY  /  %.2fx"),Match->Director?Match->Director->ReplaySpeed():1.f),806,224,29,Paper,true);
+        Button(TEXT("skip"),TEXT("SKIP REPLAY  >"),1240,774,275,60);
+    }
 }
 void AC26HUD::Result()
 {
