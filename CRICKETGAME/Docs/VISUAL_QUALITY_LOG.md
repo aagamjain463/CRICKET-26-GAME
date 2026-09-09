@@ -40,6 +40,7 @@ session actually touched are re-scored; everything else keeps the baseline numbe
 | Batting animation | 2 | 4 | Pelvis transfers forward onto the striding foot, front knee takes the load, back heel rolls onto its toe, chest goes over the ball. Still procedural, not authored. |
 | Bat-ball contact | 3 | 7 | `C26_GATE_CONTACT gap_cm=0.523` against the generated blade triangles, at `Z=-57.9` on an 83 cm bat — the widest point of the willow. Was -75.7, the toe. |
 | Locomotion | 3 | 4 | Lifted feet roll onto the toe instead of hanging flat; applies to the run-up as well as the drive. |
+| Bowling animation | 2 | 3 | Approach has stride length, knee drive, tucked arm drive and lean. The gather is still only 0.31 s and the action is still procedural. |
 | Replay | 4 | 5 | The close-up now survives magnification: hands, pads and blade all read. The head does not. |
 
 Not re-scored and still unverified: sound, responsiveness, tactile feedback, mobile performance.

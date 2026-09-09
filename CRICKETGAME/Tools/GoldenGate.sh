@@ -13,8 +13,11 @@ UE="/Users/Shared/Epic Games/UE_5.8/Engine/Binaries/Mac/UnrealEditor.app/Content
 if ! "$UE" "$PROJ/CRICKETGAME.uproject" /Game/Cricket26/Maps/L_SuperOver \
     -game -C26GoldenGate -C26GateDir="$DEST" -windowed -ResX=1600 -ResY=900 \
     -nosplash -abslog="$PROJ/Artifacts/$LABEL.log" "$@" >/dev/null 2>&1; then
-    rg 'C26_GATE_.*(FAIL|TIMEOUT)|Error:' "$PROJ/Artifacts/$LABEL.log" || true
+    grep -aE 'C26_GATE_.*(FAIL|TIMEOUT)|Error:' "$PROJ/Artifacts/$LABEL.log" || true
     exit 1
 fi
-rg 'C26_GATE_(PASS|CONTACT|RELEASE|FRAME_TIME)' "$PROJ/Artifacts/$LABEL.log"
-rg -q 'C26_GATE_PASS failures=0' "$PROJ/Artifacts/$LABEL.log"
+# grep, not rg: ripgrep is not installed on every machine this runs on, and until this changed
+# the script's own reporting step exited 127 under `set -e`, so the gate could never actually
+# fail a caller. -a because the editor log is not guaranteed to be clean UTF-8.
+grep -aE 'C26_GATE_(PASS|CONTACT|RELEASE|FRAME_TIME)' "$PROJ/Artifacts/$LABEL.log"
+grep -aq 'C26_GATE_PASS failures=0' "$PROJ/Artifacts/$LABEL.log"

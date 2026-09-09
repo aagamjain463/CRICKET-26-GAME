@@ -15,13 +15,17 @@ the simulation or the match flow. `C26_GATE_PASS failures=0` is the bar.
 
 Character fidelity is now the visible bottleneck, in this order:
 
-1. **Torso silhouette.** `SK_Cricketer_KitBase` renders the shirt as one smooth
-   volume; the near arm merges into the chest at replay distance. Needs sleeve
-   and shoulder separation, not more polygons.
-2. **Head and face.** The head is a dark mass under the helmet at any distance
-   closer than the broadcast lens. The grille resolves; the face does not.
-3. **Bowler run-up weight.** The toe-off roll now applies to every lifted foot,
-   so the run-up should be re-inspected in `02_runup` for knee drive and lean.
+1. **Head and face.** The head is a dark mass under the helmet at any distance
+   closer than the broadcast lens. The grille resolves; the face does not. This
+   is the most obvious remaining prototype signal in `0_10_replay_contact.png`.
+2. **The gather is 0.31 s long.** `C26Field::ReleasePoseTime` and the bowling
+   arm arc are derived from each other: the arm reaches the top of its circle at
+   `ActionTime == ReleasePoseTime` exactly, which is what keeps the ball leaving
+   the hand. Lengthening the gather means re-deriving both together, and it
+   touches release synchronisation, so do it deliberately and re-run the gate.
+3. **Outfield and stadium.** Only after the athletes stop being the weakest
+   thing on screen. The brief is explicit that a beautiful stadium around poor
+   cricket motion is the wrong order.
 
 Do not expand the stadium, the crowd or the shot library. Premium authored or
 captured cricket motion is still an open asset gate: the stroke is procedural

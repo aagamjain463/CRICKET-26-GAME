@@ -435,7 +435,8 @@ void AC26Athlete::Configure(EC26Role NewRole,int Team,int Number)
     PadL->SetVisibility(Guarded);PadR->SetVisibility(Guarded);
     GloveL->SetVisibility(Guarded);GloveR->SetVisibility(Guarded);
     Helmet->SetRelativeScale3D(FVector(.235,.250,.250));
-    Peak->SetRelativeScale3D(FVector(.150,.215,.038));
+    // An umpire's sun hat has a brim all the way round; a player's cap peaks forward only.
+    Peak->SetRelativeScale3D(Role==EC26Role::Umpire?FVector(.150,.215,.038):FVector(.155,.172,.034));
     // Local X is depth (out the front of the shin), Y is width across it, Z is along it. The pad has
     // to be visibly wider and deeper than the trouser tube underneath or the leg extrudes through it.
     const FVector PadSize=Keeping?FVector(.88,.82,.78):FVector(1);
@@ -599,6 +600,18 @@ void AC26Athlete::UpdateUniform()
     // and no extra skeletons; distant players can update this with their reduced pose cadence.
     TArray<FVector> Vertices,Normals,StripeV,StripeN,SleeveV,SleeveN;TArray<int32> Indices,StripeT,SleeveT;
     TArray<FVector2D> UV,StripeUV,SleeveUV;TArray<FLinearColor> Colors;TArray<FProcMeshTangent> Tangents;
+    // A tube's ring frame is built by crossing the limb against a reference axis. RigForward alone
+    // degenerates whenever a limb points along it -- a fully horizontal dive or reach -- and the
+    // cross product collapses toward zero, taking every normal on that ring with it. This is a
+    // latent guard, not a fix for anything currently on screen: the run-up's bright leading thigh
+    // measures the same luma with and without it, so that contrast is real key light on a raised
+    // thigh against a self-shadowed trailing leg. Roll the reference toward vertical as the limb
+    // approaches horizontal; a circular tube is rotationally symmetric, so the roll costs nothing.
+    auto Upright=[](const FVector& Along)
+    {
+        const float Align=FMath::Abs(FVector::DotProduct(Along,RigForward));
+        return FMath::Lerp(RigForward,FVector::UpVector,FMath::SmoothStep(.84f,.99f,Align)).GetSafeNormal();
+    };
     auto Leg=[&](const FString& Side,float Sign)
     {
         const int H=Bone(Side+TEXT("UpLeg")),K=Bone(Side+TEXT("Leg")),F=Bone(Side+TEXT("Foot"));
@@ -614,7 +627,7 @@ void AC26Athlete::UpdateUniform()
         for(int Row=0;Row<5;++Row)
         {
             const FVector Along=(Centers[FMath::Min(4,Row+1)]-Centers[FMath::Max(0,Row-1)]).GetSafeNormal();
-            const FVector Across=FVector::CrossProduct(Along,RigForward).GetSafeNormal();
+            const FVector Across=FVector::CrossProduct(Along,Upright(Along)).GetSafeNormal();
             const FVector Front=FVector::CrossProduct(Across,Along).GetSafeNormal();
             for(int J=0;J<Sides;++J)
             {
@@ -646,7 +659,7 @@ void AC26Athlete::UpdateUniform()
         // Shoulder, upper bicep, sleeve, hem. A 185 cm athlete's bicep is about 13 cm across; the
         // cloth sits just outside that, and only the hem flares.
         const float Widths[]={9.4f,7.4f,6.7f,7.1f};
-        const FVector Across=FVector::CrossProduct(Along,RigForward).GetSafeNormal(UE_SMALL_NUMBER,FVector::UpVector);
+        const FVector Across=FVector::CrossProduct(Along,Upright(Along)).GetSafeNormal(UE_SMALL_NUMBER,FVector::UpVector);
         const FVector Front=FVector::CrossProduct(Across,Along).GetSafeNormal();
         const int Base=SleeveV.Num();constexpr int Sides=10;
         for(int Row=0;Row<4;++Row)for(int J=0;J<Sides;++J)
@@ -704,6 +717,17 @@ void AC26Athlete::Animate(float Dt)
         FL=Rig(Gait*47,-9,AnkleZ+FMath::Max(0.f,Gait)*24);
         FR=Rig(-Gait*47,9,AnkleZ+FMath::Max(0.f,-Gait)*24);
         LH=Rig(-Gait*38,-21,114);RH=Rig(Gait*38,21,114);
+        if(Role==EC26Role::Bowler)
+        {
+            // A fast bowler's approach, not a jog. Longer stride, high knee drive, and arms that
+            // pump with the elbows tucked and the leading hand rising as it comes through. The
+            // neutral run stays as it is for fielders and for running between the wickets.
+            FL=Rig(Gait*50,-8,AnkleZ+FMath::Max(0.f,Gait)*33);
+            FR=Rig(-Gait*50,8,AnkleZ+FMath::Max(0.f,-Gait)*33);
+            LH=Rig(-Gait*31,-16,119+FMath::Max(0.f,-Gait)*13);
+            RH=Rig(Gait*31,16,119+FMath::Max(0.f,Gait)*13);
+            LeanForward=18.f;
+        }
     }
     else if(Batting)
     {

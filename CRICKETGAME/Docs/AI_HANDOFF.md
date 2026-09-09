@@ -63,6 +63,23 @@ All in `Source/CRICKETGAME/SuperOver/`. Rules, scoring, innings and Super Over l
   Every kit judgement in this session came from it, e.g.
   `python3 Tools/CropFrame.py Artifacts/Captures/<label>/0_10_replay_contact.png /tmp/a.png 480,230,620,480 2`
 
+### Second pass in the same session — bowler approach and gate portability
+
+- **`Tools/GoldenGate.sh` could never fail a caller.** Its reporting step used `rg`, which is not
+  installed here, so under `set -e` the script exited 127 after a perfectly good run. It uses
+  `grep -aE` now. If you are reading a handoff that claims the gate passed, check that the claim
+  came from a run after this fix.
+- **Fast bowler approach.** `Role==Bowler && Action==Running` gets a longer stride (50 cm), a high
+  knee drive (33 cm, was 24), arms pumping with the elbows tucked and the leading hand rising, and
+  18 degrees of lean. Fielders and running between the wickets keep the neutral run untouched.
+- **Cap versus sun hat.** The peak is narrower and forward-only for players; only the umpire keeps
+  the full brim.
+- **Latent normal-frame guard.** Limb tubes crossed against `RigForward`, which degenerates when a
+  limb points along it. There is now a blended reference that rolls toward vertical. Be clear about
+  what this did: it is a guard, **not** a fix for anything visible. The run-up's bright leading
+  thigh measures luma 129 against 74 for the rest of the same kit both before and after the change,
+  so that contrast is genuine key light on a raised thigh beside a self-shadowed trailing leg.
+
 ### Known issues, honestly
 
 - The shirt is one smooth volume: the near arm merges into the chest in replay close-ups. This is
