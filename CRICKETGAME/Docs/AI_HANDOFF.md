@@ -1,6 +1,185 @@
 # CRICKET 26 — AI HANDOFF
 
-## Claude (Opus 5) continuation — 2026-09-09, later than the Codex section below
+## Claude (Opus 5) continuation — 2026-09-09, kit and drive pose. Supersedes the sections below.
+
+Branch `work/golden-delivery-contact`. Commits `4f5ab04` (rendered golden gate) and the kit/pose
+commit that follows it. Build **succeeds**, automation **3/3 PASS**
+(`Cricket26.Rules.SuperOver`, `Cricket26.Simulation.GoldenDelivery`,
+`Cricket26.Simulation.Trajectories`), `C26_GATE_PASS failures=0 frames=25` on every run,
+and `-C26Smoke` completed **10/10 autonomous matches with 0 errors**
+(`C26_SMOKE_PASS matches=10 boundaries=32 wickets=18 replays=50 extras=2 actors=14`,
+`Artifacts/smoke_kit.log`). The smoke ran on the binary containing the pose, pad, glove and
+helmet work; the sleeves landed after it and are an additive mesh section with no gameplay
+coupling, verified by a further gate run (`gate_sleeve2`).
+
+### The gate is now the tool to use
+
+`bash Tools/GoldenGate.sh <label>` renders drive -> miss -> restart -> drive in about 90 s and
+asserts against the **rendered** frame rather than the simulation's intent. It writes
+`Artifacts/Captures/<label>/*.png` and `Artifacts/<label>.log`. It measures:
+
+- `C26_GATE_RELEASE hand_gap_cm` — the ball's distance from the bowler's hand on the release frame.
+- `C26_GATE_CONTACT gap_cm` and `ball_local` — the ball's distance from the **generated bat blade
+  triangles**, and where down the blade it landed. The blade runs local Z 0 to -83; -58 is the
+  widest point of the willow, and is where a middled drive belongs.
+- One score commit per delivery, a clean `Rules.Epoch` after restart, replay and time dilation
+  cleared, and frame times over the run-up/delivery/in-play window (desktop only, not a device claim).
+
+Current numbers: `hand_gap_cm=0.000`, contact `gap_cm=0.523` at `Z=-57.9`, `failures=0`,
+mean 20.4 ms / p95 22.3 ms with screenshots on, in-editor, on this Mac.
+
+### What this session changed
+
+All in `Source/CRICKETGAME/SuperOver/`. Rules, scoring, innings and Super Over logic untouched.
+
+- **`Tests/C26GoldenGate.cpp` + `Tools/GoldenGate.sh`** (from the previous agent's working tree,
+  verified and committed here) — the harness described above.
+- **Contact on the meat of the bat.** The contact solver in `C26Athlete::Animate` now pulls the
+  grip to `Contact + Dir*61.5` as well as pivoting the blade through the ball. Measured contact
+  moved -75.7 cm (the toe) -> -69.9 -> **-57.9 cm** as the pose work below let the arms reach.
+- **`BuildGloves()`** — batting gloves are real geometry: flared cuff, closed fist, four separate
+  finger rolls arcing over the knuckles, thumb up the side. They were scaled engine spheres, which
+  read as one white lump where the batter's hands should be. `GloveL/GloveR` are now
+  `UProceduralMeshComponent`.
+- **`BuildPads()`** — batting pads are real geometry: three bolsters, a knee roll, and wings that
+  carry past the widest part of the leg. The old scaled sphere was 20.5 cm wide and pushed 4.2 cm
+  forward, so from the gameplay camera — which watches the striker **from behind** — it vanished
+  entirely behind his own calf and the batter appeared to be batting without pads. `PadL/PadR` are
+  now `UProceduralMeshComponent`.
+- **Helmet ear and nape coverage** — `Shell` section 1 is a skirt whose drop is driven by azimuth,
+  so the opening sweeps up over the face instead of being cut as a hole. A bare crown read as a cap
+  from every side angle. A fielder's cap hides section 1 and keeps the squashed crown.
+- **The drive is a drive, not a squat.** Batting `Crouch` was a fixed -23 cm hip drop for the whole
+  stroke. It is now -13 cm in the stance, dipping to -23 at contact and recovering through the
+  follow-through, and a new `Shift` moves the **pelvis forward** onto the striding foot (17 cm on a
+  straight drive). `LeanForward` at contact went 28 -> 38 degrees. This is what moved the contact
+  point onto the middle of the blade: the arms are only 51.8 cm long (`C26_RIG armspan`), so the
+  body has to travel or the bat can only reach the ball with its toe.
+- **Lifted feet roll onto the toe.** Every foot was pinned to its reference rotation, so any foot
+  off the ground hung flat in the air — the back heel of a drive and every stride of the bowler's
+  run-up. Lift now drives up to 36 degrees of toe-down.
+- **`Tools/CropFrame.py`** — crops and nearest-neighbour magnifies a region of a capture PNG,
+  stdlib only. `SamplePixels.py` answers "what colour is this"; this answers "what shape is this".
+  Every kit judgement in this session came from it, e.g.
+  `python3 Tools/CropFrame.py Artifacts/Captures/<label>/0_10_replay_contact.png /tmp/a.png 480,230,620,480 2`
+
+### Second pass in the same session — bowler approach and gate portability
+
+- **`Tools/GoldenGate.sh` could never fail a caller.** Its reporting step used `rg`, which is not
+  installed here, so under `set -e` the script exited 127 after a perfectly good run. It uses
+  `grep -aE` now. If you are reading a handoff that claims the gate passed, check that the claim
+  came from a run after this fix.
+- **Fast bowler approach.** `Role==Bowler && Action==Running` gets a longer stride (50 cm), a high
+  knee drive (33 cm, was 24), arms pumping with the elbows tucked and the leading hand rising, and
+  18 degrees of lean. Fielders and running between the wickets keep the neutral run untouched.
+- **Cap versus sun hat.** The peak is narrower and forward-only for players; only the umpire keeps
+  the full brim.
+- **Latent normal-frame guard.** Limb tubes crossed against `RigForward`, which degenerates when a
+  limb points along it. There is now a blended reference that rolls toward vertical. Be clear about
+  what this did: it is a guard, **not** a fix for anything visible. The run-up's bright leading
+  thigh measures luma 129 against 74 for the rest of the same kit both before and after the change,
+  so that contrast is genuine key light on a raised thigh beside a self-shadowed trailing leg.
+
+### Final verification on the committed binary
+
+Build succeeds. Automation 3/3 PASS. `C26_GATE_PASS failures=0 frames=25` with
+`hand_gap_cm=0.000` and contact `gap_cm=0.523` at `Z=-57.9`, from a gate run made after the
+ripgrep fix, so the exit code is meaningful. `-C26Smoke` on the final binary:
+`C26_SMOKE_PASS matches=10 boundaries=18 wickets=19 replays=37 extras=2 actors=14`, 0 errors
+(`Artifacts/smoke_final.log`). Desktop editor frame time over a delivery: mean 20.8 ms,
+p95 23.0 ms with screenshots on. That is not a device measurement and must not be quoted as one.
+
+### Known issues, honestly
+
+- The shirt is one smooth volume: the near arm merges into the chest in replay close-ups. This is
+  the next visible bottleneck and it is in `SK_Cricketer_KitBase`, not in the procedural kit.
+- The head under the helmet is an undetailed dark mass at close range.
+- A thin dark wedge sits where the front pad's top meets the trouser. It reads as thigh shadow on
+  the pad, not as a geometry break, but it has not been proven to be shadow.
+- Cricket motion is still **procedural and refined, not authored or captured**. The premium-motion
+  asset gate is OPEN. Do not describe the stroke as mocap.
+- No on-device measurement exists. The frame times above are desktop editor numbers.
+
+### Next exact task
+
+Torso and sleeve silhouette on `SK_Cricketer_KitBase` so the arms separate from the chest, then
+re-run `Tools/GoldenGate.sh` and inspect `0_10_replay_contact.png` with `CropFrame.py`.
+
+---
+
+## Active continuation — superseded by the section above
+
+Branch: `work/golden-delivery-contact`. Last tested checkpoint: `322e23c`.
+Milestone: Golden Delivery repair; premium motion gate remains OPEN.
+Fresh baseline build succeeds, automation 3/3 passes, rendered capture 17/17
+completes a Super Over (`audit_baseline_0909`). See `TRANSFORMATION_AUDIT.md` and
+`CURRENT_TASK.md`. Changed so far: seven memory/audit documents; no imported assets.
+Relevant assets: L_SuperOver, SK_Cricketer, four generic animation clips.
+Known issues: procedural cricket motion, cropped striker feet, floating helmet,
+cloth skin exposure, unmeasured rendered contact. Next exact task: deterministic
+runtime contact/release measurement and drive/miss/reset capture before repairs.
+No on-device/mobile performance claim. Historical "golden" claims below are not
+the user's premium quality acceptance.
+
+## Golden Delivery session — 2026-09-09 (Muse Spark, supersedes nothing, extends the Claude section)
+
+Task: first AAA quality transformation of ONE delivery. The base was already strong (scale,
+broadcast lens, hand release, contact-anchored cameras all verified in captures), so this session
+made targeted upgrades and verified each one in rendered frames. Build **succeeds**, automation
+**3/3 PASS** (incl. new `Cricket26.Simulation.GoldenDelivery`), captures **17/17** twice
+(`Artifacts/Captures/golden_01/`, `golden_02/`), smoke **6 full matches clean, 0 errors**
+(killed by operator timeout at match 7, not by a failure — see `Artifacts/smoke_golden.log`).
+
+### What changed (all in `Source/CRICKETGAME/SuperOver/`, rules/scoring untouched)
+
+- `C26MatchGameMode.cpp` — ball render 1.0x → **1.6x** real size (physics stays 3.6 cm; a
+  true-size ball is ~3 px on a phone; old dead 3.5x line removed). Distance-based run-up
+  **footsteps** (`fielder_gather` @ 0.10 vol every ~95 cm from `LastStepY`, init at the mark in
+  `StartDelivery`). **Crowd swell** (`crowd_anticipation`, was shipped but never loaded/cued)
+  under the bat sound, scaled by contact quality. `-C26Debug` trail (RunUp/Delivery/InPlay) +
+  green release sphere + gold contact sphere via `DrawDebugHelpers`; dev only, off in captures.
+- `C26Audio.cpp` — manifest adds `crowd_anticipation`; `fielder_*` joins the pitch/gain-varied
+  impact group so footsteps never machine-gun.
+- `C26CameraDirector.cpp` — batting lens punched in: (310,2300,400) @ **36°** (was
+  (322,2455,432) @ 37°); contact-hold shot matched. Lofted tracking **tightens FOV with height**
+  (tower + chase) instead of zooming out into a pixel-ball. Running/square camera aims at the
+  ball's **ground line** (Z clamped 320) so skiers no longer tilt up into the stands.
+  Replay close-up is **loft-aware** (aim hands to the ball .62/.55 when aerial vs .42/.20).
+- `C26Athlete.cpp` — straight-drive emphasis for |angle|≤15° non-loft: front stride 26→34 cm
+  amplitude, +4° forward lean, squarer chest. Trouser knee/calf radii 7.1/6.4 → 7.8/7.0 to stop
+  skin peeking through in replay close-ups.
+- `Tests/C26Automation.cpp` — new `Cricket26.Simulation.GoldenDelivery`: hand release origin,
+  readable timescale, +Y incoming, pre-contact bounce, contact at striker's end, Perfect/Good
+  `STRAIGHT DRIVE` with quality >.5, contact point == ball (no teleport), -Y redirect with
+  |Vx|<|Vy|, grounded launch, finite 2 s rollout.
+- `C26Stadium.cpp` — unity-build `-Wshadow` fix: `MakeSign` param `Ink` → `Glyph` (baseline did
+  not compile on receipt; `Teal` clash from STATUS was already gone).
+
+### Verified in captures (golden_02 vs fx_01 baseline)
+
+- `08_delivery_batting`: bowler's arm at release, **ball clearly visible mid-pitch** (was ~3 px).
+- `09_in_play`: PERFECT contact, batter follow-through with visible bat, ball readable in flight.
+- `10_fielding`: was a frame of empty stands; now a proper square running-camera frame (both
+  batters, bowler follow-through, umpire, fielders).
+- `12_replay`: was ball stranded near the rope while the bat swung at air; now ball and bat in
+  one slow-mo frame (incl. a bowled at 0.28x with the ball inches from the bat).
+
+### Known visual limits (genuine, not excuses)
+
+- Gloves still read as smooth blobs at replay distance (needs knuckle/cuff silhouette).
+- Tiny skin peek can survive above the front pad in extreme close-ups (thigh vs pad top).
+- Helmet reads as a cap from pure side angles; grille only resolves from the front.
+- No dedicated footstep sample yet — footsteps reuse `fielder_gather` quietly.
+
+### Next, in order
+
+1. Crowd/anticipation mix pass on device speakers; consider one synthesized soft footstep.
+2. Glove silhouette + helmet side profile (cheap geometry, big replay payoff).
+3. `stat unit` profile of a representative delivery; record in SUPER_OVER_STATUS.
+4. HUD safe areas for 19.5:9/20:9; mobile quality tiers → `CrowdQuality`.
+5. Continue brief priorities: backup-fielder polish, running-between-wickets polish.
+
+---## Claude (Opus 5) continuation — 2026-09-09, later than the Codex section below
 
 **This section supersedes the Codex section that follows it.** BUG C (blue ground) is fixed and
 the two root causes Codex identified were both applied and verified in rendered captures.

@@ -48,4 +48,35 @@ bool FC26TrajectoryTest::RunTest(const FString& Parameters)
     TestFalse(TEXT("Rope six has no ground contact initially"),Sim.Ball.PostHitBounce);
     return true;
 }
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FC26GoldenDeliveryTest,"Cricket26.Simulation.GoldenDelivery",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
+bool FC26GoldenDeliveryTest::RunTest(const FString& Parameters)
+{
+    // ONE golden delivery: genuine pace from the hand, one pitching bounce, one front-foot
+    // straight drive timed dead centre. Locks the hand -> bounce -> contact -> redirect chain.
+    FC26Simulation Sim;Sim.Tuning=FC26Tuning();
+    FC26DeliveryPlan Pace; // Defaults: Pace, 460 length, 3250 speed.
+    const FVector Hand(-20.f,-940.f,210.f);
+    Sim.Release(Pace,Hand);
+    TestTrue(TEXT("Golden: ball leaves the bowling hand"),Sim.Ball.Active&&Sim.Ball.Position.Equals(Hand,1.f));
+    TestTrue(TEXT("Golden: delivery arrives on a readable timescale"),Sim.ContactTime>.3f&&Sim.ContactTime<1.3f);
+    const float IncomingY=Sim.Ball.Velocity.Y;
+    TestTrue(TEXT("Golden: delivery travels toward the striker"),IncomingY>0);
+    Sim.Step(Sim.ContactTime);
+    TestTrue(TEXT("Golden: ball pitched before reaching the bat"),Sim.Ball.Bounced);
+    TestTrue(TEXT("Golden: contact happens at the striker's end"),FMath::Abs(Sim.Ball.Position.Y-C26Field::ContactY)<5.f);
+    FC26ShotIntent Drive;Drive.Angle=0;Drive.Power=.8f;Drive.Stride=.75f;Drive.Footwork=0;Drive.Loft=false;Drive.Defend=false;
+    FRandomStream R(260026);
+    auto Contact=Sim.Hit(Drive,0,1,R);
+    TestTrue(TEXT("Golden: centred straight drive is clean contact"),
+        Contact.Timing==EC26Timing::Perfect||Contact.Timing==EC26Timing::Good);
+    TestEqual(TEXT("Golden: the call is a straight drive"),Contact.Shot,TEXT("STRAIGHT DRIVE"));
+    TestTrue(TEXT("Golden: contact quality is high"),Contact.Quality>.5f);
+    TestTrue(TEXT("Golden: contact point is the ball, not a teleport"),
+        Contact.ContactPoint.Equals(Sim.Ball.Position,1.f));
+    TestTrue(TEXT("Golden: trajectory redirects back down the ground"),Sim.Ball.Velocity.Y<0&&FMath::Abs(Sim.Ball.Velocity.X)<FMath::Abs(Sim.Ball.Velocity.Y));
+    TestTrue(TEXT("Golden: drive leaves at a grounded height"),Sim.Ball.Position.Z<200.f&&Sim.Ball.Velocity.Z<900.f);
+    for(int Step=0;Step<480&&Sim.Ball.Active;++Step)Sim.Step(1.f/240.f);
+    TestFalse(TEXT("Golden: post-contact trajectory stays finite"),Sim.Ball.Position.ContainsNaN());
+    return true;
+}
 #endif

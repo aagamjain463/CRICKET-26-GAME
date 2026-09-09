@@ -1,4 +1,5 @@
 #include "C26Athlete.h"
+#include "C26Types.h"
 #include "Engine/SkeletalMesh.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
@@ -13,7 +14,7 @@ namespace
 // Length from the top of the handle to the toe of the blade, and how far below the hands the ball
 // meets the middle of the blade. Both are real bat dimensions and both are used by the posing code,
 // so bat, hands and contact point can never drift apart.
-constexpr float BatLength=83.f;
+constexpr float BatLength=C26Field::BatLength;
 constexpr float MiddleDrop=62.f;
 /** Mesh-space forward for the imported rig. */
 const FVector RigForward(0,1,0);
@@ -40,7 +41,7 @@ AC26Athlete::AC26Athlete()
     // turning to the middle, the striker facing the bowler, the bowler running in -- points the
     // right way. Without this the whole side stands square to the play.
     Mesh->SetRelativeRotation(FRotator(0,-90,0));
-    static ConstructorHelpers::FObjectFinder<USkeletalMesh> Player(TEXT("/Game/Cricket26/Characters/SK_Cricketer.SK_Cricketer"));
+    static ConstructorHelpers::FObjectFinder<USkeletalMesh> Player(TEXT("/Game/Cricket26/Characters/SK_Cricketer_KitBase.SK_Cricketer_KitBase"));
     if(Player.Succeeded())Mesh->SetSkinnedAssetAndUpdate(Player.Object);
     Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);Mesh->SetCastShadow(true);
     // Equipment rides in mesh space so it shares one frame with the posed skeleton.
@@ -57,17 +58,19 @@ AC26Athlete::AC26Athlete()
     ShirtNumber->SetWorldSize(19);ShirtNumber->SetTextRenderColor(FColor(213,237,231));ShirtNumber->SetCastShadow(false);
     Helmet=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Helmet"));Helmet->SetupAttachment(Mesh);
     Peak=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HelmetPeak"));Peak->SetupAttachment(Mesh);
-    PadL=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LeftPad"));PadL->SetupAttachment(Mesh);
-    PadR=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("RightPad"));PadR->SetupAttachment(Mesh);
-    GloveL=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LeftGlove"));GloveL->SetupAttachment(Mesh);
-    GloveR=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("RightGlove"));GloveR->SetupAttachment(Mesh);
+    PadL=CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("LeftPad"));PadL->SetupAttachment(Mesh);
+    PadR=CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("RightPad"));PadR->SetupAttachment(Mesh);
+    PadL->SetCollisionEnabled(ECollisionEnabled::NoCollision);PadR->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    GloveL=CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("LeftGlove"));GloveL->SetupAttachment(Mesh);
+    GloveR=CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("RightGlove"));GloveR->SetupAttachment(Mesh);
+    GloveL->SetCollisionEnabled(ECollisionEnabled::NoCollision);GloveR->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     // The contact shadow lives on the actor root, not on Mesh: athletes are only ever yawed, so it
     // stays flat on the turf without having to undo the rig's -90 mesh rotation every frame.
     Shade=CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("ContactShadow"));Shade->SetupAttachment(RootComponent);
     Shade->SetCollisionEnabled(ECollisionEnabled::NoCollision);Shade->SetCastShadow(false);
     Shade->bReceivesDecals=false;Shade->SetTranslucentSortPriority(-4);
     static ConstructorHelpers::FObjectFinder<UStaticMesh> Sphere(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
-    for(auto* P:{Helmet.Get(),Peak.Get(),PadL.Get(),PadR.Get(),GloveL.Get(),GloveR.Get()})
+    for(auto* P:{Helmet.Get(),Peak.Get()})
     {P->SetStaticMesh(Sphere.Object);P->SetCollisionEnabled(ECollisionEnabled::NoCollision);P->SetCastShadow(true);}
     // Every component here defaults to Static mobility, which is what CreateDefaultSubobject gives
     // you. A static primitive is never entered into the dynamic shadow pass, so until this loop
@@ -172,7 +175,135 @@ void AC26Athlete::BuildEquipment()
     }
     for(int R=0;R<CrownRings-1;++R)for(int J=0;J<CrownSides;++J)
     {int A=R*CrownSides+J,B=R*CrownSides+(J+1)%CrownSides;T.Append({A,A+CrownSides,B,B,A+CrownSides,B+CrownSides});}
-    Shell->CreateMeshSection_LinearColor(0,V,T,N,UV,C,Tan,false);
+    // Ear and nape coverage. A bare crown reads as a cap from every side angle, which is exactly
+    // how the helmet looked in replay close-ups. A cricket helmet drops over the ears and the back
+    // of the skull and stops at the cheekbone, leaving the face open behind the grille. The drop is
+    // driven by azimuth so the opening sweeps up over the face instead of being cut as a hard hole.
+    // Section 1, so a fielder's cap can hide it and keep the squashed crown.
+    V.Reset();T.Reset();N.Reset();UV.Reset();
+    constexpr int SkirtRings=4;
+    for(int R=0;R<SkirtRings;++R)for(int J=0;J<CrownSides;++J)
+    {
+        const float A=J*2*PI/CrownSides,Rear=(1.f-FMath::Cos(A))*.5f;
+        const float Shape=FMath::SmoothStep(.02f,.42f,Rear),Fall=R/float(SkirtRings-1);
+        const FVector Side(FMath::Cos(A),FMath::Sin(A),0);
+        const FVector Point=Side*FVector(12.3,11.8,0)*(1.f-.13f*Fall*Fall)-FVector(0,0,9.f*Shape*Fall);
+        V.Add(Point);N.Add((Side+FVector(0,0,-.35f*Fall)).GetSafeNormal());
+        UV.Add(FVector2D(J/float(CrownSides),.5f+Fall*.5f));
+    }
+    for(int R=0;R<SkirtRings-1;++R)for(int J=0;J<CrownSides;++J)
+    {int A=R*CrownSides+J,B=R*CrownSides+(J+1)%CrownSides;T.Append({A,A+CrownSides,B,B,A+CrownSides,B+CrownSides});}
+    Shell->CreateMeshSection_LinearColor(1,V,T,N,UV,C,Tan,false);
+    BuildGloves();BuildPads();
+}
+// A batting glove, not a ball of padding. Local Z runs wrist to fingertip, local +X is the back of
+// the hand: the same frame PlaceGlove poses it in. Built as a flared cuff and fist, four separate
+// finger rolls curling over the knuckles, and a thumb up the side. The previous glove was a scaled
+// engine sphere -- at broadcast and replay distance the batter's hands read as one white lump.
+void AC26Athlete::BuildGloves()
+{
+    for(int Hand=0;Hand<2;++Hand)
+    {
+        UProceduralMeshComponent* Glove=Hand?GloveR:GloveL;
+        const float Across=Hand?1.f:-1.f;
+        TArray<FVector> V,N;TArray<int32> T;TArray<FVector2D> UV;TArray<FLinearColor> C;TArray<FProcMeshTangent> Tan;
+        // Sweep a circular section along a path. Winding matches the bat's ring loop, so the
+        // outside faces out; the ends close with a fan onto a single apex.
+        auto Tube=[&](const TArray<FVector>& Path,const TArray<float>& Radius,int Sides)
+        {
+            const int Base=V.Num(),Steps=Path.Num();
+            for(int P=0;P<Steps;++P)
+            {
+                const FVector Axis=(P+1<Steps?Path[P+1]-Path[P]:Path[P]-Path[P-1]).GetSafeNormal(UE_SMALL_NUMBER,FVector::UpVector);
+                FVector Across2=FVector::CrossProduct(FVector(0,1,0),Axis);
+                if(Across2.SizeSquared()<1e-4f)Across2=FVector::CrossProduct(FVector(1,0,0),Axis);
+                Across2=Across2.GetSafeNormal();
+                const FVector Up=FVector::CrossProduct(Axis,Across2).GetSafeNormal();
+                for(int J=0;J<Sides;++J)
+                {
+                    const float A=2*PI*J/Sides;
+                    const FVector Normal=Across2*FMath::Cos(A)+Up*FMath::Sin(A);
+                    V.Add(Path[P]+Normal*Radius[P]);N.Add(Normal);UV.Add(FVector2D(J/float(Sides),P/float(Steps-1)));
+                }
+            }
+            for(int P=0;P+1<Steps;++P)for(int J=0;J<Sides;++J)
+            {const int A=Base+P*Sides+J,B=Base+P*Sides+(J+1)%Sides;T.Append({A,B,A+Sides,B,B+Sides,A+Sides});}
+            for(int End=0;End<2;++End)
+            {
+                const int Row=End?Steps-1:0,RowBase=Base+Row*Sides,Apex=V.Num();
+                const FVector Out=(End?Path[Row]-Path[Row-1]:Path[0]-Path[1]).GetSafeNormal(UE_SMALL_NUMBER,FVector::UpVector);
+                V.Add(Path[Row]+Out*Radius[Row]*.75f);N.Add(Out);UV.Add(FVector2D(.5f,float(End)));
+                for(int J=0;J<Sides;++J)
+                {
+                    const int A=RowBase+J,B=RowBase+(J+1)%Sides;
+                    if(End)T.Append({A,B,Apex});else T.Append({Apex,B,A});
+                }
+            }
+        };
+        // Cuff mouth, wrist waist, then the swell of a closed fist.
+        TArray<FVector> Path;TArray<float> Radius;
+        for(const FVector& Point:{FVector(0,0,-10.2),FVector(0,0,-7.6),FVector(0,0,-6.0),FVector(0,0,-3.0),
+                                  FVector(0,0,.6),FVector(0,0,3.0),FVector(0,0,4.6)})Path.Add(Point);
+        for(float Girth:{4.50f,4.15f,3.75f,4.35f,4.55f,4.15f,3.10f})Radius.Add(Girth);
+        Tube(Path,Radius,8);
+        // Four rolls arcing from the knuckles over the top of the fist and down the palm side.
+        const float Roll[4]={1.30f,1.42f,1.36f,1.14f};
+        for(int Finger=0;Finger<4;++Finger)
+        {
+            Path.Reset();Radius.Reset();
+            const float Y=Across*((Finger-1.5f)*2.5f),Length=3.5f-.28f*FMath::Max(0,Finger-2);
+            for(int Step=0;Step<6;++Step)
+            {
+                const float Angle=FMath::DegreesToRadians(FMath::Lerp(72.f,-78.f,Step/5.f));
+                Path.Add(FVector(.2f+FMath::Sin(Angle)*Length,Y,2.6f+FMath::Cos(Angle)*Length));
+                Radius.Add(Roll[Finger]*(Step==0?.86f:Step==5?.80f:Step==1||Step==4?.96f:1.f));
+            }
+            Tube(Path,Radius,6);
+        }
+        Path.Reset();Radius.Reset();
+        for(const FVector& Point:{FVector(.8f,Across*3.6f,-3.4f),FVector(2.2f,Across*4.0f,-.6f),
+                                  FVector(3.4f,Across*3.4f,1.8f),FVector(3.9f,Across*2.4f,3.4f)})Path.Add(Point);
+        for(float Thick:{1.75f,1.60f,1.40f,1.15f})Radius.Add(Thick);
+        Tube(Path,Radius,6);
+        Glove->CreateMeshSection_LinearColor(0,V,T,N,UV,C,Tan,false);
+    }
+}
+// A batting pad, not a scaled sphere. Local Z runs up the shin from the instep and +X is the front
+// of the leg: the frame PlacePad poses it in. Three bolsters and a knee roll give the horizontal
+// banding a cricket pad is recognised by, and the wings carry past the widest part of the leg so
+// the pad still reads from behind the striker -- which is the angle the gameplay camera actually
+// watches him from, and the angle at which the old pad disappeared behind his own calf entirely.
+void AC26Athlete::BuildPads()
+{
+    constexpr int Rows=11,Sides=14;
+    const float Height[Rows]={-24.f,-19.f,-14.f,-9.f,-4.f,1.f,6.f,11.f,15.f,18.f,20.5f};
+    const float Wide[Rows]  ={7.4f,9.6f,11.0f,11.4f,11.7f,11.9f,12.1f,12.3f,12.2f,10.6f,7.2f};
+    // Front depth carries the bolsters; the back stays a plain roll behind the calf. Both ends
+    // round off rather than closing on a flat disc, which caught the key light as a dark plate.
+    const float Front[Rows] ={9.4f,10.0f,10.6f,9.9f,10.7f,10.0f,10.8f,11.3f,11.4f,9.8f,7.6f};
+    TArray<FVector> V,N;TArray<int32> T;TArray<FVector2D> UV;TArray<FLinearColor> C;TArray<FProcMeshTangent> Tan;
+    for(int R=0;R<Rows;++R)for(int J=0;J<Sides;++J)
+    {
+        const float A=2*PI*J/Sides,Cos=FMath::Cos(A),Sin=FMath::Sin(A);
+        const float Depth=Cos>=0?Front[R]:FMath::Min(9.4f,Wide[R]*1.02f);
+        V.Add(FVector(Cos*Depth,Sin*Wide[R],Height[R]));
+        N.Add(FVector(Cos/Depth,Sin/Wide[R],R==0?-.55f:R==Rows-1?.55f:0.f).GetSafeNormal());
+        UV.Add(FVector2D(J/float(Sides),R/float(Rows-1)));
+    }
+    for(int R=0;R<Rows-1;++R)for(int J=0;J<Sides;++J)
+    {const int A=R*Sides+J,B=R*Sides+(J+1)%Sides;T.Append({A,B,A+Sides,B,B+Sides,A+Sides});}
+    for(int End=0;End<2;++End)
+    {
+        const int Row=End?Rows-1:0,Base=Row*Sides,Apex=V.Num();
+        V.Add(FVector(0,0,Height[Row]+(End?2.6f:-3.2f)));N.Add(FVector(0,0,End?1.f:-1.f));UV.Add(FVector2D(.5f,float(End)));
+        for(int J=0;J<Sides;++J)
+        {
+            const int A=Base+J,B=Base+(J+1)%Sides;
+            if(End)T.Append({A,B,Apex});else T.Append({Apex,B,A});
+        }
+    }
+    PadL->CreateMeshSection_LinearColor(0,V,T,N,UV,C,Tan,false);
+    PadR->CreateMeshSection_LinearColor(0,V,T,N,UV,C,Tan,false);
 }
 void AC26Athlete::BuildContactShadow()
 {
@@ -287,11 +418,11 @@ void AC26Athlete::Configure(EC26Role NewRole,int Team,int Number)
                 for(int LOD=0;LOD<S->GetLODNum();++LOD)Mesh->ShowMaterialSection(I,0,false,LOD);
         }
     }
-    Uniform->SetMaterial(0,Trousers);Uniform->SetMaterial(1,Make(Team==0?FLinearColor(.10,.40,.43):FLinearColor(.72,.24,.07),.88f));
+    Uniform->SetMaterial(2,Shirt);Uniform->SetMaterial(0,Trousers);Uniform->SetMaterial(1,Make(Team==0?FLinearColor(.10,.40,.43):FLinearColor(.72,.24,.07),.88f));
     Bat->SetMaterial(0,Make(FLinearColor(.315,.258,.158),.60f));
     Bat->SetMaterial(1,Make(FLinearColor(.020,.022,.026),.86f));
     Helmet->SetMaterial(0,Make(Kit*.85f,.30f));Peak->SetMaterial(0,Make(Kit*.85f,.30f));
-    Shell->SetMaterial(0,Make(Kit*.62f,.36f));
+    Shell->SetMaterial(0,Make(Kit*.62f,.36f));Shell->SetMaterial(1,Make(Kit*.55f,.36f));
     Grill->SetMaterial(0,Make(FLinearColor(.045,.050,.058),.34f));
     PadL->SetMaterial(0,Gear);PadR->SetMaterial(0,Gear);
     GloveL->SetMaterial(0,Gear);GloveR->SetMaterial(0,Gear);
@@ -300,15 +431,19 @@ void AC26Athlete::Configure(EC26Role NewRole,int Team,int Number)
     Bat->SetVisibility(Batting);
     Helmet->SetVisibility(false);Shell->SetVisibility(true);Peak->SetVisibility(true);Grill->SetVisibility(Guarded);
     Shell->SetRelativeScale3D(Guarded?FVector(1):FVector(1,1,.68f));
+    // A fielder wears a cap: keep the squashed crown, drop the ear and nape shell.
+    Shell->SetMeshSectionVisible(1,Guarded);
     PadL->SetVisibility(Guarded);PadR->SetVisibility(Guarded);
     GloveL->SetVisibility(Guarded);GloveR->SetVisibility(Guarded);
     Helmet->SetRelativeScale3D(FVector(.235,.250,.250));
-    Peak->SetRelativeScale3D(FVector(.150,.215,.038));
+    // An umpire's sun hat has a brim all the way round; a player's cap peaks forward only.
+    Peak->SetRelativeScale3D(Role==EC26Role::Umpire?FVector(.150,.215,.038):FVector(.155,.172,.034));
     // Local X is depth (out the front of the shin), Y is width across it, Z is along it. The pad has
     // to be visibly wider and deeper than the trouser tube underneath or the leg extrudes through it.
-    const FVector PadSize=Keeping?FVector(.110,.180,.380):FVector(.120,.205,.470);
+    const FVector PadSize=Keeping?FVector(.88,.82,.78):FVector(1);
     PadL->SetRelativeScale3D(PadSize);PadR->SetRelativeScale3D(PadSize);
-    const FVector GloveSize=Keeping?FVector(.185,.170,.245):FVector(.125,.140,.215);
+    // Keeping gauntlets are built from the same glove, wider across the palm and longer in the cuff.
+    const FVector GloveSize=Keeping?FVector(1.34,1.24,1.14):FVector(1);
     GloveL->SetRelativeScale3D(GloveSize);GloveR->SetRelativeScale3D(GloveSize);
     ShirtNumber->SetText(FText::AsNumber(Number));ShirtNumber->SetVisibility(Role!=EC26Role::Umpire);
     SetAction(EC26Action::Ready);
@@ -390,11 +525,14 @@ void AC26Athlete::PlaceKit(const FVector& Grip,const FVector& Dir,bool Batting,b
     {
         const FVector L=Reference[Head].GetRotation().UnrotateVector(RigForward);
         const FVector Face=Pose[Head].GetRotation().RotateVector(L).GetSafeNormal();
-        const FRotator Look=FRotationMatrix::MakeFromXZ(Face,FVector::UpVector).Rotator();
-        const FVector Skull=Pose[Head].GetLocation()+FVector(0,0,14.f)+Face*.8f;
+        const FQuat HeadDelta=Pose[Head].GetRotation()*Reference[Head].GetRotation().Inverse();
+        const FVector Up=HeadDelta.RotateVector(FVector::UpVector);
+        const FRotator Look=FRotationMatrix::MakeFromXZ(Face,Up).Rotator();
+        // Crown offset belongs to the head frame, including its nod/roll, not world vertical.
+        const FVector Skull=Pose[Head].GetLocation()+Up*10.5f+Face*.8f;
         Helmet->SetRelativeLocation(Skull);Helmet->SetRelativeRotation(Look);
         Shell->SetRelativeLocation(Skull);Shell->SetRelativeRotation(Look);
-        Peak->SetRelativeLocation(Skull+Face*9.5f+FVector(0,0,2.5f));Peak->SetRelativeRotation(Look);
+        Peak->SetRelativeLocation(Skull+Face*9.5f+Up*2.5f);Peak->SetRelativeRotation(Look);
         Grill->SetRelativeLocation(Skull);Grill->SetRelativeRotation(Look);
     }
     // Everything below hangs off joints that were actually posed, never off the targets the shot
@@ -427,7 +565,7 @@ void AC26Athlete::PlaceKit(const FVector& Grip,const FVector& Dir,bool Batting,b
         Bat->SetRelativeLocation((Top.IsZero()?Grip:Top)+Shaft*4.5f);
         Bat->SetRelativeRotation(FRotationMatrix::MakeFromZX(Shaft,FaceDir).Rotator());
     }
-    auto PlacePad=[&](UStaticMeshComponent* Pad,const FString& Knee,const FString& Foot)
+    auto PlacePad=[&](UProceduralMeshComponent* Pad,const FString& Knee,const FString& Foot)
     {
         const int K=Bone(Knee),F=Bone(Foot);if(K<0||F<0)return;
         const FVector Kn=Pose[K].GetLocation(),Ft=Pose[F].GetLocation();
@@ -435,11 +573,11 @@ void AC26Athlete::PlaceKit(const FVector& Grip,const FVector& Dir,bool Batting,b
         // A cricket pad runs from above the knee roll down to the instep and wraps the front of the
         // shin. Centring it on the knee-ankle midpoint with a fixed mesh-space offset left the roll
         // off the top and pushed the pad sideways as soon as the batter turned side-on.
-        Pad->SetRelativeLocation(FMath::Lerp(Ft,Kn,.56f)+Shin.GetSafeNormal()*3.5f+Facing*4.2f);
+        Pad->SetRelativeLocation(FMath::Lerp(Ft,Kn,.56f)+Shin.GetSafeNormal()*3.5f+Facing*.8f);
         Pad->SetRelativeRotation(FRotationMatrix::MakeFromZX(Shin,Facing).Rotator());
     };
     PlacePad(PadL,TEXT("LeftLeg"),TEXT("LeftFoot"));PlacePad(PadR,TEXT("RightLeg"),TEXT("RightFoot"));
-    auto PlaceGlove=[&](UStaticMeshComponent* Glove,const FString& Side)
+    auto PlaceGlove=[&](UProceduralMeshComponent* Glove,const FString& Side)
     {
         const int H=Bone(Side+TEXT("Hand")),F=Bone(Side+TEXT("ForeArm"));if(H<0||F<0)return;
         const FVector Along=(Pose[H].GetLocation()-Pose[F].GetLocation()).GetSafeNormal(UE_SMALL_NUMBER,RigForward);
@@ -461,8 +599,20 @@ void AC26Athlete::UpdateUniform()
 {
     // Lightweight cloth envelope follows the same posed joints as the skin. No cloth simulation
     // and no extra skeletons; distant players can update this with their reduced pose cadence.
-    TArray<FVector> Vertices,Normals,StripeV,StripeN;TArray<int32> Indices,StripeT;
-    TArray<FVector2D> UV,StripeUV;TArray<FLinearColor> Colors;TArray<FProcMeshTangent> Tangents;
+    TArray<FVector> Vertices,Normals,StripeV,StripeN,SleeveV,SleeveN;TArray<int32> Indices,StripeT,SleeveT;
+    TArray<FVector2D> UV,StripeUV,SleeveUV;TArray<FLinearColor> Colors;TArray<FProcMeshTangent> Tangents;
+    // A tube's ring frame is built by crossing the limb against a reference axis. RigForward alone
+    // degenerates whenever a limb points along it -- a fully horizontal dive or reach -- and the
+    // cross product collapses toward zero, taking every normal on that ring with it. This is a
+    // latent guard, not a fix for anything currently on screen: the run-up's bright leading thigh
+    // measures the same luma with and without it, so that contrast is real key light on a raised
+    // thigh against a self-shadowed trailing leg. Roll the reference toward vertical as the limb
+    // approaches horizontal; a circular tube is rotationally symmetric, so the roll costs nothing.
+    auto Upright=[](const FVector& Along)
+    {
+        const float Align=FMath::Abs(FVector::DotProduct(Along,RigForward));
+        return FMath::Lerp(RigForward,FVector::UpVector,FMath::SmoothStep(.84f,.99f,Align)).GetSafeNormal();
+    };
     auto Leg=[&](const FString& Side,float Sign)
     {
         const int H=Bone(Side+TEXT("UpLeg")),K=Bone(Side+TEXT("Leg")),F=Bone(Side+TEXT("Foot"));
@@ -471,13 +621,14 @@ void AC26Athlete::UpdateUniform()
         const FVector Centers[]={Top,FMath::Lerp(Top,Knee,.45f),Knee,FMath::Lerp(Knee,Foot,.5f),Foot};
         // Radii in centimetres at hip, mid-thigh, knee, mid-calf and ankle. These were roughly twice
         // life size, which inflated the legs into a toy silhouette and pushed the trouser out through
-        // the pads. A 185 cm athlete measures about this.
-        const float Widths[]={10.4f,8.9f,7.1f,6.4f,5.5f};
+        // the pads. A 185 cm athlete measures about this. The knee ring runs slightly full so a bent
+        // front knee never peeks skin through the cloth in a replay close-up.
+        const float Widths[]={10.4f,9.1f,7.8f,7.0f,5.5f};
         const int Base=Vertices.Num();constexpr int Sides=12;
         for(int Row=0;Row<5;++Row)
         {
             const FVector Along=(Centers[FMath::Min(4,Row+1)]-Centers[FMath::Max(0,Row-1)]).GetSafeNormal();
-            const FVector Across=FVector::CrossProduct(Along,RigForward).GetSafeNormal();
+            const FVector Across=FVector::CrossProduct(Along,Upright(Along)).GetSafeNormal();
             const FVector Front=FVector::CrossProduct(Across,Along).GetSafeNormal();
             for(int J=0;J<Sides;++J)
             {
@@ -495,15 +646,44 @@ void AC26Athlete::UpdateUniform()
         for(int R=0;R<4;++R){int A=SB+R*2;StripeT.Append({A,A+1,A+2,A+1,A+3,A+2});}
     };
     Leg(TEXT("Left"),-1);Leg(TEXT("Right"),1);
-    if(Uniform->GetNumSections()<2)
+    // A short shirt sleeve down to mid-bicep, with a hem that flares. Without it the kit ends at
+    // the shoulder and the arm reads as bare skin growing straight out of a smooth teal volume,
+    // which is what made the torso look like a balloon in replay close-ups.
+    auto Sleeve=[&](const FString& Side)
+    {
+        const int Shoulder=Bone(Side+TEXT("Arm")),Elbow=Bone(Side+TEXT("ForeArm"));
+        if(Shoulder<0||Elbow<0)return;
+        const FVector Top=Pose[Shoulder].GetLocation(),Bend=Pose[Elbow].GetLocation();
+        const FVector Along=(Bend-Top).GetSafeNormal(UE_SMALL_NUMBER,-RigForward);
+        // Row 0 sits back inside the torso so the seam never opens at the shoulder.
+        const FVector Centers[]={Top-Along*5.f,FMath::Lerp(Top,Bend,.24f),FMath::Lerp(Top,Bend,.44f),FMath::Lerp(Top,Bend,.49f)};
+        // Shoulder, upper bicep, sleeve, hem. A 185 cm athlete's bicep is about 13 cm across; the
+        // cloth sits just outside that, and only the hem flares.
+        const float Widths[]={9.4f,7.4f,6.7f,7.1f};
+        const FVector Across=FVector::CrossProduct(Along,Upright(Along)).GetSafeNormal(UE_SMALL_NUMBER,FVector::UpVector);
+        const FVector Front=FVector::CrossProduct(Across,Along).GetSafeNormal();
+        const int Base=SleeveV.Num();constexpr int Sides=10;
+        for(int Row=0;Row<4;++Row)for(int J=0;J<Sides;++J)
+        {
+            const float A=2*PI*J/Sides;
+            const FVector N=Across*FMath::Cos(A)+Front*FMath::Sin(A);
+            SleeveV.Add(Centers[Row]+N*Widths[Row]);SleeveN.Add(N);SleeveUV.Add(FVector2D(J/float(Sides),Row/3.f));
+        }
+        for(int R=0;R<3;++R)for(int J=0;J<Sides;++J)
+        {const int A=Base+R*Sides+J,B=Base+R*Sides+(J+1)%Sides;SleeveT.Append({A,B,A+Sides,B,B+Sides,A+Sides});}
+    };
+    Sleeve(TEXT("Left"));Sleeve(TEXT("Right"));
+    if(Uniform->GetNumSections()<3)
     {
         Uniform->CreateMeshSection_LinearColor(0,Vertices,Indices,Normals,UV,Colors,Tangents,false);
         Uniform->CreateMeshSection_LinearColor(1,StripeV,StripeT,StripeN,StripeUV,Colors,Tangents,false);
+        Uniform->CreateMeshSection_LinearColor(2,SleeveV,SleeveT,SleeveN,SleeveUV,Colors,Tangents,false);
     }
     else
     {
         Uniform->UpdateMeshSection_LinearColor(0,Vertices,Normals,UV,Colors,Tangents);
         Uniform->UpdateMeshSection_LinearColor(1,StripeV,StripeN,StripeUV,Colors,Tangents);
+        Uniform->UpdateMeshSection_LinearColor(2,SleeveV,SleeveN,SleeveUV,Colors,Tangents);
     }
 }
 void AC26Athlete::Animate(float Dt)
@@ -518,7 +698,10 @@ void AC26Athlete::Animate(float Dt)
     const float Gait=FMath::Sin(MotionTime*Cadence);
     const float Sway=FMath::Sin(MotionTime*1.7f);
 
-    float Crouch=Keeping?-42.f:Batting?-23.f:-7.f;
+    // Crouch is a hip drop; Shift moves the pelvis horizontally. A batter flexes his knees, he
+    // does not sit down: the old fixed 23 cm drop held him in a squat through an entire stroke.
+    float Crouch=Keeping?-42.f:Batting?-13.f:-7.f;
+    FVector Shift=FVector::ZeroVector;
     float TurnRight=0,LeanForward=Keeping?24.f:Batting?9.f:7.f,LeanRight=0;
     if(Running){Crouch=-5.f+3.f*FMath::Abs(Gait);LeanForward=13.f;}
     if(Action==EC26Action::Pickup)
@@ -535,6 +718,17 @@ void AC26Athlete::Animate(float Dt)
         FL=Rig(Gait*47,-9,AnkleZ+FMath::Max(0.f,Gait)*24);
         FR=Rig(-Gait*47,9,AnkleZ+FMath::Max(0.f,-Gait)*24);
         LH=Rig(-Gait*38,-21,114);RH=Rig(Gait*38,21,114);
+        if(Role==EC26Role::Bowler)
+        {
+            // A fast bowler's approach, not a jog. Longer stride, high knee drive, and arms that
+            // pump with the elbows tucked and the leading hand rising as it comes through. The
+            // neutral run stays as it is for fielders and for running between the wickets.
+            FL=Rig(Gait*50,-8,AnkleZ+FMath::Max(0.f,Gait)*33);
+            FR=Rig(-Gait*50,8,AnkleZ+FMath::Max(0.f,-Gait)*33);
+            LH=Rig(-Gait*31,-16,119+FMath::Max(0.f,-Gait)*13);
+            RH=Rig(Gait*31,16,119+FMath::Max(0.f,Gait)*13);
+            LeanForward=18.f;
+        }
     }
     else if(Batting)
     {
@@ -587,10 +781,25 @@ void AC26Athlete::Animate(float Dt)
                 const FVector Through=Cross?(-Away*.72f+Rig(0,0,.70f)).GetSafeNormal():(-Away*.45f+Rig(-.30f,0,.84f)).GetSafeNormal();
                 Dir=(Swing<1.f?FMath::Lerp(Cocked,Held,Swing):FMath::Lerp(Held,Through,Follow)).GetSafeNormal(UE_SMALL_NUMBER,Rig(0,0,1));
                 TurnRight=46.f-Follow*30.f+(Cross?12.f:0.f);
-                LeanForward=13.f+Swing*(Cross?2.f:11.f)-Follow*4.f;
+                LeanForward=15.f+Swing*(Cross?3.f:17.f)-Follow*6.f;
                 LeanRight=4.f+(Cross?-8.f:5.f)*Swing;
+                // The golden delivery: a dead-straight front-foot drive gets a bigger press forward,
+                // more weight over the front knee and a squarer chest so the head goes to the ball.
+                const bool Straight=FMath::Abs(ShotAngle)<=15.f&&!Loft;
+                if(Straight){LeanForward+=6.f;TurnRight-=4.f;LeanRight+=1.5f;}
                 if(Cross)FR=Rig(-14.f-FMath::Sin(T*PI)*13.f,11,AnkleZ);
-                else FL=Rig(15.f+FMath::Sin(T*PI)*26.f,-4,AnkleZ);
+                else
+                {
+                    // Weight transfer, not a squat. The pelvis presses forward onto the striding
+                    // foot and dips as the front knee takes the load, the back heel comes up, and
+                    // the chest goes out over the ball. That is also what lets the hands get low
+                    // and far enough forward to meet the ball on the middle of the blade rather
+                    // than the last few centimetres of the toe.
+                    Crouch=-13.f-Swing*10.f+Follow*6.f;
+                    Shift=Rig(Swing*(Straight?17.f:12.f)-Follow*4.f,Swing*2.f,0);
+                    FL=Rig(15.f+FMath::Sin(T*PI)*(Straight?34.f:26.f),-4,AnkleZ);
+                    FR=Rig(-13.f,9.f,AnkleZ+Swing*6.f);
+                }
             }
         }
         else if(Action==EC26Action::Ready)
@@ -612,7 +821,7 @@ void AC26Athlete::Animate(float Dt)
         const FVector Out=Grip-Anchor;
         if(const float Span=Out.Size();Span>ArmSpan*.95f)Grip=Anchor+Out/Span*(ArmSpan*.95f);
         // Both hands live on the handle: top hand high, bottom hand a fist below it.
-        LH=Grip-Dir*4.f+Rig(0,-5.f,0);RH=Grip-Dir*14.f+Rig(0,5.f,0);
+        LH=Grip-Dir*4.f;RH=Grip-Dir*14.f;
     }
     if(Batting&&Running){Grip=Rig(24,20,104);Dir=Rig(-.55f,.10f,.83f).GetSafeNormal();RH=Grip-Dir*14.f;}
 
@@ -651,7 +860,7 @@ void AC26Athlete::Animate(float Dt)
     if(Action==EC26Action::SignalFour){LH=Rig(20,-72,128);RH=Rig(20,72,128);}
     if(Action==EC26Action::SignalWide){LH=Rig(2,-84,140);RH=Rig(2,84,140);}
 
-    MoveBone(TEXT("Hips"),FVector(0,0,Crouch));
+    MoveBone(TEXT("Hips"),Shift+FVector(0,0,Crouch));
     Twist(TEXT("Hips"),TurnRight*.42f,LeanForward*.30f,LeanRight*.5f);
     Twist(TEXT("Spine"),TurnRight*.26f,LeanForward*.34f,LeanRight*.3f);
     Twist(TEXT("Spine1"),TurnRight*.20f,LeanForward*.22f,LeanRight*.2f);
@@ -663,7 +872,42 @@ void AC26Athlete::Animate(float Dt)
     for(const FString Side:{FString(TEXT("Left")),FString(TEXT("Right"))})
     {
         const int F=Bone(Side+TEXT("Foot"));
-        if(F>=0){Pose[F].SetRotation(Reference[F].GetRotation());RebuildChildren(F);}
+        if(F<0)continue;
+        // A foot off the ground rolls onto its toe. Held flat it reads as a mannequin being
+        // carried through the air, which is what every lifted foot in the game did until now --
+        // the back heel of a drive, and every stride of the bowler's run-up.
+        const float Lift=FMath::Clamp((Pose[F].GetLocation().Z-AnkleZ)/16.f,0.f,1.f);
+        Pose[F].SetRotation((FQuat(Rig(0,1,0),FMath::DegreesToRadians(Lift*36.f))*Reference[F].GetRotation()).GetNormalized());
+        RebuildChildren(F);
+    }
+    if(Batting&&!Running)
+    {
+        // Refine the existing motion at contact: keep both wrists on one handle within the
+        // *posed* shoulders' reach, and pivot that handle through the incoming ball. Previously
+        // a 10 cm lateral wrist offset tilted the blade ~45 degrees away from the ball.
+        const FVector Contact=Mesh->GetComponentTransform().InverseTransformPosition(ContactTarget);
+        const float ContactWeight=Action==EC26Action::Batting
+            ?1.f-FMath::SmoothStep(0.f,.12f,FMath::Abs(ActionTime-C26Field::BatContactPoseTime)):0.f;
+        const FVector AuthoredDir=Dir;
+        for(int Iteration=0;Iteration<8;++Iteration)
+        {
+            Dir=FMath::Lerp(AuthoredDir,(Grip-Contact).GetSafeNormal(UE_SMALL_NUMBER,AuthoredDir),ContactWeight).GetSafeNormal();
+            // Meet the ball on the meat of the blade. The bat origin sits 4.5 cm up the shaft from
+            // the top palm and the middle of the willow is 62 cm below that, so unless the grip is
+            // held about that far from the ball a technically correct contact still lands on the
+            // last few centimetres of the toe -- measured at 75.7 cm down an 83 cm blade.
+            Grip=FMath::Lerp(Grip,Contact+Dir*61.5f,ContactWeight*.5f);
+            for(int Side=0;Side<2;++Side)
+            {
+                const int Shoulder=Bone(Side==0?TEXT("LeftArm"):TEXT("RightArm"));
+                if(Shoulder<0)continue;
+                const FVector Reach=Grip-Dir*(Side==0?4.f:14.f)-Pose[Shoulder].GetLocation();
+                const float Limit=ArmSpan*.98f;
+                if(Reach.Size()>Limit)Grip-=Reach.GetSafeNormal()*(Reach.Size()-Limit);
+            }
+        }
+        Dir=FMath::Lerp(AuthoredDir,(Grip-Contact).GetSafeNormal(UE_SMALL_NUMBER,AuthoredDir),ContactWeight).GetSafeNormal();
+        LH=Grip-Dir*4.f;RH=Grip-Dir*14.f;
     }
     Limb(TEXT("LeftArm"),TEXT("LeftForeArm"),TEXT("LeftHand"),LH,Rig(-.7f,-.5f,-.5f));
     Limb(TEXT("RightArm"),TEXT("RightForeArm"),TEXT("RightHand"),RH,Rig(-.7f,.5f,-.5f));

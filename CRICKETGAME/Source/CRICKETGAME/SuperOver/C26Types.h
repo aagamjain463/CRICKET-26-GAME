@@ -55,6 +55,16 @@ struct FC26Tuning
 
 namespace C26Field
 {
+    // Authoritative physical reference: centimetres, Z=0 is the playable turf.
+    // Athlete rig import correction is 0.48 (about 182 cm); never inflate actors.
+    constexpr float SurfaceZ = 0.f;
+    constexpr float PitchWidth = 305.f;
+    constexpr float PitchStripLength = 2360.f;
+    constexpr float StumpHeight = 71.1f;
+    constexpr float WicketWidth = 22.86f;
+    constexpr float StumpDiameter = 3.8f;
+    constexpr float BallDiameter = 7.2f;
+    constexpr float BatLength = 83.f;
     constexpr float WicketY = 1006.f;
     constexpr float CreaseY = 884.f;
     constexpr float ContactY = 848.f;
@@ -63,7 +73,7 @@ namespace C26Field
     constexpr float BatContactPoseTime = .24f;
     constexpr float RadiusX = 6550.f;
     constexpr float RadiusY = 7200.f;
-    inline FVector RopePoint(float A) { return FVector(RadiusX*FMath::Cos(A),RadiusY*FMath::Sin(A),6.f); }
+    inline FVector RopePoint(float A) { return FVector(RadiusX*FMath::Cos(A),RadiusY*FMath::Sin(A),4.5f); }
     inline bool Inside(const FVector& P) { return FMath::Square(P.X/RadiusX)+FMath::Square(P.Y/RadiusY)<1.f; }
 }
 DECLARE_LOG_CATEGORY_EXTERN(LogC26, Log, All);

@@ -16,12 +16,22 @@ enum class EC26CameraMode : uint8
     Celebration, InningsTransition, MatchResult
 };
 
+/** All lenses live in the director. Phase logic supplies context, never view transforms. */
+USTRUCT(BlueprintType)
+struct FC26BroadcastRig
+{
+    GENERATED_BODY()
+    UPROPERTY(EditAnywhere,BlueprintReadWrite) FVector Eye=FVector::ZeroVector;
+    UPROPERTY(EditAnywhere,BlueprintReadWrite) FVector Aim=FVector::ZeroVector;
+    UPROPERTY(EditAnywhere,BlueprintReadWrite,meta=(ClampMin="20",ClampMax="80")) float FOV=48.f;
+};
+
 struct FC26ReplayAthlete
 {
     FTransform Transform;
     EC26Action Action=EC26Action::Ready;
     EC26Delivery DeliveryStyle=EC26Delivery::Pace;
-    float ActionTime=0,MotionTime=0,ShotAngle=0,Footwork=0,Stride=0;
+    float ActionTime=0,MotionTime=0,ShotAngle=0,Footwork=0,Stride=0,MoveSpeed=0;
     bool Loft=false,Defend=false;
     FVector Contact=FVector::ZeroVector,LookAt=FVector::ZeroVector;
 };
@@ -41,6 +51,9 @@ public:
     AC26CameraDirector();
     UPROPERTY(VisibleAnywhere) TObjectPtr<UCameraComponent> Camera;
     UPROPERTY(BlueprintReadOnly) EC26CameraMode Mode=EC26CameraMode::Establishing;
+    UPROPERTY(EditAnywhere,Category="Broadcast|Gameplay") FC26BroadcastRig BattingRig;
+    UPROPERTY(EditAnywhere,Category="Broadcast|Gameplay") FC26BroadcastRig BowlingRig;
+    UPROPERTY(EditAnywhere,Category="Broadcast|Gameplay") FC26BroadcastRig ReleaseRig;
     UPROPERTY() TArray<TObjectPtr<UStaticMeshComponent>> ReplayProps;
     void Reset();
     void Direct(EC26Phase Phase,float PhaseTime,bool PlayerBatting,const FVector& Ball,const FVector& Velocity,bool Aerial,float Dt=1.f/60.f);
@@ -64,6 +77,7 @@ private:
     float RecordClock=0,RecordAccumulator=0,ContactStamp=-1,ReplayEnd=0,Impulse=0,Shake=0;
     int32 ReplayShot=0;
     bool HaveCamera=false,HasFielder=false,ShotAerial=false,Runners=false;
+    bool ContactPending=false;
     FVector SmoothedAim=FVector::ZeroVector,Fielder=FVector::ZeroVector,EventFocus=FVector::ZeroVector,ContactPoint=FVector::ZeroVector;
     FName EventName;
     EC26Phase LastPhase=EC26Phase::Result;

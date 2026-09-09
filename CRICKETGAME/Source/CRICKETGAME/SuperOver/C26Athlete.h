@@ -27,10 +27,10 @@ public:
     UPROPERTY(VisibleAnywhere) TObjectPtr<UProceduralMeshComponent> Bat;
     UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> Helmet;
     UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> Peak;
-    UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> PadL;
-    UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> PadR;
-    UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> GloveL;
-    UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> GloveR;
+    UPROPERTY(VisibleAnywhere) TObjectPtr<UProceduralMeshComponent> PadL;
+    UPROPERTY(VisibleAnywhere) TObjectPtr<UProceduralMeshComponent> PadR;
+    UPROPERTY(VisibleAnywhere) TObjectPtr<UProceduralMeshComponent> GloveL;
+    UPROPERTY(VisibleAnywhere) TObjectPtr<UProceduralMeshComponent> GloveR;
     UPROPERTY(VisibleAnywhere) TObjectPtr<UProceduralMeshComponent> Grill;
     UPROPERTY(VisibleAnywhere) TObjectPtr<UProceduralMeshComponent> Uniform;
     UPROPERTY(VisibleAnywhere) TObjectPtr<UProceduralMeshComponent> Shell;
@@ -87,6 +87,8 @@ private:
     void Limb(const FString& Upper,const FString& Lower,const FString& End,const FVector& Target,const FVector& Bend);
     void MoveBone(const FString& Name,const FVector& Offset);
     void BuildEquipment();
+    void BuildGloves();
+    void BuildPads();
     void BuildContactShadow();
     void UpdateContactShadow();
     void PlaceKit(const FVector& Grip,const FVector& Toe,bool Batting,bool Running);
