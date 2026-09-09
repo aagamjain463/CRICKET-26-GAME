@@ -113,6 +113,23 @@ void AC26MatchGameMode::BuildMatchActors()
     Effects=GetWorld()->SpawnActor<AC26Effects>();
     Simulation.Ball.Position=FVector(0,0,-100);UpdateBallVisual();
 }
+void AC26MatchGameMode::HitStop(float Quality)
+{
+    // A very short pinch of time on a clean strike. This is what gives a bat impact weight; any
+    // longer than about a tenth of a second and it stops reading as force and starts reading as a
+    // frame hitch. Timed on real seconds so the dilation cannot extend its own duration.
+    if(Quality<.72f||Smoke)return;
+    const float Scale=Quality>.88f?.30f:.48f;
+    UGameplayStatics::SetGlobalTimeDilation(this,Scale);
+    HitStopUntil=GetWorld()->GetRealTimeSeconds()+(Quality>.88f?.075f:.055f);
+}
+void AC26MatchGameMode::ClearHitStop()
+{
+    // Must be idempotent and must run on every reset path: a match left in slow motion is exactly
+    // the kind of stale state that makes a second Play Again feel broken.
+    if(HitStopUntil<=0)return;
+    HitStopUntil=0;UGameplayStatics::SetGlobalTimeDilation(this,1.f);
+}
 void AC26MatchGameMode::Spark(const FVector& At,bool Struck)
 {
     if(!Effects)return;
@@ -145,6 +162,7 @@ void AC26MatchGameMode::ChangePhase(EC26Phase NewPhase)
 }
 void AC26MatchGameMode::StartMatch()
 {
+    ClearHitStop();
     Rules.Reset();Simulation.Reset();Simulation.Tuning=Tuning;AI.Reset(260026+Rules.Epoch*917+FMath::RandRange(0,999));
     Director->Reset();Audio->Reset();ResetStumps();Paused=SettingsOpen=ControlsOpen=false;
     Running=Returning=ReleaseLocked=ShotQueued=Resolved=false;ThrowClock=-1;RequestedRuns=CompletedRuns=0;RunProgress=0;Intent={};Footwork=0;
@@ -156,6 +174,7 @@ void AC26MatchGameMode::StartMatch()
 }
 void AC26MatchGameMode::Menu()
 {
+    ClearHitStop();
     Director->Restore(Athletes);Director->Reset();Simulation.Reset();Audio->Reset();Paused=false;SettingsOpen=false;ChangePhase(EC26Phase::Menu);
 }
 void AC26MatchGameMode::PrepareDelivery()
@@ -166,7 +185,7 @@ void AC26MatchGameMode::PrepareDelivery()
     Resolved=Important=ShotQueued=ReleaseLocked=Running=Returning=false;RunProgress=0;RequestedRuns=CompletedRuns=0;
     ActiveFielder=BackupFielder=-1;ThrowClock=CatchClock=-1;ThrowReleased=false;RunVelocity=0;
     FieldDecisionClock=0;FieldForecast.Reset();LastContact={};Callout.Empty();Detail.Empty();
-    FootPlanted=false;if(Effects)Effects->Clear();
+    FootPlanted=false;ClearHitStop();if(Effects)Effects->Clear();
     Intent.Footwork=Footwork;RunnerAId=Rules.Now().Striker;RunnerBId=Rules.Now().NonStriker;
     FieldPositions=FC26AI::Field(AI.History.OffsideBias>.3f);
     for(int I=0;I<11;++I)
@@ -247,8 +266,8 @@ void AC26MatchGameMode::UpdateDelivery(float Dt)
                 Athletes[11]->ActionTime=C26Field::BatContactPoseTime;Athletes[11]->Animate(0);
                 // Anchor the replay and the shot cameras to the real moment of contact.
                 Director->MarkContact(LastContact.Quality,Intent.Loft,Simulation.Ball.Position);
-                Audio->Cue(LastContact.Timing==EC26Timing::Edge?TEXT("bat_edge"):Intent.Defend?TEXT("bat_defensive"):TEXT("bat_sweet_spot"),.8f);
-                Haptic(LastContact.Timing==EC26Timing::Perfect?.45f:.2f);AI.History.OffsideBias=FMath::Lerp(AI.History.OffsideBias,Intent.Angle>0?1.f:-1.f,.3f);
+                Audio->Cue(LastContact.Timing==EC26Timing::Edge?TEXT("bat_edge"):Intent.Defend?TEXT("bat_defensive"):TEXT("bat_sweet_spot"),FMath::Lerp(.55f,1.f,LastContact.Quality));
+                Haptic(LastContact.Timing==EC26Timing::Perfect?.45f:.2f);HitStop(LastContact.Quality);AI.History.OffsideBias=FMath::Lerp(AI.History.OffsideBias,Intent.Angle>0?1.f:-1.f,.3f);
                 Detail=LastContact.Shot;ChangePhase(EC26Phase::InPlay);return;
             }
         }
@@ -557,6 +576,7 @@ void AC26MatchGameMode::Haptic(float Strength)
 void AC26MatchGameMode::Tick(float Dt)
 {
     Super::Tick(Dt);if(!Director||Athletes.Num()!=14)return;
+    if(HitStopUntil>0&&GetWorld()->GetRealTimeSeconds()>=HitStopUntil)ClearHitStop();
     Dt=FMath::Min(Dt,.05f);Clock+=Dt;UpdateCapture(Dt);if(Paused||SettingsOpen||ControlsOpen)return;
     PhaseTime+=Dt;
     if(Phase==EC26Phase::Intro&&PhaseTime>6.5f)PrepareDelivery();

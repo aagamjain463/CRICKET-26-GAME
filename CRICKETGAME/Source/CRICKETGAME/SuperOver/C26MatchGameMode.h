@@ -99,5 +99,9 @@ private:
     void Haptic(float Strength);
     /** Dust and turf response for one ball's worth of contact events. */
     void Spark(const FVector& At,bool Struck);
+    /** Momentary time pinch on a well-struck ball, and the real-time stamp it ends at. */
+    void HitStop(float Quality);
+    void ClearHitStop();
+    double HitStopUntil=0;
     bool FootPlanted=false;
 };

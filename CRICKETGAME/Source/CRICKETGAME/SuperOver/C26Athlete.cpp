@@ -5,6 +5,8 @@
 #include "ProceduralMeshComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "UObject/ConstructorHelpers.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 
 namespace
 {
@@ -59,9 +61,21 @@ AC26Athlete::AC26Athlete()
     PadR=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("RightPad"));PadR->SetupAttachment(Mesh);
     GloveL=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LeftGlove"));GloveL->SetupAttachment(Mesh);
     GloveR=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("RightGlove"));GloveR->SetupAttachment(Mesh);
+    // The contact shadow lives on the actor root, not on Mesh: athletes are only ever yawed, so it
+    // stays flat on the turf without having to undo the rig's -90 mesh rotation every frame.
+    Shade=CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("ContactShadow"));Shade->SetupAttachment(RootComponent);
+    Shade->SetCollisionEnabled(ECollisionEnabled::NoCollision);Shade->SetCastShadow(false);
+    Shade->bReceivesDecals=false;Shade->SetTranslucentSortPriority(-4);
     static ConstructorHelpers::FObjectFinder<UStaticMesh> Sphere(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
     for(auto* P:{Helmet.Get(),Peak.Get(),PadL.Get(),PadR.Get(),GloveL.Get(),GloveR.Get()})
     {P->SetStaticMesh(Sphere.Object);P->SetCollisionEnabled(ECollisionEnabled::NoCollision);P->SetCastShadow(true);}
+    // Every component here defaults to Static mobility, which is what CreateDefaultSubobject gives
+    // you. A static primitive is never entered into the dynamic shadow pass, so until this loop
+    // existed no athlete in the game cast a shadow on the ground at any quality level -- measured
+    // from a capture, the turf under a batter sampled identically to the turf beside him. These
+    // actors are moved every frame, so Movable is also simply the correct mobility for them.
+    for(UActorComponent* Component:GetComponents())
+        if(auto* Scene=Cast<USceneComponent>(Component))Scene->SetMobility(EComponentMobility::Movable);
 }
 void AC26Athlete::BeginPlay()
 {
@@ -97,6 +111,7 @@ void AC26Athlete::BeginPlay()
         UE_LOG(LogTemp,Log,TEXT("C26_RIG shoulder=%.1f hip=%.1f ankle=%.1f armspan=%.1f"),ShoulderZ,HipZ,AnkleZ,ArmSpan);
     }
     BuildEquipment();
+    BuildContactShadow();
 }
 void AC26Athlete::BuildEquipment()
 {
@@ -159,6 +174,89 @@ void AC26Athlete::BuildEquipment()
     {int A=R*CrownSides+J,B=R*CrownSides+(J+1)%CrownSides;T.Append({A,A+CrownSides,B,B,A+CrownSides,B+CrownSides});}
     Shell->CreateMeshSection_LinearColor(0,V,T,N,UV,C,Tan,false);
 }
+void AC26Athlete::BuildContactShadow()
+{
+    // A unit-radius disc whose vertex alpha runs 1 at the centre to 0 at the rim, in two rings so
+    // the falloff has a dense core and a soft skirt. All the shaping -- how long the shadow is,
+    // which way it leans, how dark it gets -- is done by the transform and the Opacity parameter in
+    // UpdateContactShadow, so this geometry is built exactly once per athlete.
+    if(!Shade||Shade->GetNumSections()>0)return;
+    TArray<FVector> V;TArray<FVector> N;TArray<int32> T;TArray<FVector2D> UV;
+    TArray<FLinearColor> C;TArray<FProcMeshTangent> Tan;
+    constexpr int Sides=24;
+    const float Radius[3]={0.f,.55f,1.f};
+    const float Alpha[3]={1.f,.72f,0.f};
+    for(int Ring=0;Ring<3;++Ring)
+        for(int J=0;J<Sides;++J)
+        {
+            const float A=2*PI*J/Sides;
+            V.Add(FVector(FMath::Cos(A)*Radius[Ring],FMath::Sin(A)*Radius[Ring],0));
+            N.Add(FVector::UpVector);UV.Add(FVector2D(J/float(Sides),Radius[Ring]));
+            C.Add(FLinearColor(0,0,0,Alpha[Ring]));
+        }
+    for(int Ring=0;Ring<2;++Ring)
+        for(int J=0;J<Sides;++J)
+        {
+            const int A=Ring*Sides+J,B=Ring*Sides+(J+1)%Sides;
+            T.Append({A,B,A+Sides,B,B+Sides,A+Sides});
+        }
+    Shade->CreateMeshSection_LinearColor(0,V,T,N,UV,C,Tan,false);
+    auto* Base=LoadObject<UMaterialInterface>(nullptr,TEXT("/Game/Cricket26/Materials/M_Shade.M_Shade"));
+    if(!Base){UE_LOG(LogC26,Warning,TEXT("C26_SHADE M_Shade missing; contact shadows disabled."));return;}
+    ShadeMaterial=UMaterialInstanceDynamic::Create(Base,this);
+    Shade->SetMaterial(0,ShadeMaterial);
+    // A visible fallback size, so a shadow that never receives a pose update is still obvious on
+    // screen rather than a 1 cm speck nobody can see.
+    Shade->SetRelativeScale3D(FVector(58,36,1));
+    if(FParse::Param(FCommandLine::Get(),TEXT("C26ShadeDebug")))
+    {
+        ShadeMaterial->SetVectorParameterValue(TEXT("Tint"),FLinearColor(1,0,1));
+        ShadeMaterial->SetScalarParameterValue(TEXT("Glow"),1.f);
+        ShadeMaterial->SetScalarParameterValue(TEXT("Opacity"),1.f);
+    }
+    UE_LOG(LogC26,Display,TEXT("C26_SHADE built verts=%d tris=%d sections=%d material=%s"),
+        V.Num(),T.Num()/3,Shade->GetNumSections(),*Base->GetName());
+}
+void AC26Athlete::UpdateContactShadow()
+{
+    if(!Shade||Shade->GetNumSections()==0)return;
+    const int Lf=Bone(TEXT("LeftFoot")),Rf=Bone(TEXT("RightFoot"));
+    if(Lf<0||Rf<0)return;
+    // Mesh-space foot positions, converted through the mesh's own relative rotation into the actor
+    // frame the shadow component lives in. Anchoring to the feet rather than the actor origin means
+    // the shadow tracks a batter's stride and a bowler's delivery leap instead of sliding under him.
+    const FTransform MeshLocal=Mesh->GetRelativeTransform();
+    const FVector Left=MeshLocal.TransformPosition(Pose[Lf].GetLocation());
+    const FVector Right=MeshLocal.TransformPosition(Pose[Rf].GetLocation());
+    const FVector Feet=(Left+Right)*.5f;
+    const float Lift=FMath::Max(0.f,FMath::Min(Left.Z,Right.Z)-AnkleZ*.48f);
+    // KeyLight sits at pitch -58 / yaw -38, so the cast runs out along this world direction with a
+    // length of about 0.62 of the caster's height. Unrotating by the actor yaw keeps that world
+    // direction correct for a fielder facing any way round the ground.
+    const FVector CastWorld(.646f,-.505f,0);
+    const FVector Cast=GetActorRotation().UnrotateVector(CastWorld);
+    const float Spread=FMath::Clamp((Left-Right).Size2D()*.5f,0.f,34.f);
+    const float Reach=52.f+Spread;
+    // Clear of the tallest thing the athlete can be standing on. The pitch plate is at Z=2.2 and
+    // the worn landing areas at 2.6, so a patch drawn at 1.6 sat *inside* the pitch and was
+    // invisible for exactly the two players who matter most -- the striker and the bowler.
+    Shade->SetRelativeLocation(FVector(Feet.X,Feet.Y,3.4f)+Cast*34.f);
+    Shade->SetRelativeRotation(FRotator(0,Cast.Rotation().Yaw,0));
+    // Long axis down the cast direction, narrow across it: a real floodlit shadow is an ellipse,
+    // not a circle. A player off the ground loses contact, so the patch spreads and fades.
+    const float Air=FMath::Clamp(Lift/45.f,0.f,1.f);
+    Shade->SetRelativeScale3D(FVector(Reach*(1.f+Air*.55f),(30.f+Spread)*(1.f+Air*.55f),1.f));
+    if(ShadeMaterial&&!FParse::Param(FCommandLine::Get(),TEXT("C26ShadeDebug")))
+        ShadeMaterial->SetScalarParameterValue(TEXT("Opacity"),.62f*(1.f-Air*.65f));
+    static int32 Reported=0;
+    if(Reported<3)
+    {
+        ++Reported;
+        UE_LOG(LogC26,Display,TEXT("C26_SHADE place role=%d world=%s scale=%s visible=%d"),
+            int(Role),*Shade->GetComponentLocation().ToCompactString(),
+            *Shade->GetRelativeScale3D().ToCompactString(),Shade->IsVisible()?1:0);
+    }
+}
 void AC26Athlete::Configure(EC26Role NewRole,int Team,int Number)
 {
     if(Shirt&&Role==NewRole&&TeamId==Team){SetAction(EC26Action::Ready);return;}
@@ -169,7 +267,8 @@ void AC26Athlete::Configure(EC26Role NewRole,int Team,int Number)
     if(!Base)return;
     auto Make=[&](FLinearColor C,float Rough)
     {auto* M=UMaterialInstanceDynamic::Create(Base,this);M->SetVectorParameterValue(TEXT("Tint"),C);M->SetScalarParameterValue(TEXT("Roughness"),Rough);M->SetScalarParameterValue(TEXT("Glow"),0.f);return M;};
-    const FLinearColor Team0(.010,.255,.290),Team1(.560,.055,.030),Official(.055,.075,.115);
+    // Kit albedo sits above the turf's so the players separate from the field they stand on.
+    const FLinearColor Team0(.030,.345,.395),Team1(.660,.100,.058),Official(.070,.092,.140);
     const FLinearColor Kit=Role==EC26Role::Umpire?Official:Team==0?Team0:Team1;
     auto* Fabric=LoadObject<UMaterialInterface>(nullptr,TEXT("/Game/Cricket26/Materials/M_Fabric.M_Fabric"));
     Shirt=UMaterialInstanceDynamic::Create(Fabric?Fabric:Base,this);Shirt->SetVectorParameterValue(TEXT("Tint"),Kit);
@@ -586,4 +685,5 @@ void AC26Athlete::Animate(float Dt)
     Mesh->ApplyComponentPose(Pose);
     UpdateUniform();
     PlaceKit(Grip,Dir,Batting,Running);
+    UpdateContactShadow();
 }

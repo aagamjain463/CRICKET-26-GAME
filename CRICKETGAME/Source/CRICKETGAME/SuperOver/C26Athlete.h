@@ -34,6 +34,11 @@ public:
     UPROPERTY(VisibleAnywhere) TObjectPtr<UProceduralMeshComponent> Grill;
     UPROPERTY(VisibleAnywhere) TObjectPtr<UProceduralMeshComponent> Uniform;
     UPROPERTY(VisibleAnywhere) TObjectPtr<UProceduralMeshComponent> Shell;
+    /** Ground contact shadow. Drawn as its own alpha-blended patch rather than relying purely on
+        the cascaded shadow map: it is guaranteed on every renderer and every quality tier, it
+        costs one 40-triangle fan, and it is what stops a player reading as a decal floating over
+        the turf. Real CSM shadowing layers on top of it wherever the tier can afford it. */
+    UPROPERTY(VisibleAnywhere) TObjectPtr<UProceduralMeshComponent> Shade;
     UPROPERTY(VisibleAnywhere) TObjectPtr<UTextRenderComponent> ShirtNumber;
     EC26Role Role=EC26Role::Fielder;
     EC26Action Action=EC26Action::Ready;
@@ -74,6 +79,7 @@ private:
     UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> Shirt;
     UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> Trousers;
     UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> Gear;
+    UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> ShadeMaterial;
     int Bone(const FString& Name) const;
     void RebuildChildren(int Index);
     void Aim(const FString& Name,const FString& Child,const FVector& Target);
@@ -81,6 +87,8 @@ private:
     void Limb(const FString& Upper,const FString& Lower,const FString& End,const FVector& Target,const FVector& Bend);
     void MoveBone(const FString& Name,const FVector& Offset);
     void BuildEquipment();
+    void BuildContactShadow();
+    void UpdateContactShadow();
     void PlaceKit(const FVector& Grip,const FVector& Toe,bool Batting,bool Running);
     void UpdateUniform();
 };

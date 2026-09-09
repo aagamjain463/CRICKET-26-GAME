@@ -113,7 +113,11 @@ AC26Stadium::AC26Stadium()
     KeyLight->DynamicShadowDistanceMovableLight=9000;KeyLight->DynamicShadowCascades=3;KeyLight->ForwardShadingPriority=1;
     KeyLight->SetSpecularScale(.85f);
     CrossLight=CreateDefaultSubobject<UDirectionalLightComponent>(TEXT("FloodlightCross"));CrossLight->SetupAttachment(RootComponent);
-    CrossLight->SetRelativeRotation(FRotator(-51,132,0));CrossLight->SetIntensity(1.05f);CrossLight->SetLightColor(FLinearColor(.80,.87,1));
+    // Deliberately shallower than the key. Floodlit athletes are the brightest readable thing on a
+    // broadcast, but measured captures had the players (luma 53-69) darker than the turf (105-120):
+    // a steep key rakes the horizontal ground and barely touches a vertical torso. Lowering this
+    // fill toward the horizon puts light back on bodies without lifting the ground or the crowd.
+    CrossLight->SetRelativeRotation(FRotator(-33,132,0));CrossLight->SetIntensity(1.95f);CrossLight->SetLightColor(FLinearColor(.84,.90,1));
     CrossLight->SetCastShadows(false);CrossLight->ForwardShadingPriority=0;
     FillLight=CreateDefaultSubobject<USkyLightComponent>(TEXT("StadiumFill"));FillLight->SetupAttachment(RootComponent);
     FillLight->SetIntensity(.42f);FillLight->SetLightColor(FLinearColor(.40,.50,.66));FillLight->SetLowerHemisphereColor(FLinearColor(.020,.030,.042));
@@ -157,21 +161,91 @@ AC26Stadium::AC26Stadium()
         S->SetRelativeLocation(Head);S->SetRelativeRotation((FVector(0,0,120)-Head).Rotation());
         Floods.Add(S);
     }
+    Shafts=CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("FloodlightShafts"));Shafts->SetupAttachment(RootComponent);
+    Shafts->SetCollisionEnabled(ECollisionEnabled::NoCollision);Shafts->SetCastShadow(false);
+    Shafts->bReceivesDecals=false;Shafts->SetTranslucentSortPriority(6);
+    // CreateDefaultSubobject hands back Static mobility, and a Static light is never entered into
+    // the dynamic shadow pass. That is why nothing in this venue cast a shadow at any quality
+    // level: the key light was static, so the athletes' shadows had nowhere to be drawn. The
+    // procedural meshes are also rebuilt every BeginPlay, which Static mobility does not permit.
+    for(UActorComponent* Component:GetComponents())
+        if(auto* Scene=Cast<USceneComponent>(Component))Scene->SetMobility(EComponentMobility::Movable);
 }
 void AC26Stadium::OnConstruction(const FTransform& Transform){Super::OnConstruction(Transform);BuildVenue();}
 // Always rebuild in play. Dynamic material instances do not survive map serialization, so a venue
 // restored from the package renders every tinted surface as its parent default.
-void AC26Stadium::BeginPlay(){Super::BeginPlay();ConfigureLighting();BuildVenue();FillLight->RecaptureSky();}
+void AC26Stadium::BeginPlay(){Super::BeginPlay();ConfigureLighting();BuildVenue();BuildLightShafts();FillLight->RecaptureSky();}
+void AC26Stadium::BuildLightShafts()
+{
+    // Six shallow cones of additive haze, one hanging under each pylon head and aimed at the
+    // square. Real volumetrics would cost far more than a mobile frame can spare; six two-quad
+    // fans that fade to nothing at the rim read the same way from every broadcast angle and cost
+    // nothing measurable. Vertex alpha does the falloff -- see Tools/BuildPresentationAssets.py.
+    if(!Shafts)return;
+    Shafts->ClearAllMeshSections();
+    auto* Base=LoadObject<UMaterialInterface>(nullptr,TEXT("/Game/Cricket26/Materials/M_Beam.M_Beam"));
+    if(!Base){UE_LOG(LogC26Venue,Warning,TEXT("M_Beam missing; floodlight shafts disabled."));return;}
+    ShaftMaterial=UMaterialInstanceDynamic::Create(Base,this);
+    ShaftMaterial->SetVectorParameterValue(TEXT("Tint"),FLinearColor(.52,.63,.86));
+    ShaftMaterial->SetScalarParameterValue(TEXT("Glow"),.115f);
+    ShaftMaterial->SetScalarParameterValue(TEXT("Opacity"),1.f);
+    TArray<FVector> V,N;TArray<int32> T;TArray<FVector2D> UV;
+    TArray<FLinearColor> C;TArray<FProcMeshTangent> Tan;
+    for(int I=0;I<6;++I)
+    {
+        const float A=2*PI*I/6;
+        const FVector Head=Oval(10250,10980,A,4260);
+        const FVector Aim(0,0,180);
+        const FVector Down=(Aim-Head).GetSafeNormal();
+        const FVector Side=FVector::CrossProduct(Down,FVector::UpVector).GetSafeNormal();
+        const FVector Lift=FVector::CrossProduct(Side,Down).GetSafeNormal();
+        const float Throw=(Aim-Head).Size();
+        // Two crossed fans per pylon so the shaft keeps its body when the camera swings around it.
+        for(int Plane=0;Plane<2;++Plane)
+        {
+            const FVector Across=Plane==0?Side:Lift;
+            const int Base0=V.Num();
+            V.Add(Head-Across*140);V.Add(Head+Across*140);
+            V.Add(Head+Down*Throw+Across*1750);V.Add(Head+Down*Throw-Across*1750);
+            for(int K=0;K<4;++K){N.Add(-Down);UV.Add(FVector2D(K&1,K>1));}
+            // Bright at the lamp, gone by the time it reaches the turf: a shaft that landed at full
+            // strength would paint a hard bright disc on the outfield.
+            C.Add(FLinearColor(0,0,0,.85f));C.Add(FLinearColor(0,0,0,.85f));
+            C.Add(FLinearColor(0,0,0,0.f));C.Add(FLinearColor(0,0,0,0.f));
+            T.Append({Base0,Base0+1,Base0+2,Base0,Base0+2,Base0+3});
+        }
+    }
+    Shafts->CreateMeshSection_LinearColor(0,V,T,N,UV,C,Tan,false);
+    Shafts->SetMaterial(0,ShaftMaterial);
+    UE_LOG(LogC26Venue,Display,TEXT("C26_SHAFT built verts=%d tris=%d visible=%d"),V.Num(),T.Num()/3,Shafts->IsVisible()?1:0);
+}
 void AC26Stadium::ConfigureLighting()
 {
     // Apply the authored setup after map deserialization: saved component overrides from the
     // prototype otherwise restore its 9-lux key and 1.25-strength blue sky over new C++ defaults.
-    KeyLight->SetRelativeRotation(FRotator(-58,-38,0));KeyLight->SetIntensity(2.35f);
+    KeyLight->SetRelativeRotation(FRotator(-58,-38,0));KeyLight->SetIntensity(3.15f);
     KeyLight->SetLightColor(FLinearColor(.96,.97,1));KeyLight->SetSpecularScale(.6f);
-    CrossLight->SetIntensity(1.05f);CrossLight->SetLightColor(FLinearColor(.87,.93,1));
-    FillLight->SetIntensity(.30f);FillLight->SetLightColor(FLinearColor(.70,.77,.86));
-    Haze->SetFogDensity(.000018f);Haze->SetFogMaxOpacity(.28f);Haze->SetStartDistance(5000.f);
+    // A stadium lamp bank is a large area source, not a point. Widening the source angle gives the
+    // penumbra a soft edge like a real floodlight shadow instead of a hard stencil cutout.
+    KeyLight->LightSourceAngle=2.1f;
+    // Screen-space contact shadows pick up the small darkenings the cascades are too coarse to
+    // resolve: under a boot, between bat and glove, where the ball meets the turf.
+    KeyLight->ContactShadowLength=.045f;KeyLight->ContactShadowLengthInWS=false;
+    // Keep the constructor's shallow body-lighting bank. This function runs after deserialization
+    // and overwrites whatever the constructor set, so an intensity authored up there and not
+    // repeated down here is dead code -- which is exactly what happened to the fix that put light
+    // back on vertical torsos rather than only on horizontal ground.
+    CrossLight->SetRelativeRotation(FRotator(-33,132,0));CrossLight->SetIntensity(1.85f);
+    CrossLight->SetLightColor(FLinearColor(.84,.90,1));
+    // The sky fill is deliberately low. Lifting it flattens the key's shadows back out, and a night
+    // ground has almost no ambient of its own -- what fills the shadows is bounce off the turf.
+    FillLight->SetIntensity(.24f);FillLight->SetLightColor(FLinearColor(.44,.55,.74));
+    Haze->SetFogDensity(.000021f);Haze->SetFogMaxOpacity(.30f);Haze->SetStartDistance(4200.f);
     Grade->Settings.AutoExposureBias=-.25f;Grade->Settings.VignetteIntensity=.12f;
+    // Turf under floodlights is a saturated green, and the measured capture was reading closer to
+    // grey-green than grass. Saturation and a slightly cooler shadow toe restore the broadcast look.
+    Grade->Settings.ColorSaturation=FVector4(1.14,1.14,1.08,1);
+    Grade->Settings.ColorContrast=FVector4(1.07,1.07,1.10,1);
 }
 UHierarchicalInstancedStaticMeshComponent* AC26Stadium::Batch(const TCHAR* Name,UStaticMesh* Mesh,UMaterialInterface* Material)
 {
@@ -507,11 +581,16 @@ void AC26Stadium::SetQuality(int Level)
     const int Wanted=FMath::Clamp(Level,0,3);
     const bool Rebuild=Wanted!=CrowdQuality;
     CrowdQuality=Wanted;
-    KeyLight->SetCastShadows(Level>0);KeyLight->DynamicShadowCascades=Level<2?2:3;
-    KeyLight->DynamicShadowDistanceMovableLight=Level<2?5000:9000;
+    // Athlete shadows are the difference between a player standing on the ground and a sprite
+    // pasted over it, so they survive all the way down to the lowest tier -- what scales instead is
+    // the cascade count and the distance the cascades reach.
+    KeyLight->SetCastShadows(true);KeyLight->DynamicShadowCascades=Level<2?2:3;
+    KeyLight->DynamicShadowDistanceMovableLight=Level<2?4500:9000;
+    KeyLight->ContactShadowLength=Level>0?.045f:0.f;
     if(CrossLight)CrossLight->SetVisibility(Level>0);
-    for(auto& F:Floods)if(F)F->SetVisibility(Level>=3);
-    if(Rebuild&&HasActorBegunPlay())BuildVenue();
+    for(auto& F:Floods)if(F)F->SetVisibility(Level>=2);
+    if(Shafts)Shafts->SetVisibility(Level>0);
+    if(Rebuild&&HasActorBegunPlay()){BuildVenue();BuildLightShafts();}
     for(auto& B:Batches)
     {
         if(B->GetName().StartsWith(TEXT("CrowdHeads")))B->SetVisibility(Level>0);

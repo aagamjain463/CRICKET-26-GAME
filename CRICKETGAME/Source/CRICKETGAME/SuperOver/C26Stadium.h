@@ -26,6 +26,10 @@ public:
     void UpdateAtmosphere(float Time);
     UPROPERTY(VisibleAnywhere) TObjectPtr<UProceduralMeshComponent> Bowl;
     UPROPERTY(VisibleAnywhere) TObjectPtr<UProceduralMeshComponent> Sky;
+    /** Additive haze cones hanging under each pylon. Six long, very faint quads sell a floodlit
+        night far more cheaply than volumetric fog, and they are the element that makes the venue
+        read as a night match rather than an overcast afternoon. */
+    UPROPERTY(VisibleAnywhere) TObjectPtr<UProceduralMeshComponent> Shafts;
     UPROPERTY(VisibleAnywhere) TObjectPtr<UDirectionalLightComponent> KeyLight;
     UPROPERTY(VisibleAnywhere) TObjectPtr<UDirectionalLightComponent> CrossLight;
     UPROPERTY(VisibleAnywhere) TObjectPtr<USkyLightComponent> FillLight;
@@ -39,9 +43,11 @@ private:
     UPROPERTY() TArray<TObjectPtr<UTextRenderComponent>> Signs;
     UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> LED;
     UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> LampMaterial;
+    UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> ShaftMaterial;
     float CrowdReaction=0;
     float LastAtmosphereTime=0;
     float AtmosphereUpdateAccumulator=0;
     void ConfigureLighting();
+    void BuildLightShafts();
     UHierarchicalInstancedStaticMeshComponent* Batch(const TCHAR* Name,UStaticMesh* Mesh,UMaterialInterface* Material);
 };
