@@ -7,6 +7,7 @@
 class AC26Athlete;
 class AC26Stadium;
 class AC26CameraDirector;
+class AC26Effects;
 class UC26Audio;
 class UC26Settings;
 class UStaticMeshComponent;
@@ -26,6 +27,7 @@ public:
     UPROPERTY() TObjectPtr<UC26Audio> Audio;
     UPROPERTY() TObjectPtr<AC26CameraDirector> Director;
     UPROPERTY() TObjectPtr<AC26Stadium> Venue;
+    UPROPERTY() TObjectPtr<AC26Effects> Effects;
     UPROPERTY() TArray<TObjectPtr<AC26Athlete>> Athletes;
     UPROPERTY() TObjectPtr<UStaticMeshComponent> BallMesh;
     UPROPERTY() TArray<TObjectPtr<UStaticMeshComponent>> Stumps;
@@ -65,7 +67,10 @@ public:
 private:
     C26::DeliveryOutcome Pending;
     uint32 DeliveryId=0;
-    int ActiveFielder=-1,RunnerAId=0,RunnerBId=1;
+    int ActiveFielder=-1,BackupFielder=-1,RunnerAId=0,RunnerBId=1;
+    float RunVelocity=0,CatchClock=-1;
+    bool ThrowReleased=false;
+    TArray<FC26BallState> FieldForecast;
     float ShotInputTime=0,AITiming=0,FieldDecisionClock=0,ThrowClock=-1,ThrowDuration=0;
     FVector Intercept,ThrowFrom,ThrowTo,RunFromA,RunFromB,RunToA,RunToB;
     int ThrowRunner=0;
@@ -74,6 +79,8 @@ private:
     float SmokeWatchdog=0;
     int CaptureIndex=0;
     float CaptureHold=0,CaptureWait=0;
+    FString ProbeName;
+    bool ProbeCaptured=false;
     void UpdateCapture(float Dt);
     TArray<FVector> FieldPositions;
     void ChangePhase(EC26Phase NewPhase);
@@ -90,4 +97,7 @@ private:
     void BreakWicket(float Y);
     void ResetStumps();
     void Haptic(float Strength);
+    /** Dust and turf response for one ball's worth of contact events. */
+    void Spark(const FVector& At,bool Struck);
+    bool FootPlanted=false;
 };

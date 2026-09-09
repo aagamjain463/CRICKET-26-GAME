@@ -6,15 +6,19 @@
 struct FC26BallState
 {
     FVector Position=FVector::ZeroVector, Velocity=FVector::ZeroVector;
+    FVector Spin=FVector::ZeroVector; // Angular velocity, radians/second; consumed by presentation.
     bool Active=false, Struck=false, Bounced=false, PostHitBounce=false;
     float Age=0;
 };
+enum class EC26ContactType : uint8 { Perfect, Good, Early, Late, InsideEdge, OutsideEdge, TopEdge, BottomEdge, Miss };
 struct FC26Contact
 {
     EC26Timing Timing=EC26Timing::Miss;
+    EC26ContactType ContactType=EC26ContactType::Miss;
     FVector Velocity=FVector::ZeroVector;
+    FVector ContactPoint=FVector::ZeroVector;
     FString Shot=TEXT("LEAVE");
-    float Quality=0;
+    float Quality=0, Suitability=0, FaceAngle=0;
 };
 
 class FC26Simulation
@@ -32,6 +36,8 @@ public:
     void Release(const FC26DeliveryPlan& InPlan,const FVector& Origin);
     void Step(float Dt);
     FC26BallState Predict(float Seconds) const;
+    // One sequential integration shared by every candidate fielder, instead of N repeated predictions.
+    void Forecast(TArray<FC26BallState>& Out,float Horizon=5.f,float Interval=.125f) const;
     FVector PredictLanding(float MaxSeconds=6.f) const;
     FC26Contact Hit(const FC26ShotIntent& Intent,float TimingError,int Difficulty,FRandomStream& Random);
     bool CrossesRope(const FVector& From,const FVector& To) const;
@@ -42,7 +48,8 @@ private:
 struct FC26AIHistory
 {
     float OffsideBias=0,LastPower=0;
-    int Boundaries=0;
+    int Boundaries=0,PlannedBalls=0,RepeatedDelivery=0;
+    EC26Delivery LastDelivery=EC26Delivery::Pace;
     void Reset(){ *this={}; }
 };
 class FC26AI
@@ -55,4 +62,5 @@ public:
     FC26ShotIntent Bat(const FC26DeliveryPlan& VisibleDelivery,const C26::Match& Rules,int Difficulty);
     float TimingError(int Difficulty);
     static TArray<FVector> Field(bool ProtectOffside=false);
+    static FVector FieldPosition(FName Name);
 };
