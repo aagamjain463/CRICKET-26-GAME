@@ -72,6 +72,12 @@ AC26Athlete::AC26Athlete()
     static ConstructorHelpers::FObjectFinder<UStaticMesh> Sphere(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
     for(auto* P:{Helmet.Get(),Peak.Get()})
     {P->SetStaticMesh(Sphere.Object);P->SetCollisionEnabled(ECollisionEnabled::NoCollision);P->SetCastShadow(true);}
+    // Headwear sits millimetres from the face. Left casting, the peak, shell and grille throw the
+    // whole head into shadow and the face renders as a dark mass in every replay close-up. Their
+    // ground shadows are sub-pixel at gameplay distance, so unchecking them costs nothing visible.
+    Peak->SetCastShadow(false);
+    Shell->SetCastShadow(false);
+    Grill->SetCastShadow(false);
     // Every component here defaults to Static mobility, which is what CreateDefaultSubobject gives
     // you. A static primitive is never entered into the dynamic shadow pass, so until this loop
     // existed no athlete in the game cast a shadow on the ground at any quality level -- measured
@@ -276,11 +282,15 @@ void AC26Athlete::BuildGloves()
 void AC26Athlete::BuildPads()
 {
     constexpr int Rows=11,Sides=14;
-    const float Height[Rows]={-24.f,-19.f,-14.f,-9.f,-4.f,1.f,6.f,11.f,15.f,18.f,20.5f};
-    const float Wide[Rows]  ={7.4f,9.6f,11.0f,11.4f,11.7f,11.9f,12.1f,12.3f,12.2f,10.6f,7.2f};
+    // The mouth stops just above the knee and runs wide: a tall narrow mouth climbs into the bent
+    // thigh on a striding batter and opens a dark crescent the replay camera looks straight into.
+    // Cricket pads strap over full-length trousers, so cloth above and a wide mouth below is the
+    // authentic shape as well as the one that cannot gape.
+    const float Height[Rows]={-24.f,-19.f,-14.f,-9.f,-4.f,1.f,6.f,11.f,15.f,18.5f,21.5f};
+    const float Wide[Rows]  ={7.4f,9.6f,11.0f,11.4f,11.7f,11.9f,12.1f,12.3f,12.2f,11.0f,10.5f};
     // Front depth carries the bolsters; the back stays a plain roll behind the calf. Both ends
     // round off rather than closing on a flat disc, which caught the key light as a dark plate.
-    const float Front[Rows] ={9.4f,10.0f,10.6f,9.9f,10.7f,10.0f,10.8f,11.3f,11.4f,9.8f,7.6f};
+    const float Front[Rows] ={9.4f,10.0f,10.6f,9.9f,10.7f,10.0f,10.8f,11.3f,11.4f,10.6f,10.5f};
     TArray<FVector> V,N;TArray<int32> T;TArray<FVector2D> UV;TArray<FLinearColor> C;TArray<FProcMeshTangent> Tan;
     for(int R=0;R<Rows;++R)for(int J=0;J<Sides;++J)
     {
@@ -304,6 +314,28 @@ void AC26Athlete::BuildPads()
     }
     PadL->CreateMeshSection_LinearColor(0,V,T,N,UV,C,Tan,false);
     PadR->CreateMeshSection_LinearColor(0,V,T,N,UV,C,Tan,false);
+    // Thigh seal: a short flare hugging the inside of the wide pad mouth, so the replay camera
+    // meets lit binding instead of the unlit tube interior. It stays below the knee bend, where
+    // shin and thigh still agree, which is what keeps it from gaping on a striding batter.
+    {
+        TArray<FVector> SV,SN;TArray<int32> ST;TArray<FVector2D> SUV;TArray<FLinearColor> SC;TArray<FProcMeshTangent> STan;
+        constexpr int SealSides=14;
+        for(int J=0;J<SealSides;++J)
+        {
+            const float A=2*PI*J/SealSides;
+            const FVector Dir(FMath::Cos(A),FMath::Sin(A),0);
+            const FVector ConeN=(Dir*.76f+FVector::UpVector*.64f).GetSafeNormal();
+            SV.Add(Dir*10.f+FVector(0,0,20.8f));SN.Add(ConeN);SUV.Add(FVector2D(FMath::Cos(A),FMath::Sin(A)));
+            SV.Add(Dir*8.8f+FVector(0,0,22.5f));SN.Add(ConeN);SUV.Add(FVector2D(FMath::Cos(A)*.9f,FMath::Sin(A)*.9f));
+        }
+        for(int J=0;J<SealSides;++J)
+        {
+            const int F0=J*2,T0=J*2+1,F1=((J+1)%SealSides)*2,T1=((J+1)%SealSides)*2+1;
+            ST.Append({F0,F1,T1,F0,T1,T0});
+        }
+        PadL->CreateMeshSection_LinearColor(1,SV,ST,SN,SUV,SC,STan,false);
+        PadR->CreateMeshSection_LinearColor(1,SV,ST,SN,SUV,SC,STan,false);
+    }
 }
 void AC26Athlete::BuildContactShadow()
 {
@@ -406,6 +438,11 @@ void AC26Athlete::Configure(EC26Role NewRole,int Team,int Number)
     // Trousers sit a shade cooler and flatter than the shirt so the two halves of the kit separate
     // in silhouette instead of reading as one moulded block of colour.
     Trousers=Make(Role==EC26Role::Umpire?FLinearColor(.020,.024,.036):Kit*.62f+FLinearColor(.055,.058,.062),.90f);
+    // Skin has to survive the same floodlit night as the shirt. The imported Bodymat response goes
+    // almost black on vertical surfaces, so the head and forearms take a controlled mid-brown that
+    // stays readable without blowing out. Linear-space, roughly sRGB (215,168,146) darkened a stop
+    // for the 4-lux key.
+    Skin=Make(FLinearColor(.42f,.235f,.155f),.62f);
     Gear=Make(FLinearColor(.58,.61,.57),.86f);
     if(auto* S=Cast<USkeletalMesh>(Mesh->GetSkinnedAsset()))
     {
@@ -414,17 +451,20 @@ void AC26Athlete::Configure(EC26Role NewRole,int Team,int Number)
             const FString Name=S->GetMaterials()[I].MaterialSlotName.ToString();
             if(Name.Contains(TEXT("Top")))Mesh->SetMaterial(I,Shirt);
             else if(Name.Contains(TEXT("Bottom")))Mesh->SetMaterial(I,Trousers);
+            else if(Name.Contains(TEXT("Body")))Mesh->SetMaterial(I,Skin);
             if(Name.Contains(TEXT("Bottom"))||Name.Contains(TEXT("Hair")))
                 for(int LOD=0;LOD<S->GetLODNum();++LOD)Mesh->ShowMaterialSection(I,0,false,LOD);
         }
     }
     Uniform->SetMaterial(2,Shirt);Uniform->SetMaterial(0,Trousers);Uniform->SetMaterial(1,Make(Team==0?FLinearColor(.10,.40,.43):FLinearColor(.72,.24,.07),.88f));
+    Uniform->SetMaterial(3,Shirt);Uniform->SetMaterial(4,Shirt);Uniform->SetMaterial(5,Shirt);
     Bat->SetMaterial(0,Make(FLinearColor(.315,.258,.158),.60f));
     Bat->SetMaterial(1,Make(FLinearColor(.020,.022,.026),.86f));
     Helmet->SetMaterial(0,Make(Kit*.85f,.30f));Peak->SetMaterial(0,Make(Kit*.85f,.30f));
     Shell->SetMaterial(0,Make(Kit*.62f,.36f));Shell->SetMaterial(1,Make(Kit*.55f,.36f));
     Grill->SetMaterial(0,Make(FLinearColor(.045,.050,.058),.34f));
     PadL->SetMaterial(0,Gear);PadR->SetMaterial(0,Gear);
+    PadL->SetMaterial(1,Gear);PadR->SetMaterial(1,Gear);
     GloveL->SetMaterial(0,Gear);GloveR->SetMaterial(0,Gear);
     const bool Batting=Role==EC26Role::Batter,Keeping=Role==EC26Role::Keeper;
     const bool Guarded=Batting||Keeping;
@@ -617,13 +657,17 @@ void AC26Athlete::UpdateUniform()
     {
         const int H=Bone(Side+TEXT("UpLeg")),K=Bone(Side+TEXT("Leg")),F=Bone(Side+TEXT("Foot"));
         if(H<0||K<0||F<0)return;
-        const FVector Top=Pose[H].GetLocation()+FVector(0,0,8),Knee=Pose[K].GetLocation(),Foot=Pose[F].GetLocation()+FVector(0,0,2);
+        const FVector Top=Pose[H].GetLocation()+FVector(0,0,10),Knee=Pose[K].GetLocation(),Foot=Pose[F].GetLocation()+FVector(0,0,2);
         const FVector Centers[]={Top,FMath::Lerp(Top,Knee,.45f),Knee,FMath::Lerp(Knee,Foot,.5f),Foot};
         // Radii in centimetres at hip, mid-thigh, knee, mid-calf and ankle. These were roughly twice
         // life size, which inflated the legs into a toy silhouette and pushed the trouser out through
         // the pads. A 185 cm athlete measures about this. The knee ring runs slightly full so a bent
-        // front knee never peeks skin through the cloth in a replay close-up.
-        const float Widths[]={10.4f,9.1f,7.8f,7.0f,5.5f};
+        // front knee never peeks skin through the cloth in a replay close-up. The hip ring runs full
+        // so the base-mesh waist never peeks out between shirt and trouser now that skin is bright.
+        // Mid-thigh and knee stay a touch proud of the base mesh for the same reason: the imported
+        // thighs are heavier than a tailor's chart, and skin poking through reads far worse than a
+        // slightly fuller leg. Both still sit well inside the pads.
+        const float Widths[]={11.6f,10.2f,8.4f,7.0f,5.5f};
         const int Base=Vertices.Num();constexpr int Sides=12;
         for(int Row=0;Row<5;++Row)
         {
@@ -673,17 +717,94 @@ void AC26Athlete::UpdateUniform()
         {const int A=Base+R*Sides+J,B=Base+R*Sides+(J+1)%Sides;SleeveT.Append({A,B,A+Sides,B,B+Sides,A+Sides});}
     };
     Sleeve(TEXT("Left"));Sleeve(TEXT("Right"));
-    if(Uniform->GetNumSections()<3)
+    // Tailored shirt details, posed off the same joints as the sleeves. The base-mesh shirt is one
+    // smooth volume, so the collar, placket and hem band are what stop the torso reading as a
+    // balloon in replay close-ups. Sections 3/4/5 take the Shirt material in Configure. Every
+    // dimension derives from the posed bones, so nothing floats or clips as the batter moves.
+    TArray<FVector> CollarV,CollarN,HemV,HemN,PlacketV,PlacketN;
+    TArray<int32> CollarT,HemT,PlacketT;
+    TArray<FVector2D> CollarUV,HemUV,PlacketUV;
+    const int Neck=Bone(TEXT("Neck")),Head=Bone(TEXT("Head"));
+    const int Spine2=Bone(TEXT("Spine2")),Pelvis=Bone(TEXT("Hips"));
+    const FVector ChestFacing=Pelvis>=0
+        ?Pose[Pelvis].GetRotation().RotateVector(Reference[Pelvis].GetRotation().UnrotateVector(RigForward)).GetSafeNormal(UE_SMALL_NUMBER,RigForward)
+        :RigForward;
+    if(Neck>=0)
+    {
+        const FVector NeckPos=Pose[Neck].GetLocation();
+        const FVector Axis=(Head>=0?Pose[Head].GetLocation()-NeckPos:FVector(0,0,12.f)).GetSafeNormal(UE_SMALL_NUMBER,FVector::UpVector);
+        FVector Across=FVector::CrossProduct(Axis,Upright(Axis)).GetSafeNormal(UE_SMALL_NUMBER,FVector::UpVector);
+        const FVector Depth=FVector::CrossProduct(Across,Axis).GetSafeNormal(UE_SMALL_NUMBER,RigForward);
+        // Collar: short flared band around the base of the neck. Bottom ring sits on the trapezius
+        // so no gap opens when the head turns to track the ball.
+        {
+            const FVector Centers[]={NeckPos+Axis*.5f,NeckPos+Axis*4.8f};
+            const float Widths[]={8.6f,7.6f};
+            constexpr int Sides=12;
+            const int Base=CollarV.Num();
+            for(int Row=0;Row<2;++Row)for(int J=0;J<Sides;++J)
+            {
+                const float A=2*PI*J/Sides;
+                const FVector N=Across*FMath::Cos(A)+Depth*FMath::Sin(A);
+                CollarV.Add(Centers[Row]+N*Widths[Row]);CollarN.Add(N);CollarUV.Add(FVector2D(J/float(Sides),Row));
+            }
+            for(int J=0;J<Sides;++J)
+            {const int A=Base+J,B=Base+(J+1)%Sides;CollarT.Append({A,B,A+Sides,B,B+Sides,A+Sides});}
+        }
+        // Placket: narrow plate down the front of the chest. Single-sided geometry is enough; the
+        // kit materials are two-sided. The middle row stands a touch prouder to follow the chest.
+        if(Spine2>=0)
+        {
+            const FVector SideDir=FVector::CrossProduct(FVector::UpVector,ChestFacing).GetSafeNormal(UE_SMALL_NUMBER,Across);
+            const FVector Top=NeckPos-Axis*1.5f+ChestFacing*11.5f;
+            const FVector Mid=Top-Axis*6.5f+ChestFacing*.5f;
+            const FVector Bot=Top-Axis*13.f;
+            const FVector Rows[]={Top,Mid,Bot};
+            const int Base=PlacketV.Num();constexpr int Cols=2;
+            for(int Row=0;Row<3;++Row)for(int C=0;C<Cols;++C)
+            {
+                PlacketV.Add(Rows[Row]+SideDir*((C?1.f:-1.f)*1.7f));
+                PlacketN.Add(ChestFacing);PlacketUV.Add(FVector2D(float(C),Row*.5f));
+            }
+            for(int Row=0;Row<2;++Row)
+            {const int A=Base+Row*Cols;PlacketT.Append({A,A+1,A+Cols,A+1,A+Cols+1,A+Cols});}
+        }
+    }
+    if(Pelvis>=0)
+    {
+        // Hem band: elliptical ring where the shirt meets the trousers, so the shirt reads as
+        // tucked cloth with an edge rather than melting into the hips. Cut deliberately proud of
+        // the base shirt -- a slightly loose hem reads as cloth, a flush one disappears entirely.
+        const FVector C=Pose[Pelvis].GetLocation()+FVector(0,0,10.f);
+        const FVector SideH=FVector::CrossProduct(FVector::UpVector,ChestFacing).GetSafeNormal(UE_SMALL_NUMBER,FVector(0,1,0));
+        constexpr int Sides=14;
+        const int Base=HemV.Num();
+        for(int Row=0;Row<2;++Row)for(int J=0;J<Sides;++J)
+        {
+            const float A=2*PI*J/Sides;
+            const FVector Out=SideH*FMath::Cos(A)*18.2f+ChestFacing*FMath::Sin(A)*13.2f;
+            HemV.Add(C+Out-FVector(0,0,Row*3.2f));HemN.Add(Out.GetSafeNormal());HemUV.Add(FVector2D(J/float(Sides),Row));
+        }
+        for(int J=0;J<Sides;++J)
+        {const int A=Base+J,B=Base+(J+1)%Sides;HemT.Append({A,B,A+Sides,B,B+Sides,A+Sides});}
+    }
+    if(Uniform->GetNumSections()<6)
     {
         Uniform->CreateMeshSection_LinearColor(0,Vertices,Indices,Normals,UV,Colors,Tangents,false);
         Uniform->CreateMeshSection_LinearColor(1,StripeV,StripeT,StripeN,StripeUV,Colors,Tangents,false);
         Uniform->CreateMeshSection_LinearColor(2,SleeveV,SleeveT,SleeveN,SleeveUV,Colors,Tangents,false);
+        Uniform->CreateMeshSection_LinearColor(3,CollarV,CollarT,CollarN,CollarUV,Colors,Tangents,false);
+        Uniform->CreateMeshSection_LinearColor(4,PlacketV,PlacketT,PlacketN,PlacketUV,Colors,Tangents,false);
+        Uniform->CreateMeshSection_LinearColor(5,HemV,HemT,HemN,HemUV,Colors,Tangents,false);
     }
     else
     {
         Uniform->UpdateMeshSection_LinearColor(0,Vertices,Normals,UV,Colors,Tangents);
         Uniform->UpdateMeshSection_LinearColor(1,StripeV,StripeN,StripeUV,Colors,Tangents);
         Uniform->UpdateMeshSection_LinearColor(2,SleeveV,SleeveN,SleeveUV,Colors,Tangents);
+        Uniform->UpdateMeshSection_LinearColor(3,CollarV,CollarN,CollarUV,Colors,Tangents);
+        Uniform->UpdateMeshSection_LinearColor(4,PlacketV,PlacketN,PlacketUV,Colors,Tangents);
+        Uniform->UpdateMeshSection_LinearColor(5,HemV,HemN,HemUV,Colors,Tangents);
     }
 }
 void AC26Athlete::Animate(float Dt)

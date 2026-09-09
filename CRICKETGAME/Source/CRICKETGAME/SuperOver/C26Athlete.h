@@ -79,6 +79,10 @@ private:
     UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> Shirt;
     UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> Trousers;
     UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> Gear;
+    /** Readable skin tone. The imported Bodymat renders as a dark mass under the night rig; a
+        flat M_Surface tone in a mid-brown keeps the face, neck and forearms readable at every
+        camera distance. Eyes share the Body slot, so they take the same tone at this fidelity. */
+    UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> Skin;
     UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> ShadeMaterial;
     int Bone(const FString& Name) const;
     void RebuildChildren(int Index);

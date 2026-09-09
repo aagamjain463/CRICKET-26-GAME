@@ -1,5 +1,50 @@
 # CRICKET 26 — AI HANDOFF
 
+## Muse Spark continuation — 2026-09-09, kit readability. Supersedes nothing; extends the sections below.
+
+Branch `work/match-world-reborn`. Milestone 1 (world) already committed as `b4281e7`;
+this session did NOT touch venue/camera/rules. It closed the two character-fidelity
+items the handoff named as the visible bottleneck: head/face dark mass and torso/sleeve
+merge. Build **succeeds**, gate **PASS** (`kit_readability5`: `failures=0`,
+`hand_gap_cm=0.000`, contact `gap_cm=0.523` at `Z=-57.9`), automation **3/3 PASS**,
+smoke background-running (`Artifacts/smoke_kit.log`, clean through match 2+ at write time).
+
+### What changed (all `Source/CRICKETGAME/SuperOver/`, rules/scoring untouched)
+
+- `C26Athlete.h/.cpp` — `Skin` MID (M_Surface, linear `(.42,.235,.155)`, rough .62)
+  overrides `Bodymat` slots; `Peak`/`Shell`/`Grill` cast no shadow; `Uniform`
+  sections 3/4/5 (collar off neck bone, chest placket, hem off pelvis, all
+  bone-derived); trousers hip 11.6 / mid-thigh 10.2 / knee 8.4; pads end above
+  the knee (21.5) with wide mouths (10.5) and a short lit throat flare (§1 Gear).
+- `Tests/C26GoldenGate.cpp` — unity-build `-Wshadow` fix: gate local `Striker`
+  shadowed the anonymous `Striker` in `C26CameraDirector.cpp`; renamed `StrikerPos`.
+  The committed tree did not compile without this.
+- Cost: +3 small sections/athlete (~600 tris). Gate frame time mean 21.3 ms /
+  p95 25.7 ms desktop editor with screenshots (baseline 20.4/22.3). Not a device claim.
+
+### Tooling verified, deliberately unused for authoring
+
+- Cascadeur MCP live on `127.0.0.1:8765`, Blender 5.2.1 MCP connected (used for
+  measuring `C26_KitBase`, not re-export). Procedural overlays were chosen over
+  skinned re-export so skin weights were never at risk. No Meshy usage.
+
+### Known issues, honestly
+
+- Pad mouths can keep a thin dark crescent at extreme grazing angles; reads as strap.
+- Shirt back is still one smooth volume behind the number; front/side read tailored.
+- Eyes share the Body slot and take the skin tone at this fidelity.
+- Motion is still procedural, not authored/mocap. The 0.31 s gather is the next
+  visible motion bottleneck and the place to aim Cascadeur.
+
+### Next exact task
+
+Confirm `C26_SMOKE_PASS` in `Artifacts/smoke_kit.log`, then commit this session,
+then lengthen the bowling gather with release sync re-derived and gate re-run.
+Full detail (with blind alleys preserved so nobody repeats them) is in
+`Docs/CURRENT_TASK.md` and the `kit_readability*` captures.
+
+---
+
 ## Claude (Opus 5) continuation — 2026-09-09, kit and drive pose. Supersedes the sections below.
 
 Branch `work/golden-delivery-contact`. Commits `4f5ab04` (rendered golden gate) and the kit/pose

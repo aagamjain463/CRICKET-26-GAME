@@ -47,3 +47,20 @@ Not re-scored and still unverified: sound, responsiveness, tactile feedback, mob
 No measurement exists on a phone. The desktop editor frame time for a delivery is mean 20.4 ms,
 p95 22.3 ms with screenshots enabled, which is not a device claim.
 
+## 2026-09-09, kit readability — `kit_readability5` (Muse Spark)
+
+Evidence: `Artifacts/Captures/kit_readability5/`, inspected with `Tools/CropFrame.py`
+at 2-4x on `0_10_replay_contact.png`. Only areas this session touched are
+re-scored; everything else keeps its earlier number. Gate identical to baseline
+(release 0.000 cm, contact 0.523 cm at Z=-57.9), automation 3/3 PASS.
+
+| Area | Before /10 | Now /10 | What changed, measurably |
+|---|---:|---:|---|
+| Player models | 5 | 7 | Skin reads mid-brown at all distances (was near-black mass); collar, placket and hem band break the balloon torso; pad mouths carry lit binding. |
+| Replay | 5 | 6 | Close-up survives magnification: face, forearms, gloves, pads, blade all read. Pad mouth can keep a thin dark crescent at grazing angles (reads as strap). Shirt back is still one smooth volume behind the number. |
+| Shadows | 5 | 6 | Face self-shadow removed (headwear no longer casts); pad-mouth shadow replaced with lit flare geometry. |
+
+Still procedural, not authored: batting, bowling, locomotion, fielding scores
+unchanged. Desktop editor delivery frame time mean 21.3 ms, p95 25.7 ms with
+screenshots on (+3 sections/athlete, ~600 tris) — not a device claim.
+

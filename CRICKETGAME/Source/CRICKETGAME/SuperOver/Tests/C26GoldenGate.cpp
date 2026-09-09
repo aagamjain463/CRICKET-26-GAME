@@ -66,9 +66,9 @@ void AC26MatchGameMode::UpdateGoldenGate(float Dt)
         {
             auto* PC=GetWorld()->GetFirstPlayerController();int W=0,H=0;PC->GetViewportSize(W,H);
             FVector2D Feet,Head,Bowler;
-            const FVector Striker=Athletes[11]->GetActorLocation();
-            PC->ProjectWorldLocationToScreen(Striker,Feet);
-            PC->ProjectWorldLocationToScreen(Striker+FVector(0,0,180),Head);
+            const FVector StrikerPos=Athletes[11]->GetActorLocation();
+            PC->ProjectWorldLocationToScreen(StrikerPos,Feet);
+            PC->ProjectWorldLocationToScreen(StrikerPos+FVector(0,0,180),Head);
             PC->ProjectWorldLocationToScreen(Athletes[0]->GetActorLocation()+FVector(0,0,150),Bowler);
             const float Height=(Feet.Y-Head.Y)/FMath::Max(1,H);
             UE_LOG(LogC26,Display,TEXT("C26_GATE_COMPOSITION athlete_height_fraction=%.3f feet=%s head=%s bowler=%s"),Height,*Feet.ToString(),*Head.ToString(),*Bowler.ToString());
