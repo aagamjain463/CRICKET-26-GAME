@@ -33,6 +33,7 @@ struct FC26ShotIntent
     UPROPERTY(EditAnywhere, BlueprintReadWrite) float Angle = 0;
     UPROPERTY(EditAnywhere, BlueprintReadWrite) float Power = .72f;
     UPROPERTY(EditAnywhere, BlueprintReadWrite) float Footwork = 0;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) float Stride = 0;
     UPROPERTY(EditAnywhere, BlueprintReadWrite) bool Loft = false;
     UPROPERTY(EditAnywhere, BlueprintReadWrite) bool Defend = false;
 };
@@ -57,6 +58,9 @@ namespace C26Field
     constexpr float WicketY = 1006.f;
     constexpr float CreaseY = 884.f;
     constexpr float ContactY = 848.f;
+    constexpr float RunUpDuration = 3.05f;
+    constexpr float ReleasePoseTime = .31226f;
+    constexpr float BatContactPoseTime = .24f;
     constexpr float RadiusX = 6550.f;
     constexpr float RadiusY = 7200.f;
     inline FVector RopePoint(float A) { return FVector(RadiusX*FMath::Cos(A),RadiusY*FMath::Sin(A),6.f); }
