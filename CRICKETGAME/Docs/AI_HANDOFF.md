@@ -80,6 +80,15 @@ All in `Source/CRICKETGAME/SuperOver/`. Rules, scoring, innings and Super Over l
   thigh measures luma 129 against 74 for the rest of the same kit both before and after the change,
   so that contrast is genuine key light on a raised thigh beside a self-shadowed trailing leg.
 
+### Final verification on the committed binary
+
+Build succeeds. Automation 3/3 PASS. `C26_GATE_PASS failures=0 frames=25` with
+`hand_gap_cm=0.000` and contact `gap_cm=0.523` at `Z=-57.9`, from a gate run made after the
+ripgrep fix, so the exit code is meaningful. `-C26Smoke` on the final binary:
+`C26_SMOKE_PASS matches=10 boundaries=18 wickets=19 replays=37 extras=2 actors=14`, 0 errors
+(`Artifacts/smoke_final.log`). Desktop editor frame time over a delivery: mean 20.8 ms,
+p95 23.0 ms with screenshots on. That is not a device measurement and must not be quoted as one.
+
 ### Known issues, honestly
 
 - The shirt is one smooth volume: the near arm merges into the chest in replay close-ups. This is
