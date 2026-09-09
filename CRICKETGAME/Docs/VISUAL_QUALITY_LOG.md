@@ -28,3 +28,21 @@ against the requested premium target, not earlier handoff claims. NV = not verif
 | Mobile performance | NV | No phone measurements |
 
 Golden Delivery is NOT accepted merely because automation passes.
+
+## 2026-09-09, kit and drive pose — `gate_kit2` (Claude Opus 5)
+
+Evidence: `Artifacts/Captures/gate_kit2/`, inspected with `Tools/CropFrame.py`. Only areas this
+session actually touched are re-scored; everything else keeps the baseline number above.
+
+| Area | Baseline /10 | Now /10 | What changed, and what is measurable |
+|---|---:|---:|---|
+| Player models | 3 | 5 | Gloves have finger rolls, pads have bolsters and wings, helmet has ear/nape coverage. Torso is still one smooth volume. |
+| Batting animation | 2 | 4 | Pelvis transfers forward onto the striding foot, front knee takes the load, back heel rolls onto its toe, chest goes over the ball. Still procedural, not authored. |
+| Bat-ball contact | 3 | 7 | `C26_GATE_CONTACT gap_cm=0.523` against the generated blade triangles, at `Z=-57.9` on an 83 cm bat — the widest point of the willow. Was -75.7, the toe. |
+| Locomotion | 3 | 4 | Lifted feet roll onto the toe instead of hanging flat; applies to the run-up as well as the drive. |
+| Replay | 4 | 5 | The close-up now survives magnification: hands, pads and blade all read. The head does not. |
+
+Not re-scored and still unverified: sound, responsiveness, tactile feedback, mobile performance.
+No measurement exists on a phone. The desktop editor frame time for a delivery is mean 20.4 ms,
+p95 22.3 ms with screenshots enabled, which is not a device claim.
+
