@@ -3,6 +3,7 @@
 #include "GameFramework/GameModeBase.h"
 #include "C26Types.h"
 #include "C26Simulation.h"
+#include "C26Commentary.h"
 #include "C26MatchGameMode.generated.h"
 class AC26Athlete;
 class AC26Stadium;
@@ -12,6 +13,7 @@ class UC26Audio;
 class UC26Settings;
 class UStaticMeshComponent;
 DECLARE_MULTICAST_DELEGATE(FOnC26MatchChanged);
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnC26CricketEvent,FName,const FVector&);
 
 UCLASS()
 class CRICKETGAME_API AC26MatchGameMode : public AGameModeBase
@@ -36,8 +38,10 @@ public:
     FC26AI AI;
     FC26ShotIntent Intent;
     FC26DeliveryPlan Bowling;
+    FC26DeliveryPlan LockedBowling;
     FC26Contact LastContact;
     FOnC26MatchChanged OnMatchChanged;
+    FOnC26CricketEvent OnCricketEvent;
     FString Callout,Detail,TossText;
     float PhaseTime=0,Clock=0,ReleaseQuality=.5f;
     int PlayerTeam=0,FirstBattingTeam=0;
@@ -70,6 +74,10 @@ private:
     int ActiveFielder=-1,BackupFielder=-1,RunnerAId=0,RunnerBId=1;
     float RunVelocity=0,CatchClock=-1;
     bool ThrowReleased=false;
+    bool BallReleased=false,ResettingMatch=false,KeeperTake=false;
+    float KeeperTakeClock=-1.f,MissTakeAge=0.f;
+    FVector MissTakeTarget=FVector::ZeroVector,GatherPoint=FVector::ZeroVector;
+    float BrokenWicketY=0.f,StumpClock=-1.f;
     TArray<FC26BallState> FieldForecast;
     float ShotInputTime=0,AITiming=0,FieldDecisionClock=0,ThrowClock=-1,ThrowDuration=0;
     FVector Intercept,ThrowFrom,ThrowTo,RunFromA,RunFromB,RunToA,RunToB;
@@ -83,6 +91,13 @@ private:
     bool ProbeCaptured=false;
     void UpdateCapture(float Dt);
     TArray<FVector> FieldPositions;
+    /** How far the ring has walked in with the bowler this delivery, in centimetres. Reset with
+        the rest of the transient delivery state; the set positions themselves never move. */
+    float FieldCreep=0.f;
+    /** Fielders walk in as the bowler runs in and turn to follow the ball once it is struck.
+        Without it nine of the eleven players stand perfectly still through every delivery, which
+        is the single loudest tell that a cricket scene is a prototype. */
+    void UpdateFieldPresence(float Dt);
     void ChangePhase(EC26Phase NewPhase);
     void PrepareDelivery();
     void ReleaseBall();
@@ -97,6 +112,7 @@ private:
     void BreakWicket(float Y);
     void ResetStumps();
     void Haptic(float Strength);
+    FC26CommentaryContext MakeCommentaryContext() const;
     /** Dust and turf response for one ball's worth of contact events. */
     void Spark(const FVector& At,bool Struck);
     /** Momentary time pinch on a well-struck ball, and the real-time stamp it ends at. */
@@ -112,7 +128,10 @@ private:
 #if !UE_BUILD_SHIPPING
     // Opt-in integration probe: uses real input commands, simulation, fielding and scoring.
     void UpdateGoldenGate(float Dt);
-    bool GoldenGate=false,GateCollected=false,GateThrown=false,GateNoScreens=false;
+    bool GoldenGate=false,GateCollected=false,GateThrown=false,GateNoScreens=false,GateSuite=false;
+    bool GateSawFour=false,GateSawSix=false,GateSawWicket=false;
+    int GateMatches=0;
+    void UpdateProductionGate(float Dt);
     int GateStage=0,GateFailures=0;
     uint32 GateEpoch=0;
     double GateStarted=0;

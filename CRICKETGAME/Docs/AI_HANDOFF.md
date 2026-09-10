@@ -1,5 +1,55 @@
 # CRICKET 26 — AI HANDOFF
 
+## Muse Spark continuation — 2026-09-10, commentary + stadium audio overhaul.
+
+Branch `work/match-world-reborn` (uncommitted at write time; pre-existing dirty
+venue/kit files NOT mine — only stage the audio file list in this entry).
+Rules/scoring/cameras untouched; audio observes events, never owns truth.
+
+### What changed
+
+- `C26Audio.h/.cpp` — now the Match Audio Director: CommentaryManager
+  (118-line VO bank, priority queue, cooldowns, follow-ups), CrowdDirector
+  (persistent bed + tension layer + overlays + ducking), CricketSFXDirector
+  (8×2D pool + 6×3D broadcast field-mic pool, duplicate guard). Tick-driven.
+- `C26Commentary.h` (new) + `C26CommentaryData.inc` (generated from
+  `Tools/CommentaryScript.py`, the single source of truth).
+- `C26MatchGameMode.*` — `MakeCommentaryContext()`, one notify per event,
+  4-way bat mapping, all hero SFX spatialized, `c <cat>`/`c dump` debug.
+- `C26Settings.h` — Commentary/Crowd/SFX/UI volumes (persisted).
+- `C26HUD.*` — commentary subtitles + 4 bus toggles in settings.
+- `Tools/`: `CommentaryScript.py` (118 original lines), generator (macOS
+  `say`: Daniel=A, Samantha=B; peak-normalized), `EmitCommentaryData.py`,
+  `BuildOverhaulSFX.py` (bat_mistimed, foot_plant), `ImportOverhaulAudio.py`.
+- Assets: 118 `Content/Cricket26/Audio/Commentary/*.uasset` + 2 Foley uassets.
+- Docs: `AUDIO_ARCHITECTURE.md`, `AUDIO_LICENSES.md` (new).
+
+### Verification
+
+Build succeeds. `C26Smoke` 10/10 matches PASS (2 runs: boundaries 31/29,
+wickets 19/16, replays 50/45, extras 2/1). Bank 118/118 loaded, 259 plays,
+0 cooldown violations (ball-gap audited), CHASE_START 10/10, results 10/10,
+0 invalid transitions, 0 rejected outcomes. Headless ⇒ audibility proven by
+asset resolution + Play() path, not by ear: first PIE run should confirm mix
+levels on real speakers (start from defaults, they were set analytically).
+
+### Known issues, honestly
+
+- `Content/Cricket26/Audio/Mix/` SoundClasses did not persist from the
+  headless import (empty dir); code buses are the authoritative mix. 5-minute
+  optional editor task, documented in AUDIO_ARCHITECTURE.md.
+- Pre-existing `Content/Cricket26/Audio/*.uasset` provenance unverified
+  (predates this task); flagged in AUDIO_LICENSES.md.
+- DOT/PRESSURE lines play rarely in autoplay (AI attacks); frequency gates
+  verified in code, human play will exercise them more.
+- Follow-up cooldown fix + CHASE_START priority fix went into the second
+  smoke run only; first-run log kept at `Artifacts/audio_smoke.log`.
+
+### Next exact task
+
+PIE listening pass on phone/laptop speakers → adjust bus defaults if needed;
+then replace dev TTS per AUDIO_ARCHITECTURE.md §"Replacing dev VO".
+
 ## Muse Spark continuation — 2026-09-09, kit readability. Supersedes nothing; extends the sections below.
 
 Branch `work/match-world-reborn`. Milestone 1 (world) already committed as `b4281e7`;

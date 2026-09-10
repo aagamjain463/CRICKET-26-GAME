@@ -1,7 +1,9 @@
 #include "C26HUD.h"
 #include "C26MatchGameMode.h"
 #include "C26Settings.h"
+#include "C26Audio.h"
 #include "C26CameraDirector.h"
+#include "C26Delivery.h"
 #include "Engine/Canvas.h"
 #include "Engine/Font.h"
 #include "CanvasItem.h"
@@ -106,6 +108,8 @@ void AC26HUD::Score()
     }
     if(S.Ledger.empty())Text(TEXT("THE OVER STARTS HERE"),800,817,25,Muted,true);
     if(S.FreeHit){Rect(725,44,165,46,Teal);Text(TEXT("FREE HIT"),807,49,29,Ink,true);}
+    if(Match->Rules.BallsRemaining()==1&&Match->Phase!=EC26Phase::Replay)
+    {Rect(1048,108,392,48,Ink);Text(TEXT("FINAL BALL  /  MAKE IT COUNT"),1244,116,26,Gold,true);}
 }
 void AC26HUD::Controls()
 {
@@ -127,15 +131,26 @@ void AC26HUD::Controls()
                 Rect(612,727,376,7,FLinearColor(.12,.21,.24,.9f));Rect(612,727,376*P,7,Teal);
                 Text(Match->ShotQueued?TEXT("SHOT COMMITTED"):TEXT("WATCH THE BALL"),800,755,25,Paper,true);
             }
-            if(Match->Preferences->Hints&&Match->Rules.Now().LegalBalls==0)
+            if(Match->Preferences->Hints&&Match->Rules.Now().LegalBalls==0&&Phase==EC26Phase::Ready)
             {Rect(457,222,690,53,Panel);Text(TEXT("MOVE LEFT  /  SWIPE RIGHT TO AIM  /  TIME IT AS THE BALL ARRIVES"),802,234,23,Paper,true);}
         }
         else
         {
-            static const TCHAR* Types[]={TEXT("STOCK PACE"),TEXT("YORKER"),TEXT("BOUNCER"),TEXT("SLOWER BALL"),TEXT("OUTSWINGER"),TEXT("INSWINGER")};
-            Button(TEXT("delivery"),FString(Types[int(Match->Bowling.Type)])+TEXT("  >"),72,659,286,66);
-            Text(TEXT("DRAG ON THE PITCH TO AIM"),78,744,25,Paper);
-            const FVector P=Canvas->Project(FVector(Match->Bowling.Line,Match->Bowling.Length,8));
+            const auto& Plan=Phase==EC26Phase::Ready?Match->Bowling:Match->LockedBowling;
+            if(Phase==EC26Phase::Ready)
+            {
+                Button(TEXT("delivery"),FString(C26Delivery::Name(Plan.Type))+TEXT("  >"),72,552,286,58);
+                Button(TEXT("length"),FString(C26Delivery::LengthName(Plan.Length))+TEXT("  >"),72,621,286,58);
+                const TCHAR* LineName=Plan.Line>35.f?TEXT("OUTSIDE OFF"):Plan.Line>5.f?TEXT("OFF STUMP"):Plan.Line> -25.f?TEXT("MIDDLE"):TEXT("LEG SIDE");
+                Button(TEXT("line"),FString(LineName)+TEXT("  >"),72,690,286,58);
+                Text(TEXT("OR DRAG ON THE PITCH"),78,769,23,Muted);
+            }
+            else
+            {
+                Rect(72,664,355,82,Panel);Text(C26Delivery::Name(Plan.Type),94,674,29,Paper);
+                Text(FString(C26Delivery::LengthName(Plan.Length))+TEXT("  /  PLAN LOCKED"),94,715,21,Teal);
+            }
+            const FVector P=Canvas->Project(FVector(Plan.Line,Plan.Length,8));
             if(P.Z>0){float X=(P.X-OffsetX)/Scale,Y=(P.Y-OffsetY)/Scale;Circle(X,Y,18,Teal,2);Line(X-28,Y,X+28,Y,Teal);Line(X,Y-28,X,Y+28,Teal);}
             if(Phase==EC26Phase::Ready)Button(TEXT("ready"),TEXT("START RUN-UP  >"),1160,716,350,80,true);
             if(Phase==EC26Phase::RunUp)
@@ -151,14 +166,24 @@ void AC26HUD::Controls()
         if(Match->PlayerBatting())
         {Button(TEXT("run"),Match->Running?TEXT("ANOTHER RUN"):TEXT("RUN"),1220,721,293,80,true);Button(TEXT("cancel"),TEXT("CANCEL"),79,742,195,60);}
         static const TCHAR* Timing[]={TEXT("PERFECT"),TEXT("GOOD"),TEXT("EARLY"),TEXT("LATE"),TEXT("EDGE"),TEXT("MISS")};
-        Rect(658,217,284,62,Panel);Text(Timing[int(Match->LastContact.Timing)],800,222,39,Match->LastContact.Timing==EC26Timing::Perfect?Gold:Paper,true);
+        if(Match->PhaseTime<1.10f)
+        {Rect(671,218,258,53,Panel);Text(Timing[int(Match->LastContact.Timing)],800,224,33,Match->LastContact.Timing==EC26Timing::Perfect?Gold:Paper,true);}
         if(Match->Running)Text(FString::Printf(TEXT("%d COMPLETED  /  RUNNING"),Match->CompletedRuns),800,759,28,Gold,true);
     }
     if(Phase==EC26Phase::Reaction)
     {
-        const float P=FMath::Clamp(Match->PhaseTime/.18f,0.f,1.f);float Y=350+(1-P)*18;
-        Rect(532,Y,536,174,Panel);Rect(532,Y,6,174,Match->Callout==TEXT("WICKET")?Coral:Teal);
-        Text(Match->Callout,800,Y+9,89,Paper,true);Text(Match->Detail,800,Y+122,26,Muted,true);
+        const float P=FMath::SmoothStep(0.f,.22f,Match->PhaseTime);float Y=650+(1-P)*26;
+        Rect(350,Y,900,124,Ink);Rect(350,Y,6,124,Match->Callout==TEXT("WICKET")?Coral:Teal);
+        Text(Match->Callout,390,Y+5,76,Paper);
+        const float DetailX=FMath::Max(650.f,410.f+Width(Match->Callout,76));
+        Text(Match->Detail,DetailX,Y+32,25,Teal);
+        Text(Match->Rules.Current==1?FString::Printf(TEXT("%d REQUIRED  /  %d BALLS LEFT"),Match->Rules.RunsRequired(),Match->Rules.BallsRemaining()):TEXT("SUPER OVER  /  EVERY BALL MATTERS"),DetailX,Y+72,22,Muted);
+    }
+    if(Phase==EC26Phase::Delivery&&Match->PhaseTime<.85f)
+    {
+        Rect(1130,226,383,85,Ink);
+        Text(FString::Printf(TEXT("%.0f KPH  /  %s"),Match->Bowling.Speed*.036f,C26Delivery::Name(Match->Bowling.Type)),1152,237,29,Paper);
+        Text(Match->PlayerBatting()?C26Delivery::LengthName(Match->Bowling.Length):C26Delivery::ReleaseName(Match->ReleaseQuality),1152,279,22,Teal);
     }
     if(Phase==EC26Phase::Replay)
     {
@@ -192,14 +217,29 @@ void AC26HUD::Preferences()
     else if(!Match->Paused)
     {
         const TCHAR* D[]={TEXT("EASY"),TEXT("NORMAL"),TEXT("HARD")};const TCHAR* Q[]={TEXT("LOW"),TEXT("MEDIUM"),TEXT("HIGH"),TEXT("ULTRA")};
-        Button(TEXT("difficulty"),FString(TEXT("DIFFICULTY   /   "))+D[Match->Preferences->Difficulty],473,285,654,60);
-        Button(TEXT("quality"),FString(TEXT("QUALITY   /   "))+Q[Match->Preferences->Quality],473,360,654,60);
-        Button(TEXT("sound"),Match->Preferences->SoundVolume>.1f?TEXT("MATCH SOUND   /   ON"):TEXT("MATCH SOUND   /   OFF"),473,435,654,60);
-        Button(TEXT("vibration"),Match->Preferences->Vibration?TEXT("VIBRATION   /   ON"):TEXT("VIBRATION   /   OFF"),473,510,654,60);
-        Button(TEXT("sensitivity"),FString::Printf(TEXT("SWIPE SENSITIVITY   /   %.1fx"),Match->Preferences->Sensitivity),473,585,654,60);
+        Button(TEXT("difficulty"),FString(TEXT("DIFFICULTY   /   "))+D[Match->Preferences->Difficulty],473,252,654,48);
+        Button(TEXT("quality"),FString(TEXT("QUALITY   /   "))+Q[Match->Preferences->Quality],473,306,654,48);
+        Button(TEXT("master"),Match->Preferences->SoundVolume>.1f?TEXT("MASTER SOUND   /   ON"):TEXT("MASTER SOUND   /   OFF"),473,360,654,48);
+        Button(TEXT("commentary"),Match->Preferences->CommentaryVolume>.1f?TEXT("COMMENTARY   /   ON"):TEXT("COMMENTARY   /   OFF"),473,414,654,48);
+        Button(TEXT("crowd"),Match->Preferences->CrowdVolume>.1f?TEXT("CROWD   /   ON"):TEXT("CROWD   /   OFF"),473,468,654,48);
+        Button(TEXT("sfx"),Match->Preferences->SFXVolume>.1f?TEXT("SFX + UI   /   ON"):TEXT("SFX + UI   /   OFF"),473,522,654,48);
+        Button(TEXT("vibration"),Match->Preferences->Vibration?TEXT("VIBRATION   /   ON"):TEXT("VIBRATION   /   OFF"),473,576,654,48);
+        Button(TEXT("sensitivity"),FString::Printf(TEXT("SWIPE SENSITIVITY   /   %.1fx"),Match->Preferences->Sensitivity),473,630,654,48);
     }
     else Text(TEXT("TAKE A BREATH. THE NEXT BALL IS YOURS."),800,390,36,Muted,true);
-    Button(TEXT("close"),Match->Paused?TEXT("RESUME MATCH"):TEXT("DONE"),642,674,316,61,true);
+    Button(TEXT("close"),Match->Paused?TEXT("RESUME MATCH"):TEXT("DONE"),642,684,316,56,true);
+}
+void AC26HUD::Subtitle()
+{
+    if(!Match->Audio||Match->Audio->ActiveSubtitle.IsEmpty())return;
+    if(GetWorld()->GetTimeSeconds()>Match->Audio->SubtitleUntil)return;
+    // Small broadcast-style lower-third, synced to the active voice line.
+    const FString& S=Match->Audio->ActiveSubtitle;
+    const float W=Width(S,23)+44;
+    const float X=800-W*.5f,Y=742;
+    Rect(X,Y,W,40,FLinearColor(.010,.018,.032,.82f));
+    Rect(X,Y,4,40,Teal);
+    Text(S,800,Y+7,23,Paper,true);
 }
 void AC26HUD::DrawHUD()
 {
@@ -220,5 +260,6 @@ void AC26HUD::DrawHUD()
         Button(TEXT("skip"),Match->PlayerBatting()?TEXT("TAKE THE BALL  >"):TEXT("START THE CHASE  >"),600,544,400,63,true);
     }
     else{Score();Controls();}
+    if(Match->Phase!=EC26Phase::Menu)Subtitle();
     if(Match->SettingsOpen||Match->ControlsOpen||Match->Paused)Preferences();
 }

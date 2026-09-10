@@ -30,4 +30,5 @@ private:
     void Controls();
     void Result();
     void Preferences();
+    void Subtitle();
 };
