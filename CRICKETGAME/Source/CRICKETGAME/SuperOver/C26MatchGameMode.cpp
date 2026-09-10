@@ -34,6 +34,10 @@ const FC26Beat GC26Beats[]={
     {EC26Phase::Menu,-1,0,1.2f,TEXT("05_toss"),30.f,4,TEXT("nav_toss"),0},
     {EC26Phase::Menu,-1,0,2.6f,TEXT("06_tossresult"),30.f,4,TEXT("tossflip"),2},
     {EC26Phase::Menu,-1,0,1.2f,TEXT("07_myteam"),30.f,5,TEXT("nav_myteam"),0},
+    {EC26Phase::Menu,-1,0,1.2f,TEXT("07b_career"),30.f,6,TEXT("nav_career"),0},
+    {EC26Phase::Menu,-1,0,1.2f,TEXT("07c_leaderboards"),30.f,7,TEXT("nav_tour"),0},
+    {EC26Phase::Menu,-1,0,1.2f,TEXT("07d_multiplayer"),30.f,8,TEXT("nav_online"),0},
+    {EC26Phase::Menu,-1,0,1.2f,TEXT("07e_store"),30.f,13,TEXT("nav_store"),0},
     {EC26Phase::Menu,-1,0,1.2f,TEXT("08_world"),30.f,10,TEXT("nav_world"),0},
     {EC26Phase::Menu,-1,0,1.2f,TEXT("09_settings"),30.f,11,TEXT("nav_settings"),0},
     {EC26Phase::Menu,-1,0,1.2f,TEXT("10_help"),30.f,12,TEXT("nav_help"),0},
@@ -144,30 +148,38 @@ void AC26MatchGameMode::BuildMatchActors()
 {
     FieldPositions=FC26AI::Field();
     for(int I=0;I<14;++I)Athletes.Add(GetWorld()->SpawnActor<AC26Athlete>());
+    FirstBattingTeam=0;
+    for(int I=0;I<11;++I){Athletes[I]->Configure(I==0?EC26Role::Bowler:I==1?EC26Role::Keeper:EC26Role::Fielder,1,I+1);Athletes[I]->ResetAt(FieldPositions[I],(FVector(0,850,0)-FieldPositions[I]).Rotation().Yaw);}
+    Athletes[11]->Configure(EC26Role::Batter,0,7);Athletes[11]->ResetAt(FVector(-38,900,5),-90);
+    Athletes[12]->Configure(EC26Role::Batter,0,18);Athletes[12]->ResetAt(FVector(-80,-865,5),90);
+    Athletes[13]->Configure(EC26Role::Umpire,0,0);Athletes[13]->ResetAt(FVector(105,-1390,5),90);
     auto* Sphere=LoadObject<UStaticMesh>(nullptr,TEXT("/Engine/BasicShapes/Sphere.Sphere"));
     auto* Cylinder=LoadObject<UStaticMesh>(nullptr,TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+    auto* BallHeroMesh=LoadObject<UStaticMesh>(nullptr,TEXT("/Game/Cricket26/Equipment/SM_C26_Ball_Hero.SM_C26_Ball_Hero"));
+    auto* StumpMesh=LoadObject<UStaticMesh>(nullptr,TEXT("/Game/Cricket26/Equipment/SM_C26_Stump_Single.SM_C26_Stump_Single"));
+    auto* BailMesh=LoadObject<UStaticMesh>(nullptr,TEXT("/Game/Cricket26/Equipment/SM_C26_Bail_Single.SM_C26_Bail_Single"));
     auto* White=LoadObject<UMaterialInterface>(nullptr,TEXT("/Game/Cricket26/Materials/M_White.M_White"));
     AActor* Props=GetWorld()->SpawnActor<AActor>();Props->SetRootComponent(NewObject<USceneComponent>(Props));Props->GetRootComponent()->RegisterComponent();
     BallMesh=NewObject<UStaticMeshComponent>(Props,TEXT("WhiteCricketBall"));BallMesh->SetupAttachment(Props->GetRootComponent());
-    BallMesh->SetStaticMesh(Sphere);BallMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);BallMesh->RegisterComponent();
+    BallMesh->SetStaticMesh(BallHeroMesh?BallHeroMesh:Sphere);BallMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);BallMesh->RegisterComponent();
     BallMesh->SetMobility(EComponentMobility::Movable);BallMesh->SetCastShadow(true);
     auto* Wood=LoadObject<UMaterialInterface>(nullptr,TEXT("/Game/Cricket26/Materials/M_Willow.M_Willow"));
     if(!Wood)Wood=White;
     // Physics stays at the real 3.6 cm radius. The render is a deliberate 1.6x readability cheat:
     // a true-size ball is ~3 px on a phone at broadcast distance. Every commercial cricket game
     // does the same; anything bigger starts reading as tennis.
-    BallMesh->SetWorldScale3D(FVector(Tuning.BallRadius*2/100.f*1.6f));
+    if(BallHeroMesh) BallMesh->SetWorldScale3D(FVector(1.6f));
+    else BallMesh->SetWorldScale3D(FVector(Tuning.BallRadius*2/100.f*1.6f));
     auto* BallMaterial=UMaterialInstanceDynamic::Create(White,this);BallMaterial->SetVectorParameterValue(TEXT("Tint"),FLinearColor(.88,.88,.81));BallMaterial->SetScalarParameterValue(TEXT("Glow"),0.f);BallMaterial->SetScalarParameterValue(TEXT("Roughness"),.38f);BallMesh->SetMaterial(0,BallMaterial);
     for(int End=0;End<2;++End)for(int I=0;I<5;++I)
     {
-        auto* S=NewObject<UStaticMeshComponent>(Props);S->SetupAttachment(Props->GetRootComponent());S->SetStaticMesh(Cylinder);S->SetMaterial(0,Wood);S->SetCollisionEnabled(ECollisionEnabled::NoCollision);S->RegisterComponent();Stumps.Add(S);
+        auto* S=NewObject<UStaticMeshComponent>(Props);S->SetupAttachment(Props->GetRootComponent());
+        UStaticMesh* ChosenMesh=I<3?(StumpMesh?StumpMesh:Cylinder):(BailMesh?BailMesh:Cylinder);
+        S->SetStaticMesh(ChosenMesh);
+        if(!StumpMesh)S->SetMaterial(0,Wood);
+        S->SetCollisionEnabled(ECollisionEnabled::NoCollision);S->RegisterComponent();Stumps.Add(S);
     }
     ResetStumps();Director->ReplayProps=Stumps;
-    FirstBattingTeam=0;
-    for(int I=0;I<11;++I){Athletes[I]->Configure(I==0?EC26Role::Bowler:I==1?EC26Role::Keeper:EC26Role::Fielder,1,I+1);Athletes[I]->ResetAt(FieldPositions[I],(FVector(0,850,0)-FieldPositions[I]).Rotation().Yaw);}
-    Athletes[11]->Configure(EC26Role::Batter,0,7);Athletes[11]->ResetAt(FVector(-38,900,5),-90);
-    Athletes[12]->Configure(EC26Role::Batter,0,18);Athletes[12]->ResetAt(FVector(-80,-865,5),90);
-    Athletes[13]->Configure(EC26Role::Umpire,0,0);Athletes[13]->ResetAt(FVector(105,-1390,5),90);
     Effects=GetWorld()->SpawnActor<AC26Effects>();
     Simulation.Ball.Position=FVector(0,0,-100);UpdateBallVisual();
 }
@@ -200,13 +212,22 @@ void AC26MatchGameMode::Spark(const FVector& At,bool Struck)
 void AC26MatchGameMode::ResetStumps()
 {
     StumpClock=-1;BrokenWicketY=0;
+    auto* StumpMesh=LoadObject<UStaticMesh>(nullptr,TEXT("/Game/Cricket26/Equipment/SM_C26_Stump_Single.SM_C26_Stump_Single"));
     for(int End=0;End<2;++End)for(int I=0;I<5;++I)
     {
         auto S=Stumps[End*5+I];const float Y=End?C26Field::WicketY:-C26Field::WicketY;
         const float Spacing=(C26Field::WicketWidth-C26Field::StumpDiameter)*.5f;
         S->SetMobility(EComponentMobility::Movable);S->SetCastShadow(true);
-        if(I<3){S->SetWorldLocation(FVector((I-1)*Spacing,Y,C26Field::SurfaceZ+C26Field::StumpHeight*.5f));S->SetWorldRotation(FRotator::ZeroRotator);S->SetWorldScale3D(FVector(.038,.038,C26Field::StumpHeight/100.f));}
-        else{S->SetWorldLocation(FVector((I==3?-1:1)*Spacing*.5f,Y,C26Field::StumpHeight+.8f));S->SetWorldRotation(FRotator(0,0,90));S->SetWorldScale3D(FVector(.022,.022,.1095));}
+        if(StumpMesh)
+        {
+            if(I<3){S->SetWorldLocation(FVector((I-1)*Spacing,Y,C26Field::SurfaceZ));S->SetWorldRotation(FRotator::ZeroRotator);S->SetWorldScale3D(FVector(1.f));}
+            else{S->SetWorldLocation(FVector((I==3?-1:1)*Spacing*.5f,Y,C26Field::StumpHeight));S->SetWorldRotation(FRotator::ZeroRotator);S->SetWorldScale3D(FVector(1.f));}
+        }
+        else
+        {
+            if(I<3){S->SetWorldLocation(FVector((I-1)*Spacing,Y,C26Field::SurfaceZ+C26Field::StumpHeight*.5f));S->SetWorldRotation(FRotator::ZeroRotator);S->SetWorldScale3D(FVector(.038,.038,C26Field::StumpHeight/100.f));}
+            else{S->SetWorldLocation(FVector((I==3?-1:1)*Spacing*.5f,Y,C26Field::StumpHeight+.8f));S->SetWorldRotation(FRotator(0,0,90));S->SetWorldScale3D(FVector(.022,.022,.1095));}
+        }
     }
 }
 void AC26MatchGameMode::BreakWicket(float Y)
@@ -1010,6 +1031,7 @@ void AC26MatchGameMode::UIAction(FName Action)
     else if(Action==TEXT("nav_world"))SetScreen(10);
     else if(Action==TEXT("nav_settings"))SetScreen(11);
     else if(Action==TEXT("nav_help"))SetScreen(12);
+    else if(Action==TEXT("nav_store"))SetScreen(13);
     else if(Action==TEXT("back"))GoBack();
     else if(Action==TEXT("quickplay")){SetScreen(3);}
     else if(Action==TEXT("mode_super"))SetScreen(2);

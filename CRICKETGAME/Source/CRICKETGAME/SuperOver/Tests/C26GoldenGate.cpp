@@ -15,6 +15,7 @@
 
 void AC26MatchGameMode::UpdateGoldenGate(float Dt)
 {
+    if(GateSuite&&GateStage>=3){UpdateProductionGate(Dt);return;}
     auto Check=[&](bool Passed,const TCHAR* Message)
     {
         if(!Passed)++GateFailures;
@@ -28,7 +29,7 @@ void AC26MatchGameMode::UpdateGoldenGate(float Dt)
         if(!GateNoScreens)FScreenshotRequest::RequestScreenshot(GateDirectory/(Key+TEXT(".png")),true,false);
         UE_LOG(LogC26,Display,TEXT("C26_GATE_FRAME %s"),*Key);return true;
     };
-    if(FPlatformTime::Seconds()-GateStarted>120)
+    if(FPlatformTime::Seconds()-GateStarted>180)
     {
         UE_LOG(LogC26,Error,TEXT("C26_GATE_TIMEOUT stage=%d phase=%d"),GateStage,int(Phase));
         GoldenGate=false;FPlatformMisc::RequestExitWithStatus(false,1);return;
@@ -56,6 +57,7 @@ void AC26MatchGameMode::UpdateGoldenGate(float Dt)
         else if(GateStage==2&&Rules.Now().LegalBalls==1)
         {
             Check(Rules.Now().Ledger.size()==1,TEXT("delivery after restart commits exactly once"));
+            if(GateSuite){GateStage=3;PlayerBatsFirst=true;StartMatch();Skip();return;}
             GateFrameTimes.Sort();
             float Sum=0;for(float Ms:GateFrameTimes)Sum+=Ms;
             const int Count=GateFrameTimes.Num();
@@ -91,6 +93,8 @@ void AC26MatchGameMode::UpdateGoldenGate(float Dt)
     else if(Phase==EC26Phase::RunUp)
     {
         if(PhaseTime>1.9f)CaptureFrame(TEXT("02_runup"));
+        if(PhaseTime>C26Field::RunUpDuration-.48f)CaptureFrame(TEXT("02b_gather"));
+        if(PhaseTime>C26Field::RunUpDuration-.15f)CaptureFrame(TEXT("02c_plant"));
         if(GateStage==1&&!ShotQueued&&PhaseTime>.4f)Shot(Intent);
     }
     else if(Phase==EC26Phase::Delivery)
@@ -146,6 +150,8 @@ void AC26MatchGameMode::UpdateGoldenGate(float Dt)
         {
             GateCollected=true;CaptureFrame(TEXT("07_pickup"));
             if(ThrowReleased){GateThrown=true;CaptureFrame(TEXT("08_throw"));}
+            if(ThrowReleased&&FMath::IsNearlyEqual(ThrowClock,.73f,.001f)&&CaptureFrame(TEXT("08a_throw_release")))
+                Check(FVector::Dist(Simulation.Ball.Position,Athletes[ActiveFielder]->HandPosition())<1.f,TEXT("return leaves rendered throwing hand"));
         }
     }
     else if(Phase==EC26Phase::Reaction)

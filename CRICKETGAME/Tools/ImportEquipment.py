@@ -1,12 +1,6 @@
 """Import the CRICKET 26 hero equipment set into /Game/Cricket26/Equipment.
 
-Run:  UnrealEditor-Cmd CRICKETGAME.uproject -run=pythonscript -script=Tools/ImportEquipment.py
-
-Source FBX is authored by ArtSource/Blender/Equipment/*.py through Blender MCP and exported with
-vertex data already in centimetres (UnitScaleFactor=1.0), so nothing here rescales anything. Each
-asset is checked against the real-world size it is supposed to be: an equipment set that imports
-at the wrong scale is the single most expensive mistake in this pipeline, because everything
-downstream -- sockets, contact solving, silhouette -- then gets tuned around the error.
+Run:  UnrealEditor-Cmd CRICKETGAME.uproject -run=pythonscript -script=/absolute/path/Tools/ImportEquipment.py
 """
 import unreal as u
 import os
@@ -25,6 +19,9 @@ EXPECTED = {
     'SM_C26_Pad_L': (53.6, 1.5), 'SM_C26_Pad_R': (53.6, 1.5),
     'SM_C26_Glove_L': (19.0, 1.5), 'SM_C26_Glove_R': (19.0, 1.5),
     'SM_C26_Shoe_L': (27.5, 1.5), 'SM_C26_Shoe_R': (27.5, 1.5),
+    'SM_C26_Ball_Hero': (7.2, 1.0),
+    'SM_C26_Wicket_Stumps': (71.1, 2.5),
+    'SM_C26_Wicket_Bails': (22.9, 2.5),
 }
 
 
@@ -72,14 +69,11 @@ def main():
         ext = asset.get_bounding_box().max - asset.get_bounding_box().min
         got = max(ext.x, ext.y, ext.z)
         ok = abs(got - want) <= tol
-        # One material per slot, all pointed at M_Surface. The gameplay code creates a dynamic
-        # instance per slot at runtime, so the imported binding only has to be valid, not final.
         mats = asset.get_editor_property('static_materials')
         for slot in mats:
             slot.set_editor_property('material_interface', surface)
         asset.set_editor_property('static_materials', mats)
-        # Two reduction LODs. Hero kit is only hero when the camera is close; a fielder at the
-        # boundary must not pay for a grille.
+        
         tris = 0
         try:
             opts = u.StaticMeshReductionOptions(

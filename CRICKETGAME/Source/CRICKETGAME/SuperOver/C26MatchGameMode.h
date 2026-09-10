@@ -69,8 +69,10 @@ public:
     float TimingCountdown() const;
     float BowlingMeter() const;
     // ---- front-end flow (presentation only; gameplay truth untouched) ----
-    // MenuScreen: 0 Home,1 Play,2 Teams,3 Matchup,4 Toss,5 MyTeam,6 Career,
-    // 7 Tournaments,8 Online,9 Training,10 World,11 Settings,12 Help.
+    // MenuScreen: 0 Home,1 Play,2 Teams,3 Matchup,4 Toss,5 Squad,6 Career,
+    // 7 Leaderboards,8 Multiplayer,9 Training,10 World,11 Settings,12 Help,13 Store.
+    // Reference sidebar surfaces 0,5,6,7,8,13,11; 1-4 are the Play sub-flow; 9-10 are
+    // orphaned roadmap screens (still reachable by UIAction, no nav button).
     int MenuScreen=0;
     float ScreenEnteredAt=0,ScreenFade=1;
     int TossStage=0; float TossClock=0;

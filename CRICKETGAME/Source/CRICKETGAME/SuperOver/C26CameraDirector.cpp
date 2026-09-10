@@ -44,7 +44,7 @@ void AC26CameraDirector::Reset()
     Frames.Reset();Live={};RecordClock=RecordAccumulator=ReplayClock=Impulse=Shake=0;
     ContactStamp=-1;ReplayEnd=0;PlaybackRate=1;ReplayShot=0;
     IsReplaying=HasFielder=ShotAerial=Runners=false;
-    ContactPending=false;
+    ContactPending=ReleasePending=OutcomePending=false;ReleaseStamp=-1;
     HaveCamera=false;LastPhase=EC26Phase::Result;EventName=NAME_None;
     ContactPoint=FVector::ZeroVector;
 }
@@ -56,7 +56,7 @@ void AC26CameraDirector::MarkContact(float Quality,bool Aerial,const FVector& Wh
     Impulse=Quality>.85f?.30f:Quality>.5f?.17f:.09f;Shake=Impulse;
     UE_LOG(LogC26Camera,Verbose,TEXT("Contact stamped at %.2f quality %.2f"),ContactStamp,Quality);
 }
-void AC26CameraDirector::MarkOutcome(FName Event,const FVector& Focus){EventName=Event;EventFocus=Focus;ReplayEnd=RecordClock;}
+void AC26CameraDirector::MarkOutcome(FName Event,const FVector& Focus){EventName=Event;EventFocus=Focus;ReplayEnd=RecordClock;OutcomePending=true;}
 void AC26CameraDirector::Look(EC26CameraMode NewMode,const FVector& From,const FVector& At,float Fov,bool Cut,float Dt,float TrackRate,float MaxDrop)
 {
     const bool Switch=Mode!=NewMode;Mode=NewMode;
@@ -265,7 +265,7 @@ FC26ReplayFrame AC26CameraDirector::CaptureState(const FVector& Ball,const TArra
         A.ActionTime=Actor->ActionTime;A.MotionTime=Actor->MotionTime;A.ShotAngle=Actor->ShotAngle;
         A.Contact=Actor->ContactTarget;A.LookAt=Actor->LookAt;A.Loft=Actor->Loft;
         A.Footwork=Actor->FootworkIntent;A.Stride=Actor->StrideIntent;A.Defend=Actor->Defending;A.DeliveryStyle=Actor->DeliveryStyle;
-        A.MoveSpeed=Actor->MoveSpeed;
+        A.MoveSpeed=Actor->MoveSpeed;A.Gait=Actor->GaitPhase;A.Trigger=Actor->Trigger;
         F.Athletes.Add(A);
     }
     for(const auto& Prop:ReplayProps)F.Props.Add(Prop->GetComponentTransform());
@@ -275,7 +275,9 @@ void AC26CameraDirector::Record(float Dt,const FVector& Ball,const TArray<TObjec
 {
     RecordClock+=Dt;RecordAccumulator+=Dt;
     // Preserve the exact rendered impact even if it falls between regular replay samples.
-    if(ContactPending){ContactStamp=RecordClock;ContactPending=false;}
+    if(ReleasePending){ReleaseStamp=RecordClock;ReleasePending=false;}
+    else if(ContactPending){ContactStamp=RecordClock;ContactPending=false;}
+    else if(OutcomePending)OutcomePending=false;
     else if(RecordAccumulator<1.f/45.f)return;
     RecordAccumulator=FMath::Fmod(RecordAccumulator,1.f/45.f);
     Frames.Add(CaptureState(Ball,Actors));
@@ -288,7 +290,7 @@ bool AC26CameraDirector::BeginReplay(const TArray<TObjectPtr<AC26Athlete>>& Acto
     Live=CaptureState(Ball,Actors);IsReplaying=true;ReplayShot=0;
     ReplayEnd=Frames.Last().Time;
     // Always open on the delivery arriving, so the replay actually contains the bat meeting ball.
-    ReplayClock=FMath::Max(Frames[0].Time,ContactStamp>=0?ContactStamp-.55f:ReplayEnd-1.8f);
+    ReplayClock=FMath::Max(Frames[0].Time,ReleaseStamp>=0?ReleaseStamp-.16f:ContactStamp>=0?ContactStamp-.55f:ReplayEnd-1.8f);
     HaveCamera=false;
     UE_LOG(LogC26Replay,Log,TEXT("Replay frames=%d contact=%.2f end=%.2f event=%s"),Frames.Num(),ContactStamp,ReplayEnd,*EventName.ToString());
     return true;
@@ -303,7 +305,7 @@ void AC26CameraDirector::ApplyFrame(const FC26ReplayFrame& A,const FC26ReplayFra
         Actor->MotionTime=FMath::Lerp(X.MotionTime,Y.MotionTime,T);Actor->ShotAngle=Selected.ShotAngle;
         Actor->ContactTarget=Selected.Contact;Actor->LookAt=Selected.LookAt;Actor->Loft=Selected.Loft;
         Actor->FootworkIntent=Selected.Footwork;Actor->StrideIntent=Selected.Stride;Actor->Defending=Selected.Defend;Actor->DeliveryStyle=Selected.DeliveryStyle;
-        Actor->MoveSpeed=FMath::Lerp(X.MoveSpeed,Y.MoveSpeed,T);
+        Actor->MoveSpeed=FMath::Lerp(X.MoveSpeed,Y.MoveSpeed,T);Actor->GaitPhase=FMath::Lerp(X.Gait,Y.Gait,T);Actor->Trigger=FMath::Lerp(X.Trigger,Y.Trigger,T);
         Actor->Animate(0);
     }
     for(int I=0;I<ReplayProps.Num()&&I<A.Props.Num()&&I<B.Props.Num();++I)
@@ -319,7 +321,7 @@ bool AC26CameraDirector::PlayReplay(float Dt,FVector& Ball,const TArray<TObjectP
     if(Wicket&&ReplayEnd-ReplayClock<.45f)PlaybackRate=.32f;
     const float NextClock=ReplayClock+Dt*PlaybackRate;
     // Display the saved impact once instead of interpolating across its velocity discontinuity.
-    ReplayClock=ReplayClock<ContactStamp&&NextClock>=ContactStamp?ContactStamp:NextClock;
+    ReplayClock=ReplayClock<ReleaseStamp&&NextClock>=ReleaseStamp?ReleaseStamp:ReplayClock<ContactStamp&&NextClock>=ContactStamp?ContactStamp:NextClock;
     bool Cut=false;
     // Three-shot cut: close on the bat, then the outcome angle, then a wide of the result.
     if(ReplayShot==0&&ContactStamp>=0&&ReplayClock>ContactStamp+.70f){ReplayShot=1;Cut=true;}
@@ -331,7 +333,12 @@ bool AC26CameraDirector::PlayReplay(float Dt,FVector& Ball,const TArray<TObjectP
     const float T=FMath::Clamp((ReplayClock-A.Time)/FMath::Max(.001f,B.Time-A.Time),0.f,1.f);
     Ball=FMath::Lerp(A.Ball,B.Ball,T);ApplyFrame(A,B,T,Actors);
     const FVector Anchor=ContactPoint.IsZero()?Striker+FVector(0,0,110):ContactPoint;
-    if(ReplayShot==0)
+    if(ReplayShot==0&&ReleaseStamp>=0&&ReplayClock<ReleaseStamp+.10f)
+    {
+        const FVector Bowler=Actors[0]->GetActorLocation();
+        Look(EC26CameraMode::ReplayPitch,Bowler+FVector(-620,140,185),Bowler+FVector(0,35,135),35,Mode!=EC26CameraMode::ReplayPitch,Dt,7.f);
+    }
+    else if(ReplayShot==0)
     {
         // Tight side-on on the stroke itself: bat, ball and the batter's shape all in one frame.
         // The stand-off is measured from the contact point rather than a fixed world position, so
@@ -341,7 +348,7 @@ bool AC26CameraDirector::PlayReplay(float Dt,FVector& Ball,const TArray<TObjectP
         const float InnerAe=ShotAerial?.55f:.20f,OuterAe=ShotAerial?.62f:.42f;
         const FVector Eye=FVector(Anchor.X,FMath::Min(Anchor.Y,StrikerEnd),0)+FVector(-745,-190,0)+FVector(0,0,FMath::Max(150.f,Anchor.Z+22.f));
         Look(EC26CameraMode::ReplayClose,Eye,
-            FMath::Lerp(Striker+FVector(0,0,112),FMath::Lerp(Anchor,Ball,InnerAe),OuterAe),34,Cut,Dt,6.5f,26.f);
+            FMath::Lerp(Striker+FVector(0,0,112),FMath::Lerp(Anchor,Ball,InnerAe),OuterAe),34,Cut||Mode==EC26CameraMode::ReplayPitch,Dt,6.5f,26.f);
     }
     else if(ReplayShot==1&&Wicket)
     {

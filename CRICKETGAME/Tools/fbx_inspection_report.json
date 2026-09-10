@@ -1,0 +1,302 @@
+[
+  {
+    "index": 1,
+    "filename": "04aa892e68b810952b319e74312e3515.fbx",
+    "size_mb": 114.99,
+    "mesh_count": 1,
+    "mesh_names": [
+      "node_0"
+    ],
+    "armature_count": 0,
+    "bone_count": 0,
+    "bones_sample": [],
+    "total_verts": 749625,
+    "total_polys": 1499254,
+    "dimensions": [
+      [
+        0.498,
+        1.146,
+        0.211
+      ]
+    ],
+    "materials": [
+      "Material"
+    ],
+    "textures": [
+      "texture_pbr_20250901_normal.png",
+      "texture_pbr_20250901.png",
+      "texture_pbr_20250901_metallic.png",
+      "texture_pbr_20250901_roughness.png"
+    ]
+  },
+  {
+    "index": 2,
+    "filename": "4260cecc7e442f2e2bae94504197d685.fbx",
+    "size_mb": 109.91,
+    "mesh_count": 1,
+    "mesh_names": [
+      "node_0"
+    ],
+    "armature_count": 0,
+    "bone_count": 0,
+    "bones_sample": [],
+    "total_verts": 749329,
+    "total_polys": 1498662,
+    "dimensions": [
+      [
+        0.454,
+        1.152,
+        0.222
+      ]
+    ],
+    "materials": [
+      "Material"
+    ],
+    "textures": [
+      "texture_pbr_20250901_normal.png",
+      "texture_pbr_20250901.png",
+      "texture_pbr_20250901_metallic.png",
+      "texture_pbr_20250901_roughness.png"
+    ]
+  },
+  {
+    "index": 3,
+    "filename": "f4e20b7b4783bfaccf51887ac893cffc.fbx",
+    "size_mb": 111.87,
+    "mesh_count": 1,
+    "mesh_names": [
+      "node_0"
+    ],
+    "armature_count": 0,
+    "bone_count": 0,
+    "bones_sample": [],
+    "total_verts": 749768,
+    "total_polys": 1499637,
+    "dimensions": [
+      [
+        0.426,
+        1.149,
+        0.211
+      ]
+    ],
+    "materials": [
+      "Material"
+    ],
+    "textures": [
+      "texture_pbr_20250901_normal.png",
+      "texture_pbr_20250901.png",
+      "texture_pbr_20250901_metallic.png",
+      "texture_pbr_20250901_roughness.png"
+    ]
+  },
+  {
+    "index": 4,
+    "filename": "2beed08eff22799e06fa32354cbe2863.fbx",
+    "size_mb": 116.59,
+    "mesh_count": 1,
+    "mesh_names": [
+      "node_0"
+    ],
+    "armature_count": 0,
+    "bone_count": 0,
+    "bones_sample": [],
+    "total_verts": 749597,
+    "total_polys": 1499218,
+    "dimensions": [
+      [
+        0.462,
+        1.133,
+        0.238
+      ]
+    ],
+    "materials": [
+      "Material"
+    ],
+    "textures": [
+      "texture_pbr_20250901_normal.png",
+      "texture_pbr_20250901.png",
+      "texture_pbr_20250901_metallic.png",
+      "texture_pbr_20250901_roughness.png"
+    ]
+  },
+  {
+    "index": 5,
+    "filename": "0434293e5196868c1e7037f018c8b52e.fbx",
+    "size_mb": 114.02,
+    "mesh_count": 1,
+    "mesh_names": [
+      "node_0"
+    ],
+    "armature_count": 0,
+    "bone_count": 0,
+    "bones_sample": [],
+    "total_verts": 749648,
+    "total_polys": 1499294,
+    "dimensions": [
+      [
+        0.444,
+        1.146,
+        0.226
+      ]
+    ],
+    "materials": [
+      "Material"
+    ],
+    "textures": [
+      "texture_pbr_20250901_normal.png",
+      "texture_pbr_20250901.png",
+      "texture_pbr_20250901_metallic.png",
+      "texture_pbr_20250901_roughness.png"
+    ]
+  },
+  {
+    "index": 6,
+    "filename": "d8114a2f9e26e151d26f8eac5ebbcab9.fbx",
+    "size_mb": 112.76,
+    "mesh_count": 1,
+    "mesh_names": [
+      "node_0"
+    ],
+    "armature_count": 0,
+    "bone_count": 0,
+    "bones_sample": [],
+    "total_verts": 749620,
+    "total_polys": 1499282,
+    "dimensions": [
+      [
+        0.633,
+        1.118,
+        0.404
+      ]
+    ],
+    "materials": [
+      "Material"
+    ],
+    "textures": [
+      "texture_pbr_20250901_normal.png",
+      "texture_pbr_20250901.png",
+      "texture_pbr_20250901_metallic.png",
+      "texture_pbr_20250901_roughness.png"
+    ]
+  },
+  {
+    "index": 7,
+    "filename": "7d3019fcdfeb6a7f57b8c983b9e893ef.fbx",
+    "size_mb": 117.25,
+    "mesh_count": 1,
+    "mesh_names": [
+      "node_0"
+    ],
+    "armature_count": 0,
+    "bone_count": 0,
+    "bones_sample": [],
+    "total_verts": 749454,
+    "total_polys": 1499044,
+    "dimensions": [
+      [
+        0.473,
+        1.024,
+        0.537
+      ]
+    ],
+    "materials": [
+      "Material"
+    ],
+    "textures": [
+      "texture_pbr_20250901_normal.png",
+      "texture_pbr_20250901.png",
+      "texture_pbr_20250901_metallic.png",
+      "texture_pbr_20250901_roughness.png"
+    ]
+  },
+  {
+    "index": 8,
+    "filename": "37929429758365e2e04e78d63348fd71.fbx",
+    "size_mb": 116.9,
+    "mesh_count": 1,
+    "mesh_names": [
+      "node_0"
+    ],
+    "armature_count": 0,
+    "bone_count": 0,
+    "bones_sample": [],
+    "total_verts": 749524,
+    "total_polys": 1499114,
+    "dimensions": [
+      [
+        0.449,
+        1.143,
+        0.335
+      ]
+    ],
+    "materials": [
+      "Material"
+    ],
+    "textures": [
+      "texture_pbr_20250901_normal.png",
+      "texture_pbr_20250901.png",
+      "texture_pbr_20250901_metallic.png",
+      "texture_pbr_20250901_roughness.png"
+    ]
+  },
+  {
+    "index": 9,
+    "filename": "19b08966891a0630abb13956782a12c1.fbx",
+    "size_mb": 115.74,
+    "mesh_count": 1,
+    "mesh_names": [
+      "node_0"
+    ],
+    "armature_count": 0,
+    "bone_count": 0,
+    "bones_sample": [],
+    "total_verts": 749500,
+    "total_polys": 1499230,
+    "dimensions": [
+      [
+        0.506,
+        1.143,
+        0.222
+      ]
+    ],
+    "materials": [
+      "Material"
+    ],
+    "textures": [
+      "texture_pbr_20250901_normal.png",
+      "texture_pbr_20250901.png",
+      "texture_pbr_20250901_metallic.png",
+      "texture_pbr_20250901_roughness.png"
+    ]
+  },
+  {
+    "index": 10,
+    "filename": "7996719ee0a1bf4d2eed1c06106897ae.fbx",
+    "size_mb": 116.4,
+    "mesh_count": 1,
+    "mesh_names": [
+      "node_0"
+    ],
+    "armature_count": 0,
+    "bone_count": 0,
+    "bones_sample": [],
+    "total_verts": 749673,
+    "total_polys": 1499402,
+    "dimensions": [
+      [
+        0.505,
+        1.094,
+        0.349
+      ]
+    ],
+    "materials": [
+      "Material"
+    ],
+    "textures": [
+      "texture_pbr_20250901_normal.png",
+      "texture_pbr_20250901.png",
+      "texture_pbr_20250901_metallic.png",
+      "texture_pbr_20250901_roughness.png"
+    ]
+  }
+]

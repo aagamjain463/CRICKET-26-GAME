@@ -24,6 +24,8 @@ public:
     AC26Athlete();
     virtual void BeginPlay() override;
     UPROPERTY(VisibleAnywhere) TObjectPtr<UC26PoseMesh> Mesh;
+    /** Photorealistic hero scan mesh representing the authentic athlete model */
+    UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> HeroMesh;
     /** Authored hero kit from /Game/Cricket26/Equipment, built in ArtSource/Blender/Equipment.
         Every one of these was a procedural ring-loft generated in this file until Milestone 2:
         a ten-sided bat, an engine sphere for a helmet, tubes for pads. The authored meshes carry
@@ -56,6 +58,11 @@ public:
     /** Ground speed in cm/s, so the stride frequency matches the distance actually covered. */
     float MoveSpeed=0.f;
     bool Defending=false;
+    bool NonStriker=false;
+    float Trigger=0.f;
+    float GaitPhase=0.f;
+    int SkipPhase=0;
+    FVector ReceivingPosition() const;
     EC26Delivery DeliveryStyle=EC26Delivery::Pace;
     FVector ContactTarget=FVector::ZeroVector;
     /** Optional world point for the head to track. Zero disables head aim. */
@@ -74,6 +81,12 @@ public:
     FVector HandPosition() const;
     void SetShotContact(const FVector& Target,float Angle,bool bLoft);
     int TeamId=0;
+    /** Squad number driving shirt text and deterministic kit variation. */
+    int32 SquadNumber=0;
+    /** True while this athlete shows a baked hero scan; false renders the animated team kit. */
+    bool bHeroVisual=false;
+    /** Enforce exactly one visible body: hero scan or animated kit, never both, never none. */
+    void ApplyVisualRole();
     /** Real-world height in centimetres the imported rig is scaled down to. */
     static constexpr float BodyHeight=185.f;
     /** Distance in centimetres beyond which an athlete stops being hero quality, then stops
@@ -90,6 +103,9 @@ private:
     /** Shoulder-to-wrist reach in centimetres. Grip targets are clamped to it so the two-bone IK
         never runs out of arm and leaves the hands short of the handle. */
     float ArmSpan=0;
+    float PalmReach=11.f;
+    bool AuthoredKit=false;
+    FVector Palm(bool Right) const;
     static FVector Rig(float Forward,float Right,float Up){return FVector(-Right,Forward,Up);}
     void AimHead();
     TArray<int32> Parents;

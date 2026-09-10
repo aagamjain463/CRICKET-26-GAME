@@ -33,9 +33,11 @@ void AC26PlayerController::MoveGesture(int Index,FVector2D P)
 {
     auto* H=Cast<AC26HUD>(GetHUD());auto* M=Cast<AC26MatchGameMode>(GetWorld()->GetAuthGameMode());if(!H||!M||Index<0||Index>=10)return;
     auto& G=Gestures[Index];if(!G.Active||G.Consumed)return;G.Last=P;
-    if(G.Foot)
+    if(M->Paused||M->SettingsOpen||M->ControlsOpen)return;
+    if(G.Foot&&!M->ShotQueued)
     {
         M->Footwork=FMath::Clamp((H->ToDesign(P).X-167)/72.f,-1.f,1.f);
+        M->Intent.Stride=FMath::Clamp((721.f-H->ToDesign(P).Y)/82.f,-1.f,1.f);
         if(M->Phase==EC26Phase::Ready||M->Phase==EC26Phase::RunUp)M->Athletes[11]->SetActorLocation(FVector(-38+M->Footwork*35,900,5));
     }
     else if(!M->PlayerBatting()&&M->Phase==EC26Phase::Ready)
@@ -68,7 +70,7 @@ void AC26PlayerController::PlayerTick(float Dt)
     if(Gestures[0].Active&&IsInputKeyDown(EKeys::LeftMouseButton)){float X,Y;if(GetMousePosition(X,Y))MoveGesture(0,FVector2D(X,Y));}
     auto* M=Cast<AC26MatchGameMode>(GetWorld()->GetAuthGameMode());if(!M)return;
     float D=(IsInputKeyDown(EKeys::D)||IsInputKeyDown(EKeys::Right)?1.f:0.f)-(IsInputKeyDown(EKeys::A)||IsInputKeyDown(EKeys::Left)?1.f:0.f);
-    if(D!=0){M->Footwork=FMath::Clamp(M->Footwork+D*Dt*2,-1.f,1.f);if(M->Athletes.Num()>11&&(M->Phase==EC26Phase::Ready||M->Phase==EC26Phase::RunUp))M->Athletes[11]->SetActorLocation(FVector(-38+M->Footwork*35,900,5));}
+    if(D!=0&&!M->ShotQueued&&!M->Paused&&!M->SettingsOpen&&!M->ControlsOpen){M->Footwork=FMath::Clamp(M->Footwork+D*Dt*2,-1.f,1.f);if(M->Athletes.Num()>11&&(M->Phase==EC26Phase::Ready||M->Phase==EC26Phase::RunUp))M->Athletes[11]->SetActorLocation(FVector(-38+M->Footwork*35,900,5));}
 }
 void AC26PlayerController::Action()
 {

@@ -1,5 +1,6 @@
 #include "C26Athlete.h"
 #include "C26Types.h"
+#include "C26Motion.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
 #include "Components/StaticMeshComponent.h"
@@ -37,6 +38,18 @@ AC26Athlete::AC26Athlete()
     PrimaryActorTick.bCanEverTick=false;
     RootComponent=CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
     Mesh=CreateDefaultSubobject<UC26PoseMesh>(TEXT("Cricketer"));Mesh->SetupAttachment(RootComponent);
+    HeroMesh=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HeroAthleteMesh"));
+    HeroMesh->SetupAttachment(RootComponent);
+    HeroMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    HeroMesh->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+    HeroMesh->SetCastShadow(true);
+    HeroMesh->SetVisibility(true);
+    // No default hero scan. The role resolver in Configure() assigns the correct baked
+    // mesh per match role; defaulting to the batter scan made every not-yet-configured
+    // athlete render as a padded batter holding nothing.
+    HeroMesh->SetVisibility(false);
+    HeroMesh->SetHiddenInGame(true);
+
     // The imported rig faces mesh +Y with mesh +X out to its left. Yawing the mesh by -90 makes the
     // actor's own +X the athlete's forward, so every yaw the match code already computes -- fielders
     // turning to the middle, the striker facing the bowler, the bowler running in -- points the
@@ -44,7 +57,8 @@ AC26Athlete::AC26Athlete()
     Mesh->SetRelativeRotation(FRotator(0,-90,0));
     static ConstructorHelpers::FObjectFinder<USkeletalMesh> Player(TEXT("/Game/Cricket26/Characters/SK_Cricketer_KitBase.SK_Cricketer_KitBase"));
     if(Player.Succeeded())Mesh->SetSkinnedAssetAndUpdate(Player.Object);
-    Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);Mesh->SetCastShadow(true);
+    Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);Mesh->SetCastShadow(false);
+    Mesh->SetVisibility(false);Mesh->SetHiddenInGame(true);
     // Equipment rides in mesh space so it shares one frame with the posed skeleton.
     // Authored in Blender (ArtSource/Blender/Equipment), imported and size-checked by
     // Tools/ImportEquipment.py. Each mesh is modelled in the local frame the posing code below
@@ -64,6 +78,10 @@ AC26Athlete::AC26Athlete()
         auto* C=CreateDefaultSubobject<UStaticMeshComponent>(Name);
         C->SetupAttachment(Mesh);
         C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        C->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+        C->SetCastShadow(false);
+        C->SetVisibility(false);
+        C->SetHiddenInGame(true);
         if(Asset.Succeeded())C->SetStaticMesh(Asset.Object);
         return C;
     };
@@ -104,6 +122,7 @@ void AC26Athlete::BeginPlay()
     Super::BeginPlay();
     if(auto* S=Cast<USkeletalMesh>(Mesh->GetSkinnedAsset()))
     {
+        AuthoredKit=S->GetName().Contains(TEXT("_Match"));
         const auto& R=S->GetRefSkeleton();Reference.SetNum(R.GetNum());Parents.SetNum(R.GetNum());
         for(int I=0;I<R.GetNum();++I)
         {
@@ -130,7 +149,10 @@ void AC26Athlete::BeginPlay()
             ?(Reference[Fa].GetLocation()-Reference[Sh].GetLocation()).Size()
                 +(Reference[Hd].GetLocation()-Reference[Fa].GetLocation()).Size()
             :54.f;
-        UE_LOG(LogTemp,Log,TEXT("C26_RIG shoulder=%.1f hip=%.1f ankle=%.1f armspan=%.1f"),ShoulderZ,HipZ,AnkleZ,ArmSpan);
+        const int Wr=Bone(TEXT("RightHand")),Kn=Bone(TEXT("RightHandMiddle1")),Tp=Bone(TEXT("RightHandMiddle3"));
+        if(Wr>=0&&Kn>=0&&Tp>=0)
+            PalmReach=float((FMath::Lerp(Reference[Kn].GetLocation(),Reference[Tp].GetLocation(),.72f)-Reference[Wr].GetLocation()).Size());
+        UE_LOG(LogTemp,Log,TEXT("C26_RIG shoulder=%.1f hip=%.1f ankle=%.1f armspan=%.1f palm=%.1f"),ShoulderZ,HipZ,AnkleZ,ArmSpan,PalmReach);
     }
     BuildContactShadow();
     ApplyDetail();
@@ -155,15 +177,45 @@ void AC26Athlete::UpdateDetail(const FVector& ViewPoint)
 void AC26Athlete::ApplyDetail()
 {
     Detail=Wanted;
+    if(bHeroVisual&&HeroMesh&&HeroMesh->GetStaticMesh())
+    {
+        const bool Far=Detail==EDetail::Distant;
+        HeroMesh->SetCastShadow(!Far);
+        Mesh->SetVisibility(false);
+        Bat->SetVisibility(false);
+        Headwear->SetVisibility(false);
+        Grill->SetVisibility(false);
+        PadL->SetVisibility(false);
+        PadR->SetVisibility(false);
+        GloveL->SetVisibility(false);
+        GloveR->SetVisibility(false);
+        ShoeL->SetVisibility(false);
+        ShoeR->SetVisibility(false);
+        Uniform->SetVisibility(false);
+        ShirtNumber->SetVisibility(false);
+        return;
+    }
     const bool Guarded=Role==EC26Role::Batter||Role==EC26Role::Keeper;
     const bool Near=Detail==EDetail::Hero;
     const bool Far=Detail==EDetail::Distant;
     // A grille is a cage of 0.3 cm bars. Past hero range it costs 876 triangles to render a grey
     // smudge, and past mid range the whole head is a few pixels across.
-    Grill->SetVisibility(Guarded&&Near);
+    Grill->SetVisibility(Guarded&&Near);Grill->SetHiddenInGame(!(Guarded&&Near));
     // Gloves are the smallest piece of kit an athlete carries and the first thing that stops
     // resolving. Pads and shoes stay on at every tier: they are most of the lower silhouette.
-    GloveL->SetVisibility(Guarded&&!Far);GloveR->SetVisibility(Guarded&&!Far);
+    GloveL->SetVisibility(Guarded&&!Far);GloveL->SetHiddenInGame(!(Guarded&&!Far));
+    GloveR->SetVisibility(Guarded&&!Far);GloveR->SetHiddenInGame(!(Guarded&&!Far));
+    // Separate authored equipment is role-gated, and only on the animated kit path: the
+    // hero branch returns before this point. Batters alone carry a bat; batters and
+    // keepers wear pads and headwear; bowlers and fielders show team clothing and shoes.
+    const bool KittedHead=!bHeroVisual&&(Role==EC26Role::Batter||Role==EC26Role::Keeper);
+    const bool KittedBat=!bHeroVisual&&Role==EC26Role::Batter;
+    Bat->SetVisibility(KittedBat);Bat->SetHiddenInGame(!KittedBat);
+    Headwear->SetVisibility(KittedHead);Headwear->SetHiddenInGame(!KittedHead);
+    PadL->SetVisibility(KittedHead);PadL->SetHiddenInGame(!KittedHead);
+    PadR->SetVisibility(KittedHead);PadR->SetHiddenInGame(!KittedHead);
+    ShoeL->SetVisibility(true);ShoeL->SetHiddenInGame(false);
+    ShoeR->SetVisibility(true);ShoeR->SetHiddenInGame(false);
     ShirtNumber->SetVisibility(Role!=EC26Role::Umpire&&!Far);
     // Collar, placket, hem and leg stripe are centimetre-scale trim. They are what makes the kit
     // read in a replay close-up and pure cost on a fielder at the rope.
@@ -217,6 +269,11 @@ void AC26Athlete::BuildContactShadow()
 }
 void AC26Athlete::UpdateContactShadow()
 {
+    if(bHeroVisual && HeroMesh && HeroMesh->GetStaticMesh())
+    {
+        if(Shade) Shade->SetVisibility(false);
+        return;
+    }
     if(!Shade||Shade->GetNumSections()==0)return;
     const int Lf=Bone(TEXT("LeftFoot")),Rf=Bone(TEXT("RightFoot"));
     if(Lf<0||Rf<0)return;
@@ -280,22 +337,29 @@ void AC26Athlete::Configure(EC26Role NewRole,int Team,int Number)
     // almost black on vertical surfaces, so the head and forearms take a controlled mid-brown that
     // stays readable without blowing out. Linear-space, roughly sRGB (215,168,146) darkened a stop
     // for the 4-lux key.
-    Skin=Make(FLinearColor(.42f,.235f,.155f),.62f);
+    SquadNumber=Number;
+    // Deterministic per-player skin variation so ten athletes sharing one team kit do not
+    // read as clones. Team shirt/trouser colours are never varied.
+    const float Tone=0.90f+0.20f*float((FMath::Abs(Number)*37)%10)/10.f;
+    Skin=Make(FLinearColor(.42f*Tone,.235f*Tone,.155f*Tone),.62f);
     Gear=Make(FLinearColor(.58,.61,.57),.86f);
     if(auto* S=Cast<USkeletalMesh>(Mesh->GetSkinnedAsset()))
     {
         for(int I=0;I<S->GetMaterials().Num();++I)
         {
             const FString Name=S->GetMaterials()[I].MaterialSlotName.ToString();
-            if(Name.Contains(TEXT("Top")))Mesh->SetMaterial(I,Shirt);
-            else if(Name.Contains(TEXT("Bottom")))Mesh->SetMaterial(I,Trousers);
+            if(Name.Contains(TEXT("Top"))||Name.Contains(TEXT("Jersey")))Mesh->SetMaterial(I,Shirt);
+            else if(Name.Contains(TEXT("Bottom"))||Name.Contains(TEXT("Trouser")))Mesh->SetMaterial(I,Trousers);
             else if(Name.Contains(TEXT("Body")))Mesh->SetMaterial(I,Skin);
-            if(Name.Contains(TEXT("Bottom"))||Name.Contains(TEXT("Hair")))
+            if(Name.Contains(TEXT("Hair")))
                 for(int LOD=0;LOD<S->GetLODNum();++LOD)Mesh->ShowMaterialSection(I,0,false,LOD);
+            if(Name.Contains(TEXT("Bottom")))
+                for(int LOD=0;LOD<S->GetLODNum();++LOD)Mesh->ShowMaterialSection(I,0,true,LOD);
         }
     }
     Uniform->SetMaterial(2,Shirt);Uniform->SetMaterial(0,Trousers);Uniform->SetMaterial(1,Make(Team==0?FLinearColor(.10,.40,.43):FLinearColor(.72,.24,.07),.88f));
     Uniform->SetMaterial(3,Shirt);Uniform->SetMaterial(4,Shirt);Uniform->SetMaterial(5,Shirt);
+    ShirtNumber->SetText(FText::AsNumber(Number));
 
     // Authored kit materials. The old kit ran on three instances -- one for the bat, one for the
     // helmet, one grey "Gear" shared by pads and gloves -- so every piece of protective equipment
@@ -355,34 +419,146 @@ void AC26Athlete::Configure(EC26Role NewRole,int Team,int Number)
         Dress(S,TEXT("ShoeSpike"),Buckle);
     }
 
-    const bool Batting=Role==EC26Role::Batter,Keeping=Role==EC26Role::Keeper;
-    const bool Guarded=Batting||Keeping;
-    Bat->SetVisibility(Batting);
-    // A batter and a keeper wear a helmet with a grille; everyone else wears the team cap. These
-    // are separate authored meshes, not one mesh squashed by a scale, because a cap crown and a
-    // helmet shell are different shapes and squashing a helmet only ever produced a helmet.
-    const TCHAR* HeadAsset=Guarded
-        ?TEXT("/Game/Cricket26/Equipment/SM_C26_Helmet_Hero.SM_C26_Helmet_Hero")
-        :TEXT("/Game/Cricket26/Equipment/SM_C26_Cap_Hero.SM_C26_Cap_Hero");
-    if(UStaticMesh* Head=LoadObject<UStaticMesh>(nullptr,HeadAsset))
-        if(Headwear->GetStaticMesh()!=Head)Headwear->SetStaticMesh(Head);
-    PadL->SetVisibility(Guarded);PadR->SetVisibility(Guarded);
-    GloveL->SetVisibility(Guarded);GloveR->SetVisibility(Guarded);
-    // Keeping gauntlets are the same glove worn wider across the palm and longer in the cuff;
-    // keeping pads are cut shorter than a batter's. Both are real differences in how the
-    // equipment is worn, not one mesh disguised as two.
-    const FVector PadSize=Keeping?FVector(.90,.86,.80):FVector(1);
-    PadL->SetRelativeScale3D(PadSize);PadR->SetRelativeScale3D(PadSize);
-    const FVector GloveSize=Keeping?FVector(1.30,1.22,1.12):FVector(1);
-    GloveL->SetRelativeScale3D(GloveSize);GloveR->SetRelativeScale3D(GloveSize);
-    // The base character's trainers are replaced outright by the authored cricket shoe, so the
-    // skinned Shoesmat section is switched off rather than left to poke through it.
-    if(auto* Sk=Cast<USkeletalMesh>(Mesh->GetSkinnedAsset()))
-        for(int I=0;I<Sk->GetMaterials().Num();++I)
-            if(Sk->GetMaterials()[I].MaterialSlotName.ToString().Contains(TEXT("Shoes")))
-                for(int LOD=0;LOD<Sk->GetLODNum();++LOD)Mesh->ShowMaterialSection(I,0,false,LOD);
-    ShirtNumber->SetText(FText::AsNumber(Number));ShirtNumber->SetVisibility(Role!=EC26Role::Umpire);
+    Bat->SetVisibility(false); Bat->SetHiddenInGame(true);
+    Headwear->SetVisibility(false); Headwear->SetHiddenInGame(true);
+    Grill->SetVisibility(false); Grill->SetHiddenInGame(true);
+    PadL->SetVisibility(false); PadL->SetHiddenInGame(true);
+    PadR->SetVisibility(false); PadR->SetHiddenInGame(true);
+    GloveL->SetVisibility(false); GloveL->SetHiddenInGame(true);
+    GloveR->SetVisibility(false); GloveR->SetHiddenInGame(true);
+    ShoeL->SetVisibility(false); ShoeL->SetHiddenInGame(true);
+    ShoeR->SetVisibility(false); ShoeR->SetHiddenInGame(true);
+    Uniform->SetVisibility(false); Uniform->SetHiddenInGame(true);
+    ShirtNumber->SetVisibility(false); ShirtNumber->SetHiddenInGame(true);
+    Shade->SetVisibility(false); Shade->SetHiddenInGame(true);
+    Mesh->SetVisibility(false); Mesh->SetHiddenInGame(true);
+
+    // Role-based visual resolver. Baked hero scans are used ONLY where their baked
+    // equipment matches the match role, verified scan by scan in Blender against the
+    // source FBX plus its runtime texture:
+    //   Batter (striker #7 and non-striker #18)
+    //                        raw07 bake: helmet + pads + gloves + bat (own UVs/material)
+    //   Keeper                   raw09 bake: helmet + pads + gloves, NO bat
+    // NOTE: the raw06 "batter" bake is a truncated half-body (shorts, no legs, no gear)
+    // and must never be assigned. Both batters therefore share the raw07 bake.
+    // Bowlers and fielders resolve to the animated team kit: every remaining scan
+    // carries baked batting pads, which those roles must never wear. Pairings are
+    // always mesh+material from the SAME source bake; cross-bake pairing renders as
+    // camouflage noise, so any half-missing pick falls back to the animated kit with
+    // role-gated separate equipment (never slop) and logs an error.
+    auto TryMesh=[](const TCHAR* Path)->UStaticMesh*
+    {
+        if(!Path)return nullptr;
+        if(UStaticMesh* M=LoadObject<UStaticMesh>(nullptr,Path))return M;
+        UE_LOG(LogC26,Error,TEXT("C26_VISUAL missing hero mesh %s"),Path);
+        return nullptr;
+    };
+    auto TryMat=[](const TCHAR* Path)->UMaterialInterface*
+    {
+        if(!Path)return nullptr;
+        if(UMaterialInterface* M=LoadObject<UMaterialInterface>(nullptr,Path))return M;
+        UE_LOG(LogC26,Error,TEXT("C26_VISUAL missing hero material %s"),Path);
+        return nullptr;
+    };
+    const TCHAR* MeshPath=nullptr;
+    const TCHAR* MatPath=nullptr;
+    auto Consider=[&](const TCHAR* MP,const TCHAR* TP)->bool
+    {
+        UStaticMesh* M=TryMesh(MP);if(!M)return false;
+        UMaterialInterface* MI=TryMat(TP);if(!MI)return false;
+        MeshPath=MP;MatPath=TP;return true;
+    };
+    bHeroVisual=false;
+    if(Role==EC26Role::Batter)
+    {
+        // USER DIRECTIVE: Fix the batter with a half body, make him full body.
+        // Also he should have normal batting movement, not a static box-like figure.
+        // Same for non-striker.
+        // Striker and non-striker use the full-body animated skeletal mesh (SK_Cricketer_KitBase).
+        MeshPath=nullptr;
+        MatPath=nullptr;
+    }
+    else if(Role==EC26Role::Keeper)
+    {
+        Consider(TEXT("/Game/Cricket26/Characters/Players/SM_C26_Player_Keeper.SM_C26_Player_Keeper"),
+            TEXT("/Game/Cricket26/Materials/Players/MI_Player_Keeper.MI_Player_Keeper"));
+    }
+    else if(Role==EC26Role::Umpire)
+    {
+        Consider(TEXT("/Game/Cricket26/Characters/Players/SM_C26_Player_Umpire.SM_C26_Player_Umpire"),
+            TEXT("/Game/Cricket26/Materials/Players/MI_Player_Umpire.MI_Player_Umpire"));
+    }
+    else if(Role==EC26Role::Bowler)
+    {
+        Consider(TEXT("/Game/Cricket26/Characters/Players/SM_C26_Player_Bowler.SM_C26_Player_Bowler"),
+            TEXT("/Game/Cricket26/Materials/Players/MI_Player_Bowler.MI_Player_Bowler"));
+    }
+    else // Fielders
+    {
+        static const TCHAR* FielderMeshes[] = {
+            TEXT("/Game/Cricket26/Characters/Players/SM_C26_Player_Fielder_01.SM_C26_Player_Fielder_01"),
+            TEXT("/Game/Cricket26/Characters/Players/SM_C26_Player_Fielder_02.SM_C26_Player_Fielder_02"),
+            TEXT("/Game/Cricket26/Characters/Players/SM_C26_Player_Fielder_03.SM_C26_Player_Fielder_03"),
+            TEXT("/Game/Cricket26/Characters/Players/SM_C26_Player_Fielder_04.SM_C26_Player_Fielder_04"),
+            TEXT("/Game/Cricket26/Characters/Players/SM_C26_Player_Fielder_05.SM_C26_Player_Fielder_05"),
+            TEXT("/Game/Cricket26/Characters/Players/SM_C26_Player_Fielder_06.SM_C26_Player_Fielder_06"),
+        };
+        static const TCHAR* FielderMats[] = {
+            TEXT("/Game/Cricket26/Materials/Players/MI_Player_Fielder_01.MI_Player_Fielder_01"),
+            TEXT("/Game/Cricket26/Materials/Players/MI_Player_Fielder_02.MI_Player_Fielder_02"),
+            TEXT("/Game/Cricket26/Materials/Players/MI_Player_Fielder_03.MI_Player_Fielder_03"),
+            TEXT("/Game/Cricket26/Materials/Players/MI_Player_Fielder_04.MI_Player_Fielder_04"),
+            TEXT("/Game/Cricket26/Materials/Players/MI_Player_Fielder_05.MI_Player_Fielder_05"),
+            TEXT("/Game/Cricket26/Materials/Players/MI_Player_Fielder_06.MI_Player_Fielder_06"),
+        };
+        const int Idx = FMath::Abs(SquadNumber) % 6;
+        Consider(FielderMeshes[Idx], FielderMats[Idx]);
+    }
+    if(MeshPath)
+    {
+        if(UStaticMesh* LoadedMesh=LoadObject<UStaticMesh>(nullptr,MeshPath))
+        {
+            HeroMesh->SetStaticMesh(LoadedMesh);
+            if(UMaterialInterface* LoadedMat=LoadObject<UMaterialInterface>(nullptr,MatPath))
+                HeroMesh->SetMaterial(0,LoadedMat);
+            HeroMesh->SetRelativeLocation(FVector::ZeroVector);
+            HeroMesh->SetRelativeRotation(FRotator::ZeroRotator);
+            // The batter bake exported at 162.7 cm; a uniform lift puts both batters
+            // in the senior range. The origin is grounded so feet stay planted.
+            const float HeroScale=(Role==EC26Role::Batter)?1.06f:1.f;
+            HeroMesh->SetRelativeScale3D(FVector(HeroScale));
+            bHeroVisual=true;
+        }
+    }
+    else HeroMesh->SetStaticMesh(nullptr);
+
+    ApplyVisualRole();
     SetAction(EC26Action::Ready);
+}
+void AC26Athlete::ApplyVisualRole()
+{
+    // Exactly one visible body per athlete. Hero scans carry pads/helmet/bat baked in;
+    // the animated kit shows team clothing with shoes, and role-appropriate separate
+    // equipment is gated in ApplyDetail. Switching roles re-runs Configure, which lands
+    // here, so no stale mesh survives an innings change.
+    const bool Hero=bHeroVisual&&HeroMesh&&HeroMesh->GetStaticMesh();
+    bHeroVisual=Hero;
+    if(HeroMesh){HeroMesh->SetVisibility(Hero);HeroMesh->SetHiddenInGame(!Hero);}
+    Mesh->SetVisibility(!Hero);Mesh->SetHiddenInGame(Hero);
+    Uniform->SetVisibility(!Hero);Uniform->SetHiddenInGame(Hero);
+    const bool Shadowed=!Hero&&Shade&&Shade->GetNumSections()>0;
+    Shade->SetVisibility(Shadowed);Shade->SetHiddenInGame(!Shadowed);
+    ShirtNumber->SetVisibility(!Hero);ShirtNumber->SetHiddenInGame(Hero);
+    ShoeL->SetVisibility(!Hero);ShoeL->SetHiddenInGame(Hero);
+    ShoeR->SetVisibility(!Hero);ShoeR->SetHiddenInGame(Hero);
+    Bat->SetVisibility(false);Bat->SetHiddenInGame(true);
+    Headwear->SetVisibility(false);Headwear->SetHiddenInGame(true);
+    Grill->SetVisibility(false);Grill->SetHiddenInGame(true);
+    PadL->SetVisibility(false);PadL->SetHiddenInGame(true);
+    PadR->SetVisibility(false);PadR->SetHiddenInGame(true);
+    GloveL->SetVisibility(false);GloveL->SetHiddenInGame(true);
+    GloveR->SetVisibility(false);GloveR->SetHiddenInGame(true);
+    ApplyDetail();
 }
 int AC26Athlete::Bone(const FString& Name)const{const int* I=Bones.Find(Name);return I?*I:INDEX_NONE;}
 void AC26Athlete::RebuildChildren(int Index)
@@ -449,13 +625,50 @@ void AC26Athlete::Limb(const FString& Upper,const FString& Lower,const FString& 
 }
 void AC26Athlete::SetAction(EC26Action NewAction,bool ResetTime){if(NewAction!=Action||ResetTime)ActionTime=0;Action=NewAction;}
 void AC26Athlete::ResetAt(const FVector& Position,float Yaw)
-{SetActorLocationAndRotation(Position,FRotator(0,Yaw,0));MotionTime=0;MoveSpeed=0;SetAction(EC26Action::Ready);Animate(0);}
+{SetActorLocationAndRotation(Position,FRotator(0,Yaw,0));MotionTime=0;MoveSpeed=0;GaitPhase=0;Trigger=0;ContactTarget=FVector::ZeroVector;SetAction(EC26Action::Ready);Animate(0);}
 void AC26Athlete::SetShotContact(const FVector& Target,float Angle,bool bLoft)
 {ContactTarget=Target;ShotAngle=Angle;Loft=bLoft;SetAction(EC26Action::Batting);}
+FVector AC26Athlete::Palm(bool Right) const
+{
+    const FString Side=Right?TEXT("Right"):TEXT("Left");
+    const int Wrist=Bone(Side+TEXT("Hand"));
+    if(Wrist<0||!Pose.IsValidIndex(Wrist))return FVector::ZeroVector;
+    const int Knuckle=Bone(Side+TEXT("HandMiddle1")),Tip=Bone(Side+TEXT("HandMiddle3"));
+    if(Knuckle>=0&&Tip>=0&&Pose.IsValidIndex(Tip))
+        return FMath::Lerp(Pose[Knuckle].GetLocation(),Pose[Tip].GetLocation(),.72f);
+    const int Fore=Bone(Side+TEXT("ForeArm"));
+    const FVector Along=Fore>=0&&Pose.IsValidIndex(Fore)
+        ?(Pose[Wrist].GetLocation()-Pose[Fore].GetLocation()).GetSafeNormal():FVector(0,0,-1);
+    return Pose[Wrist].GetLocation()+Along*PalmReach;
+}
 FVector AC26Athlete::HandPosition() const
-{int I=Bone(TEXT("RightHand"));return I>=0&&Pose.IsValidIndex(I)?Mesh->GetComponentTransform().TransformPosition(Pose[I].GetLocation()):GetActorLocation()+FVector(0,0,210);}
+{
+    const int I=Bone(TEXT("RightHand"));
+    if(I<0||!Pose.IsValidIndex(I))return GetActorLocation()+FVector(0,0,210);
+    return Mesh->GetComponentTransform().TransformPosition(Palm(true));
+}
+FVector AC26Athlete::ReceivingPosition() const
+{
+    const int L=Bone(TEXT("LeftHand")),R=Bone(TEXT("RightHand"));
+    if(L<0||R<0)return HandPosition();
+    return Mesh->GetComponentTransform().TransformPosition((Palm(false)+Palm(true))*.5f);
+}
 void AC26Athlete::PlaceKit(const FVector& Grip,const FVector& Dir,bool Batting,bool Running)
 {
+    if(bHeroVisual && HeroMesh && HeroMesh->GetStaticMesh())
+    {
+        Bat->SetVisibility(false);
+        Headwear->SetVisibility(false);
+        Grill->SetVisibility(false);
+        PadL->SetVisibility(false);
+        PadR->SetVisibility(false);
+        GloveL->SetVisibility(false);
+        GloveR->SetVisibility(false);
+        ShoeL->SetVisibility(false);
+        ShoeR->SetVisibility(false);
+        ShirtNumber->SetVisibility(false);
+        return;
+    }
     const int Head=Bone(TEXT("Head"));
     if(Head>=0)
     {
@@ -548,6 +761,11 @@ void AC26Athlete::PlaceKit(const FVector& Grip,const FVector& Dir,bool Batting,b
 }
 void AC26Athlete::UpdateUniform()
 {
+    if(bHeroVisual && HeroMesh && HeroMesh->GetStaticMesh())
+    {
+        Uniform->SetVisibility(false);
+        return;
+    }
     // Lightweight cloth envelope follows the same posed joints as the skin. No cloth simulation
     // and no extra skeletons; distant players can update this with their reduced pose cadence.
     TArray<FVector> Vertices,Normals,StripeV,StripeN,SleeveV,SleeveN;TArray<int32> Indices,StripeT,SleeveT;
@@ -725,14 +943,42 @@ void AC26Athlete::UpdateUniform()
 }
 void AC26Athlete::Animate(float Dt)
 {
+    if(bHeroVisual && HeroMesh && HeroMesh->GetStaticMesh())
+    {
+        HeroMesh->SetVisibility(true);
+        Mesh->SetVisibility(false);
+        Uniform->SetVisibility(false);
+        Shade->SetVisibility(false);
+        Bat->SetVisibility(false);
+        Headwear->SetVisibility(false);
+        Grill->SetVisibility(false);
+        PadL->SetVisibility(false);
+        PadR->SetVisibility(false);
+        GloveL->SetVisibility(false);
+        GloveR->SetVisibility(false);
+        ShoeL->SetVisibility(false);
+        ShoeR->SetVisibility(false);
+        ShirtNumber->SetVisibility(false);
+        return;
+    }
     if(Reference.IsEmpty())return;
+    if(Dt>0.f&&Detail!=EDetail::Hero&&++SkipPhase%(Detail==EDetail::Distant?3:2)!=0)
+    {
+        // Every clock still advances on a skipped frame; only the rate at which the pose is
+        // re-solved falls, so nothing drifts and nothing snaps when the athlete is promoted back
+        // to hero. Callers asking for an exact instant pass Dt of zero and never land here.
+        ActionTime+=Dt;MotionTime+=Dt;
+        if(Action==EC26Action::Running)GaitPhase+=Dt*FMath::Clamp(MoveSpeed/60.f,0.f,15.f);
+        return;
+    }
     ActionTime+=Dt;MotionTime+=Dt;Pose=Reference;
     const bool Running=Action==EC26Action::Running;
     const bool Batting=Role==EC26Role::Batter;
     const bool Keeping=Role==EC26Role::Keeper;
     // Stride frequency follows the distance actually being covered, so feet stop skating.
-    const float Cadence=FMath::Clamp(MoveSpeed/48.f,8.f,17.f);
-    const float Gait=FMath::Sin(MotionTime*Cadence);
+    const float Cadence=FMath::Clamp(MoveSpeed/60.f,0.f,15.f);
+    if(Running)GaitPhase+=Dt*Cadence;
+    const float Gait=FMath::Sin(GaitPhase);
     const float Sway=FMath::Sin(MotionTime*1.7f);
 
     // Crouch is a hip drop; Shift moves the pelvis horizontally. A batter flexes his knees, he
@@ -752,16 +998,16 @@ void AC26Athlete::Animate(float Dt)
 
     if(Running)
     {
-        FL=Rig(Gait*47,-9,AnkleZ+FMath::Max(0.f,Gait)*24);
-        FR=Rig(-Gait*47,9,AnkleZ+FMath::Max(0.f,-Gait)*24);
+        const FVector L=C26Motion::RunningFoot(GaitPhase,MoveSpeed,-9,AnkleZ,Role==EC26Role::Bowler);
+        const FVector R=C26Motion::RunningFoot(GaitPhase,MoveSpeed,9,AnkleZ,Role==EC26Role::Bowler);
+        FL=Rig(L.X,L.Y,L.Z);FR=Rig(R.X,R.Y,R.Z);
         LH=Rig(-Gait*38,-21,114);RH=Rig(Gait*38,21,114);
         if(Role==EC26Role::Bowler)
         {
             // A fast bowler's approach, not a jog. Longer stride, high knee drive, and arms that
             // pump with the elbows tucked and the leading hand rising as it comes through. The
             // neutral run stays as it is for fielders and for running between the wickets.
-            FL=Rig(Gait*50,-8,AnkleZ+FMath::Max(0.f,Gait)*33);
-            FR=Rig(-Gait*50,8,AnkleZ+FMath::Max(0.f,-Gait)*33);
+            
             LH=Rig(-Gait*31,-16,119+FMath::Max(0.f,-Gait)*13);
             RH=Rig(Gait*31,16,119+FMath::Max(0.f,Gait)*13);
             LeanForward=18.f;
@@ -868,6 +1114,17 @@ void AC26Athlete::Animate(float Dt)
         else if(Action==EC26Action::Celebrate){Grip=Rig(6,26,196);Dir=Rig(-.25f,.30f,.92f).GetSafeNormal();TurnRight=12.f;LeanForward=-6.f;}
         else if(Action==EC26Action::Disappointed){Grip=Rig(14,16,74);Dir=Rig(.55f,.10f,.83f).GetSafeNormal();TurnRight=22.f;LeanForward=24.f;}
         else{Grip=Rig(10,14,85);Dir=Rig(.10f,.05f,.993f).GetSafeNormal();TurnRight=30.f;}
+        if(NonStriker&&Action==EC26Action::Ready)
+        {
+            TurnRight=12.f;LeanForward=8.f;Crouch=-6.f;
+            FL=Rig(8,-11,AnkleZ);FR=Rig(-8,11,AnkleZ);
+            Grip=Rig(18,20,85);Dir=Rig(.15f,0,.99f).GetSafeNormal();
+        }
+        else if(Action==EC26Action::Ready)
+        {
+            const float Press=FMath::Sin(Trigger*PI);
+            Shift=Rig(-Press*3.f,Press*1.5f,0);Grip.Z+=Press*9.f;
+        }
         // Keep the handle inside the arms' reach before deriving the hands from it. The IK clamps
         // silently at full extension, so a follow-through that asked for more arm than the athlete
         // owns used to strand both hands short while the blade carried on to the target.
@@ -881,24 +1138,54 @@ void AC26Athlete::Animate(float Dt)
 
     if(Action==EC26Action::Bowling)
     {
-        // One continuous action: gather, brace the front foot, rotate the arm through the vertical
-        // and follow through. The release notch lands with the hand at the top of the circle so the
-        // ball genuinely leaves the fingers rather than appearing in front of the bowler.
-        const float T=FMath::Clamp(ActionTime/.88f,0.f,1.f);
-        const float A=FMath::DegreesToRadians(-132.f+T*372.f);
-        RH=Rig(FMath::Sin(A)*60.f,20.f,152.f+FMath::Cos(A)*80.f);
-        LH=Rig(-FMath::Sin(A)*44.f,-24.f,146.f-FMath::Cos(A)*46.f);
-        FL=Rig(20.f+FMath::Sin(FMath::Clamp(T*2.2f,0.f,1.f)*PI)*32.f,-12,AnkleZ);
-        FR=Rig(-26.f-T*22.f,14,AnkleZ+FMath::Max(0.f,FMath::Sin(T*PI*1.4f))*20.f);
-        TurnRight=-26.f+T*44.f;LeanForward=6.f+T*26.f;LeanRight=-14.f+T*20.f;
-        Crouch=-6.f-FMath::Sin(T*PI)*7.f;
+        const auto P=C26Motion::Pace(ActionTime,AnkleZ);
+        const float Blend=FMath::SmoothStep(0.f,.13f,ActionTime);
+        const FVector RunL=C26Motion::RunningFoot(GaitPhase,MoveSpeed,-9,AnkleZ,true);
+        const FVector RunR=C26Motion::RunningFoot(GaitPhase,MoveSpeed,9,AnkleZ,true);
+        FL=FMath::Lerp(Rig(RunL.X,RunL.Y,RunL.Z),Rig(P.LeftFoot.X,P.LeftFoot.Y,P.LeftFoot.Z),Blend);
+        FR=FMath::Lerp(Rig(RunR.X,RunR.Y,RunR.Z),Rig(P.RightFoot.X,P.RightFoot.Y,P.RightFoot.Z),Blend);
+        RH=FMath::Lerp(Rig(Gait*31,16,119+FMath::Max(0.f,Gait)*13),Rig(P.RightHand.X,P.RightHand.Y,P.RightHand.Z),Blend);
+        LH=FMath::Lerp(Rig(-Gait*31,-16,119+FMath::Max(0.f,-Gait)*13),Rig(P.LeftHand.X,P.LeftHand.Y,P.LeftHand.Z),Blend);
+        TurnRight=P.Turn;LeanForward=P.Lean;LeanRight=P.Side;Crouch=P.HipDrop;
     }
+
     if(Action==EC26Action::Catch||Action==EC26Action::Pickup)
     {
         FVector Take=ContactTarget.IsZero()?Rig(34,0,142):Mesh->GetComponentTransform().InverseTransformPosition(ContactTarget);
-        if(Action==EC26Action::Pickup){Crouch=-46.f;LeanForward=38.f;Take.Z=FMath::Max(12.f,float(Take.Z));}
-        else{LeanForward=8.f;if(Take.Z<80){Crouch=-34;LeanForward=28;}}
-        LH=Take+Rig(0,-7,4);RH=Take+Rig(0,7,4);
+        const float Gather=FMath::SmoothStep(0.f,.20f,ActionTime);
+        const float Recover=Action==EC26Action::Pickup?FMath::SmoothStep(.24f,.53f,ActionTime):FMath::SmoothStep(.18f,.42f,ActionTime);
+        if(Action==EC26Action::Pickup)
+        {
+            // A cricketer gathers by striding at the ball and bending from the waist, not by
+            // squatting on the spot. The old pose dropped the hips 73 cm over feet that stayed
+            // under the body, which folded both legs to 36 cm of an 88 cm chain -- it rendered as
+            // a man kneeling. Worse, it put the shoulders 45 cm above and BEHIND the ball, and
+            // the arms are only 51.8 cm long, so the two-bone IK silently clamped and the hands
+            // never arrived: the ball was teleported into them. Striding through instead keeps
+            // the front leg long, carries the shoulders out over the ball and lets the hands
+            // genuinely reach it.
+            // How far he has to get down is the ball's problem, not a constant: a ball dying at
+            // his ankles needs the full bend, one that has bounced up to his hip needs almost none.
+            const float Low=FMath::Clamp((92.f-Take.Z)/84.f,0.f,1.f)*Gather;
+            Crouch=FMath::Lerp(-7.f,-70.f,Low)*(1.f-Recover*.62f);
+            LeanForward=18.f+Low*68.f-Recover*54.f;
+            Shift=Rig(Low*10.f*(1.f-Recover),0,0);
+            FL=Rig(26.f+Low*32.f,-19,AnkleZ);FR=Rig(-20.f-Low*6.f,20,AnkleZ);
+            Take=FMath::Lerp(Rig(28,0,95),Take,Gather);
+        }
+        else
+        {
+            Crouch=Take.Z<60.f?-62.f:Take.Z<100.f?-36.f:-8.f;
+            LeanForward=Take.Z<80.f?42.f:12.f;
+            FL=Rig(8,-23,AnkleZ);FR=Rig(-5,23,AnkleZ);
+        }
+        Take=FMath::Lerp(Take,Rig(32,0,116),Recover);
+        // Aim the WRISTS one palm short of the ball along the line of the reach, so the fingers
+        // close on it. Driving the wrists onto the ball put it behind the hands.
+        const FVector Anchor=Rig(0,0,ShoulderZ+Crouch);
+        const FVector Reach=(Take-Anchor).GetSafeNormal(UE_SMALL_NUMBER,Rig(1,0,0));
+        const FVector Wrists=Take-Reach*PalmReach;
+        LH=Wrists+Rig(0,-5,0);RH=Wrists+Rig(0,5,0);
     }
     if(Action==EC26Action::Throw)
     {
@@ -981,7 +1268,7 @@ void AC26Athlete::Animate(float Dt)
     }
     AimHead();
     Mesh->ApplyComponentPose(Pose);
-    UpdateUniform();
+    if(!AuthoredKit)UpdateUniform();
     PlaceKit(Grip,Dir,Batting,Running);
     UpdateContactShadow();
 }

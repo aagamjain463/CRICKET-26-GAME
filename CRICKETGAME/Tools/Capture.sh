@@ -15,5 +15,5 @@ mkdir -p "$DEST"
   -windowed -ResX=1600 -ResY=900 -nosplash -nosound \
   -abslog="$PROJ/Artifacts/$LABEL.log" >/dev/null 2>&1
 echo "Captures: $DEST"
-rg 'C26_SHOT_SKIPPED|C26_SHOTS_COMPLETE' "$PROJ/Artifacts/$LABEL.log"
-! rg -q 'C26_SHOT_SKIPPED' "$PROJ/Artifacts/$LABEL.log"
+grep -E 'C26_SHOT_SKIPPED|C26_SHOTS_COMPLETE' "$PROJ/Artifacts/$LABEL.log" || true
+! grep -q 'C26_SHOT_SKIPPED' "$PROJ/Artifacts/$LABEL.log"

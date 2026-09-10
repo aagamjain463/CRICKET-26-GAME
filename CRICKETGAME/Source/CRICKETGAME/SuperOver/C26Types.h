@@ -68,12 +68,28 @@ namespace C26Field
     constexpr float WicketY = 1006.f;
     constexpr float CreaseY = 884.f;
     constexpr float ContactY = 848.f;
-    constexpr float RunUpDuration = 3.05f;
-    constexpr float ReleasePoseTime = .31226f;
+    constexpr float RunUpDuration = 3.25f;
+    constexpr float ReleasePoseTime = .62f;
     constexpr float BatContactPoseTime = .24f;
     constexpr float RadiusX = 6550.f;
     constexpr float RadiusY = 7200.f;
     inline FVector RopePoint(float A) { return FVector(RadiusX*FMath::Cos(A),RadiusY*FMath::Sin(A),4.5f); }
     inline bool Inside(const FVector& P) { return FMath::Square(P.X/RadiusX)+FMath::Square(P.Y/RadiusY)<1.f; }
+}
+inline bool C26ValidTransition(EC26Phase From,EC26Phase To)
+{
+    if(From==To||To==EC26Phase::Menu)return true;
+    switch(From)
+    {
+    case EC26Phase::Intro:return To==EC26Phase::Ready;
+    case EC26Phase::Ready:return To==EC26Phase::RunUp;
+    case EC26Phase::RunUp:return To==EC26Phase::Delivery;
+    case EC26Phase::Delivery:return To==EC26Phase::InPlay||To==EC26Phase::Reaction;
+    case EC26Phase::InPlay:return To==EC26Phase::Reaction;
+    case EC26Phase::Reaction:return To==EC26Phase::Replay||To==EC26Phase::Ready||To==EC26Phase::Interval||To==EC26Phase::Result;
+    case EC26Phase::Replay:return To==EC26Phase::Ready||To==EC26Phase::Interval||To==EC26Phase::Result;
+    case EC26Phase::Interval:return To==EC26Phase::Ready;
+    default:return false;
+    }
 }
 DECLARE_LOG_CATEGORY_EXTERN(LogC26, Log, All);

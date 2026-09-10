@@ -36,9 +36,11 @@ private:
     void NavBtn(FName Action,const FString& Label,float X,float Y,float W,bool Selected);
     void TopUtility();
     void NavRail(int Selected);
+    void SideNavBtn(FName Action,const FString& Label,float Y,bool Selected);
+    void ProfileChip(float X,float Y,float W,const FString& Kicker,const FString& Value,FLinearColor Accent);
     void HeroCrest(float X,float Y,float Size,int Team);
     void Tag(const FString& S,float X,float Y,bool Accent=false);
-    void Toast();
+    void Toast(bool Gameplay=false);
     void Confirm();
     void BackBtn(FName Action=FName(TEXT("back")));
     void PageHead(const FString& Kick,const FString& Title,const FString& Sub);
@@ -53,8 +55,15 @@ private:
     void Crest(float X,float Y,float R,int Team);
     void PlayGlyph(float X,float Y,float S,FLinearColor C);
     float TH(float Size) const;
+    float LineH(float Size) const;
+    int WrapLines(const FString& S,float Size,float MaxW) const;
+    float TextWrap(const FString& S,float X,float Y,float Size,FLinearColor Color,float MaxW,bool Center=false);
+    void TextFit(const FString& S,float X,float Y,float Size,FLinearColor Color,float MaxW,bool Center=false);
+    void TextMid(const FString& S,float X,float Y,float BoxH,float Size,FLinearColor Color,bool Center=false);
     void Menu();
     void Home(); void Play(); void Teams(); void Matchup(); void Toss();
+    void Squad(); void Store();
+    void PlayerCard(float X,float Y,float W,float H,const FString& Name,const FString& Role,int Bat,int Bowl,int Field,int Team,bool Selected);
     void Future(int Kind);
     void SettingsHub(); void Help();
     void Score();

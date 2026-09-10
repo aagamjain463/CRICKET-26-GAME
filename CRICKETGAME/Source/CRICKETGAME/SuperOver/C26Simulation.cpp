@@ -1,4 +1,5 @@
 #include "C26Simulation.h"
+#include "C26Delivery.h"
 DEFINE_LOG_CATEGORY(LogC26);
 
 FC26Simulation::FC26Simulation()
@@ -234,11 +235,16 @@ FC26DeliveryPlan FC26AI::Bowl(const C26::Match& Rules,int Difficulty)
     else if(History.Boundaries>0&&R<.45f)P.Type=EC26Delivery::Slower;
     else if(B>0&&R>.8f)P.Type=EC26Delivery::Bouncer;
     else P.Type=R<.3f?EC26Delivery::Inswing:R<.6f?EC26Delivery::Outswing:EC26Delivery::Pace;
-    P.Speed=Random.FRandRange(3020.f,3540.f)+(Difficulty-1)*120;
+    if(P.Type==History.LastDelivery&&History.RepeatedDelivery>=1)
+        P.Type=P.Type==EC26Delivery::Outswing?EC26Delivery::Slower:EC26Delivery::Outswing;
+    History.RepeatedDelivery=P.Type==History.LastDelivery?History.RepeatedDelivery+1:0;
+    History.LastDelivery=P.Type;++History.PlannedBalls;
+    P.Speed=Random.FRandRange(3500.f,3900.f)+(Difficulty-1)*100;
     P.Length=P.Type==EC26Delivery::Yorker?810:P.Type==EC26Delivery::Bouncer?40:430;
     if(P.Type==EC26Delivery::Slower){P.Speed=2450;P.Length=570;}
     P.Bounce=P.Type==EC26Delivery::Bouncer?.72f:.55f;
-    P.Line=Random.FRandRange(-20.f,35.f)+History.OffsideBias*20;
+    const bool DefendingTarget=Rules.Current==1&&Rules.RunsRequired()>Rules.BallsRemaining()*3;
+    P.Line=Random.FRandRange(-20.f,35.f)+History.OffsideBias*20+(DefendingTarget?14.f:0.f);
     P.Swing=P.Type==EC26Delivery::Outswing?180:P.Type==EC26Delivery::Inswing?-180:0;
     P.Seam=Random.FRandRange(-28,28);
     P.Length+=Random.FRandRange(-45.f,45.f);
