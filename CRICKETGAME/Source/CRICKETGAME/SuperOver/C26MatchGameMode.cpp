@@ -23,26 +23,35 @@
 namespace
 {
 // One ordered visual-acceptance beat per presentation state. Batting: -1 any, 1 player batting,
-// 0 player bowling. Overlay: 0 none, 1 settings, 2 controls.
-struct FC26Beat{EC26Phase Phase;int32 Batting;int32 Overlay;float After;const TCHAR* Name;float Timeout;};
+// 0 player bowling. Overlay: 0 none, 1 settings, 2 controls, 3 paused. Screen: menu screen
+// index, -1 any. Nav: optional UIAction fired once when the beat is first seen.
+struct FC26Beat{EC26Phase Phase;int32 Batting;int32 Overlay;float After;const TCHAR* Name;float Timeout;int32 Screen;const TCHAR* Nav;int32 Toss;};
 const FC26Beat GC26Beats[]={
-    {EC26Phase::Menu,-1,0,6.f,TEXT("01_menu"),60.f},
-    {EC26Phase::Menu,-1,1,0.f,TEXT("02_settings"),60.f},
-    {EC26Phase::Menu,-1,2,0.f,TEXT("03_how_to_play"),60.f},
-    {EC26Phase::Intro,-1,0,1.4f,TEXT("04_intro_flyover"),60.f},
-    {EC26Phase::Intro,-1,0,4.2f,TEXT("05_intro_batter"),60.f},
-    {EC26Phase::Ready,1,0,.5f,TEXT("06_ready_batting"),60.f},
-    {EC26Phase::RunUp,1,0,1.9f,TEXT("07_runup_batting"),60.f},
-    {EC26Phase::Delivery,1,0,.3f,TEXT("08_delivery_batting"),60.f},
-    {EC26Phase::InPlay,-1,0,.45f,TEXT("09_in_play"),60.f},
-    {EC26Phase::InPlay,-1,0,1.6f,TEXT("10_fielding"),60.f},
-    {EC26Phase::Reaction,-1,0,.7f,TEXT("11_reaction"),60.f},
-    {EC26Phase::Replay,-1,0,1.2f,TEXT("12_replay"),60.f},
-    {EC26Phase::Interval,-1,0,.9f,TEXT("13_interval"),220.f},
-    {EC26Phase::Ready,0,0,.5f,TEXT("14_ready_bowling"),220.f},
-    {EC26Phase::RunUp,0,0,1.5f,TEXT("15_runup_bowling"),60.f},
-    {EC26Phase::Delivery,0,0,.3f,TEXT("16_delivery_bowling"),60.f},
-    {EC26Phase::Result,-1,0,1.2f,TEXT("17_result"),340.f},
+    {EC26Phase::Menu,-1,0,2.5f,TEXT("01_home"),30.f,0,nullptr,0},
+    {EC26Phase::Menu,-1,0,1.2f,TEXT("02_play"),30.f,1,TEXT("nav_play"),0},
+    {EC26Phase::Menu,-1,0,1.2f,TEXT("03_teams"),30.f,2,TEXT("nav_teams"),0},
+    {EC26Phase::Menu,-1,0,1.2f,TEXT("04_matchup"),30.f,3,TEXT("nav_matchup"),0},
+    {EC26Phase::Menu,-1,0,1.2f,TEXT("05_toss"),30.f,4,TEXT("nav_toss"),0},
+    {EC26Phase::Menu,-1,0,2.6f,TEXT("06_tossresult"),30.f,4,TEXT("tossflip"),2},
+    {EC26Phase::Menu,-1,0,1.2f,TEXT("07_myteam"),30.f,5,TEXT("nav_myteam"),0},
+    {EC26Phase::Menu,-1,0,1.2f,TEXT("08_world"),30.f,10,TEXT("nav_world"),0},
+    {EC26Phase::Menu,-1,0,1.2f,TEXT("09_settings"),30.f,11,TEXT("nav_settings"),0},
+    {EC26Phase::Menu,-1,0,1.2f,TEXT("10_help"),30.f,12,TEXT("nav_help"),0},
+    {EC26Phase::Intro,-1,0,1.4f,TEXT("11_intro_flyover"),60.f,-1,TEXT("tossquick"),0},
+    {EC26Phase::Intro,-1,0,4.2f,TEXT("12_intro_batter"),60.f,-1,nullptr,0},
+    {EC26Phase::Ready,1,0,.5f,TEXT("13_ready_batting"),60.f,-1,nullptr,0},
+    {EC26Phase::RunUp,1,0,1.9f,TEXT("14_runup_batting"),60.f,-1,nullptr,0},
+    {EC26Phase::Delivery,1,0,.3f,TEXT("15_delivery_batting"),60.f,-1,nullptr,0},
+    {EC26Phase::InPlay,-1,0,.45f,TEXT("16_in_play"),60.f,-1,nullptr,0},
+    {EC26Phase::InPlay,-1,0,1.6f,TEXT("17_fielding"),60.f,-1,nullptr,0},
+    {EC26Phase::Reaction,-1,0,.7f,TEXT("18_reaction"),60.f,-1,nullptr,0},
+    {EC26Phase::Replay,-1,0,1.2f,TEXT("19_replay"),60.f,-1,nullptr,0},
+    {EC26Phase::Interval,-1,0,.9f,TEXT("20_interval"),220.f,-1,nullptr,0},
+    {EC26Phase::Ready,0,0,.5f,TEXT("21_ready_bowling"),220.f,-1,nullptr,0},
+    {EC26Phase::Ready,0,3,.6f,TEXT("22_pause"),220.f,-1,nullptr,0},
+    {EC26Phase::RunUp,0,0,1.5f,TEXT("23_runup_bowling"),60.f,-1,nullptr,0},
+    {EC26Phase::Delivery,0,0,.3f,TEXT("24_delivery_bowling"),60.f,-1,nullptr,0},
+    {EC26Phase::Result,-1,0,1.2f,TEXT("25_result"),340.f,-1,nullptr,0},
 };
 }
 
@@ -226,7 +235,8 @@ void AC26MatchGameMode::StartMatch()
     Director->Reset();Audio->Reset();ResetStumps();Paused=SettingsOpen=ControlsOpen=false;
     Running=Returning=ReleaseLocked=ShotQueued=Resolved=false;ThrowClock=-1;RequestedRuns=CompletedRuns=0;RunProgress=0;Intent={};Footwork=0;
     FirstBattingTeam=PlayerBatsFirst?PlayerTeam:1-PlayerTeam;
-    if(UseToss){const bool Won=AI.Random.FRand()>.5f;FirstBattingTeam=Won?PlayerTeam:1-PlayerTeam;TossText=TeamShort(FirstBattingTeam)+TEXT(" WIN THE TOSS  /  BAT FIRST");}
+    if(TossResolved){FirstBattingTeam=PlayerBatsFirst?PlayerTeam:1-PlayerTeam;TossText=ResolvedTossText;}
+    else if(UseToss){const bool Won=AI.Random.FRand()>.5f;FirstBattingTeam=Won?PlayerTeam:1-PlayerTeam;TossText=TeamShort(FirstBattingTeam)+TEXT(" WIN THE TOSS  /  BAT FIRST");}
     else TossText=TeamShort(FirstBattingTeam)+TEXT(" BAT FIRST  /  SIX BALLS. TWO WICKETS.");
     Callout=TEXT("ONE OVER. ALL TO PLAY FOR.");Detail=TEXT("ECLIPSE OVAL  /  NIGHT SESSION");
     Audio->NotifyMatchStart();
@@ -236,7 +246,23 @@ void AC26MatchGameMode::Menu()
 {
     ClearHitStop();
     Director->Restore(Athletes);Director->Reset();Simulation.Reset();Audio->Reset();Paused=false;SettingsOpen=false;ChangePhase(EC26Phase::Menu);
+    MenuScreen=0;ScreenEnteredAt=Clock;ScreenFade=0;TossStage=0;TossResolved=false;PendingConfirm=NAME_None;SettingsTab=0;
 }
+void AC26MatchGameMode::SetScreen(int S)
+{
+    if(MenuScreen==S){ScreenFade=FMath::Min(1.f,ScreenFade+.5f);return;}
+    MenuScreen=S;ScreenEnteredAt=Clock;ScreenFade=Preferences&&Preferences->ReducedMotion?1.f:0.f;PendingConfirm=NAME_None;
+}
+void AC26MatchGameMode::GoBack()
+{
+    // Predictable back stack: flow screens return to their parent, hubs to Home.
+    if(MenuScreen==2)SetScreen(1);
+    else if(MenuScreen==3)SetScreen(2);
+    else if(MenuScreen==4)SetScreen(3);
+    else if(MenuScreen==11||MenuScreen==12)SetScreen(0);
+    else if(MenuScreen!=0)SetScreen(0);
+}
+void AC26MatchGameMode::Toast(const FString& S){ToastText=S;ToastUntil=Clock+2.2f;}
 void AC26MatchGameMode::PrepareDelivery()
 {
     Simulation.Reset();Simulation.Tuning=Tuning;Director->Reset();ResetStumps();
@@ -785,38 +811,52 @@ void AC26MatchGameMode::UpdateCapture(float Dt)
     // Deterministic visual-acceptance pass: drive the presentation and write one frame per beat.
     if(!Capture)return;
     if(CaptureHold>0){CaptureHold-=Dt;return;}
-    if(Phase==EC26Phase::Menu&&CaptureIndex>=3){SettingsOpen=ControlsOpen=false;StartMatch();return;}
+    // The screenshot request captures a LATER frame, so transient beat state
+    // (pause overlay) must survive until that frame has rendered.
+    if(ClearPauseNext){Paused=false;ClearPauseNext=false;}
     if(CaptureIndex>=UE_ARRAY_COUNT(GC26Beats))
     {
         UE_LOG(LogC26,Display,TEXT("C26_SHOTS_COMPLETE captured=%d"),CaptureIndex);
-        Capture=false;SettingsOpen=ControlsOpen=false;FPlatformMisc::RequestExit(false);return;
+        Capture=false;SettingsOpen=ControlsOpen=false;Paused=false;FPlatformMisc::RequestExit(false);return;
     }
     const FC26Beat& Beat=GC26Beats[CaptureIndex];
-    if(FCString::Strcmp(Beat.Name,TEXT("12_replay"))==0&&Phase==EC26Phase::Reaction)Important=true;
-    const bool Overlay=Beat.Overlay!=0;
-    const bool Matches=Phase==Beat.Phase&&(Beat.Batting<0||PlayerBatting()==(Beat.Batting==1));
-    if(!Matches)
+    if(FCString::Strcmp(Beat.Name,TEXT("19_replay"))==0&&Phase==EC26Phase::Reaction)Important=true;
+    // Fire the beat's navigation exactly once, then let the screen settle.
+    if(Beat.Nav&&CaptureWait==0&&!CaptureShotsNavFired)
     {
-        SettingsOpen=ControlsOpen=false;CaptureWait+=Dt;
-        if(CaptureWait>Beat.Timeout)
-        {
-            UE_LOG(LogC26,Warning,TEXT("C26_SHOT_SKIPPED %s: state skipped or timed out in %.1fs (phase=%d)"),Beat.Name,CaptureWait,int(Phase));
-            CaptureWait=0;++CaptureIndex;
-        }
-        return;
+        UIAction(Beat.Nav);CaptureShotsNavFired=true;CaptureHold=.6f;CaptureWait+=Dt;return;
     }
-    if(Overlay&&!(Beat.Overlay==1?SettingsOpen:ControlsOpen))
+    const bool WantsPause=Beat.Overlay==3;
+    if(WantsPause&&!Paused){Paused=true;CaptureHold=.5f;return;}
+    const bool WantsOldOverlay=Beat.Overlay==1||Beat.Overlay==2;
+    if(WantsOldOverlay&&!(Beat.Overlay==1?SettingsOpen:ControlsOpen))
     {
         SettingsOpen=Beat.Overlay==1;ControlsOpen=Beat.Overlay==2;CaptureHold=.45f;return;
     }
-    if(!Overlay&&PhaseTime<Beat.After){CaptureWait+=Dt;return;}
+    const bool Matches=Phase==Beat.Phase&&(Beat.Batting<0||PlayerBatting()==(Beat.Batting==1))
+        &&(Beat.Screen<0||MenuScreen==Beat.Screen)&&(Beat.Overlay!=3||Paused)
+        &&(Beat.Toss<=0||TossStage>=Beat.Toss);
+    if(!Matches)
+    {
+        SettingsOpen=ControlsOpen=false;if(!WantsPause)Paused=false;CaptureWait+=Dt;
+        if(CaptureWait>Beat.Timeout)
+        {
+            UE_LOG(LogC26,Warning,TEXT("C26_SHOT_SKIPPED %s: state skipped or timed out in %.1fs (phase=%d)"),Beat.Name,CaptureWait,int(Phase));
+            CaptureWait=0;CaptureShotsNavFired=false;++CaptureIndex;
+        }
+        return;
+    }
+    if(PhaseTime<Beat.After&&!(Beat.Overlay==3&&Beat.After<1.f)){CaptureWait+=Dt;return;}
+    // Pause overlay needs a settled frame before the shot is taken.
+    if(Beat.Overlay==3&&CaptureWait<.35f){CaptureWait+=Dt;return;}
     FString Directory=FPaths::ProjectDir()/TEXT("Artifacts/Shots");
     FParse::Value(FCommandLine::Get(),TEXT("C26ShotsDir="),Directory);
     const FString File=Directory/FString(Beat.Name)+TEXT(".png");
     FScreenshotRequest::RequestScreenshot(File,true,false);
     UE_LOG(LogC26,Display,TEXT("C26_SHOT %s -> %s"),Beat.Name,*File);
-    ++CaptureIndex;CaptureWait=0;CaptureHold=.35f;
-    if(Overlay){SettingsOpen=ControlsOpen=false;}
+    ++CaptureIndex;CaptureWait=0;CaptureShotsNavFired=false;CaptureHold=.35f;
+    if(Beat.Overlay==1||Beat.Overlay==2){SettingsOpen=ControlsOpen=false;}
+    if(Beat.Overlay==3){ClearPauseNext=true;}
 }
 void AC26MatchGameMode::UpdateBallVisual()
 {if(BallMesh){BallMesh->SetWorldLocation(Simulation.Ball.Position);BallMesh->AddLocalRotation(FRotator(11,4,0));}}
@@ -826,7 +866,15 @@ void AC26MatchGameMode::Tick(float Dt)
 {
     Super::Tick(Dt);if(!Director||Athletes.Num()!=14)return;
     if(HitStopUntil>0&&GetWorld()->GetRealTimeSeconds()>=HitStopUntil)ClearHitStop();
-    Dt=FMath::Min(Dt,.05f);Clock+=Dt;UpdateCapture(Dt);if(Paused||SettingsOpen||ControlsOpen)return;
+    Dt=FMath::Min(Dt,.05f);Clock+=Dt;UpdateCapture(Dt);
+    if(ScreenFade<1.f)ScreenFade=FMath::Min(1.f,ScreenFade+Dt*3.2f);
+    // Frontend toss coin animation runs on the menu clock, never gameplay.
+    if(Phase==EC26Phase::Menu&&MenuScreen==4&&TossStage==1)
+    {
+        TossClock+=Dt;
+        if(TossClock>=1.5f){TossStage=2;Audio->Cue(TEXT("ui_result_sting"),.35f);Haptic(.3f);}
+    }
+    if(Paused||SettingsOpen||ControlsOpen)return;
     const EC26Phase PhaseBeforeUpdate=Phase;
     PhaseTime+=Dt;
     if(Phase==EC26Phase::Intro&&PhaseTime>6.5f)PrepareDelivery();
@@ -938,13 +986,62 @@ void AC26MatchGameMode::Tick(float Dt)
 void AC26MatchGameMode::UIAction(FName Action)
 {
     if((Action==TEXT("loft")||Action==TEXT("defend"))&&(ShotQueued||Paused||SettingsOpen||ControlsOpen||!PlayerBatting()||(Phase!=EC26Phase::Ready&&Phase!=EC26Phase::RunUp&&Phase!=EC26Phase::Delivery)))return;
+    LastAction=Action;LastActionAt=Clock;
     Audio->Cue(TEXT("ui_button_click"),.25f);
     if(Action==TEXT("play")||Action==TEXT("again"))StartMatch();
     else if(Action==TEXT("menu"))Menu();
     else if(Action==TEXT("team"))PlayerTeam=1-PlayerTeam;
-    else if(Action==TEXT("batfirst")){PlayerBatsFirst=true;UseToss=false;}
-    else if(Action==TEXT("bowlfirst")){PlayerBatsFirst=false;UseToss=false;}
+    else if(Action==TEXT("pick0"))PlayerTeam=0;
+    else if(Action==TEXT("pick1"))PlayerTeam=1;
+    else if(Action==TEXT("batfirst")){PlayerBatsFirst=true;UseToss=false;if(Phase==EC26Phase::Menu&&MenuScreen==4&&TossStage==2&&TossPlayerWon)TossPlayerChoseBat=true;}
+    else if(Action==TEXT("bowlfirst")){PlayerBatsFirst=false;UseToss=false;if(Phase==EC26Phase::Menu&&MenuScreen==4&&TossStage==2&&TossPlayerWon)TossPlayerChoseBat=false;}
     else if(Action==TEXT("toss"))UseToss=!UseToss;
+    // ---- front-end navigation ----
+    else if(Action==TEXT("nav_home"))SetScreen(0);
+    else if(Action==TEXT("nav_play"))SetScreen(1);
+    else if(Action==TEXT("nav_teams"))SetScreen(2);
+    else if(Action==TEXT("nav_matchup"))SetScreen(3);
+    else if(Action==TEXT("nav_toss")){TossStage=0;SetScreen(4);}
+    else if(Action==TEXT("nav_myteam"))SetScreen(5);
+    else if(Action==TEXT("nav_career"))SetScreen(6);
+    else if(Action==TEXT("nav_tour"))SetScreen(7);
+    else if(Action==TEXT("nav_online"))SetScreen(8);
+    else if(Action==TEXT("nav_train"))SetScreen(9);
+    else if(Action==TEXT("nav_world"))SetScreen(10);
+    else if(Action==TEXT("nav_settings"))SetScreen(11);
+    else if(Action==TEXT("nav_help"))SetScreen(12);
+    else if(Action==TEXT("back"))GoBack();
+    else if(Action==TEXT("quickplay")){SetScreen(3);}
+    else if(Action==TEXT("mode_super"))SetScreen(2);
+    else if(Action==TEXT("mode_soon")){Toast(TEXT("COMING SOON  /  THIS MODE IS IN DEVELOPMENT"));}
+    else if(Action==TEXT("matchup_go")){TossStage=0;SetScreen(4);}
+    else if(Action==TEXT("tossflip")){if(TossStage==0){TossStage=1;TossClock=0;TossPlayerWon=AI.Random.FRand()>.5f;TossAIChoiceBat=AI.Random.FRand()>.5f;}}
+    else if(Action==TEXT("tossquick")){PlayerBatsFirst=true;UseToss=false;TossResolved=false;StartMatch();}
+    else if(Action==TEXT("tosscontinue"))
+    {
+        if(TossStage==2)
+        {
+            PlayerBatsFirst=TossPlayerWon?TossPlayerChoseBat:!TossAIChoiceBat;
+            UseToss=false;TossResolved=true;
+            const int BatFirst=TossPlayerWon?(TossPlayerChoseBat?PlayerTeam:1-PlayerTeam):(TossAIChoiceBat?1-PlayerTeam:PlayerTeam);
+            ResolvedTossText=TeamShort(TossPlayerWon?PlayerTeam:1-PlayerTeam)+TEXT(" WIN THE TOSS  /  ")+TeamShort(BatFirst)+TEXT(" BAT FIRST");
+            StartMatch();
+        }
+    }
+    else if(Action==TEXT("confirm_restart"))PendingConfirm=TEXT("restart");
+    else if(Action==TEXT("confirm_exit"))PendingConfirm=TEXT("exit");
+    else if(Action==TEXT("yes"))
+    {
+        if(PendingConfirm==TEXT("restart")){PendingConfirm=NAME_None;StartMatch();}
+        else if(PendingConfirm==TEXT("exit")){PendingConfirm=NAME_None;Menu();}
+    }
+    else if(Action==TEXT("no"))PendingConfirm=NAME_None;
+    else if(Action==TEXT("stab0"))SettingsTab=0;
+    else if(Action==TEXT("stab1"))SettingsTab=1;
+    else if(Action==TEXT("stab2"))SettingsTab=2;
+    else if(Action==TEXT("stab3"))SettingsTab=3;
+    else if(Action==TEXT("stab4"))SettingsTab=4;
+    else if(Action==TEXT("stab5"))SettingsTab=5;
     else if(Action==TEXT("settings"))SettingsOpen=!SettingsOpen;
     else if(Action==TEXT("help"))ControlsOpen=!ControlsOpen;
     else if(Action==TEXT("close")){SettingsOpen=false;ControlsOpen=false;Paused=false;Preferences->Save();}
@@ -956,6 +1053,9 @@ void AC26MatchGameMode::UIAction(FName Action)
     else if(Action==TEXT("crowd")){Preferences->CrowdVolume=Preferences->CrowdVolume>.1f?0:.85f;Audio->SyncVolumesFromSettings();Preferences->Save();}
     else if(Action==TEXT("sfx")){const bool bOff=Preferences->SFXVolume>.1f;Preferences->SFXVolume=bOff?0:.9f;Preferences->UIVol=bOff?0:.8f;Audio->SyncVolumesFromSettings();Preferences->Save();}
     else if(Action==TEXT("vibration")){Preferences->Vibration=!Preferences->Vibration;Preferences->Save();}
+    else if(Action==TEXT("subtitles")){Preferences->Subtitles=!Preferences->Subtitles;Preferences->Save();}
+    else if(Action==TEXT("reducedmotion")){Preferences->ReducedMotion=!Preferences->ReducedMotion;Preferences->Save();}
+    else if(Action==TEXT("hints")){Preferences->Hints=!Preferences->Hints;Preferences->Save();}
     else if(Action==TEXT("sensitivity")){Preferences->Sensitivity=Preferences->Sensitivity>=1.49f?.7f:Preferences->Sensitivity+.4f;Preferences->Save();}
     else if(Action==TEXT("pause"))Paused=!Paused;
     else if(Action==TEXT("skip"))Skip();

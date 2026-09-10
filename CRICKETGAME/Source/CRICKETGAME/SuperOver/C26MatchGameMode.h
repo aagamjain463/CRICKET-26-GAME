@@ -68,6 +68,21 @@ public:
     void DebugOutcome(FString Type);
     float TimingCountdown() const;
     float BowlingMeter() const;
+    // ---- front-end flow (presentation only; gameplay truth untouched) ----
+    // MenuScreen: 0 Home,1 Play,2 Teams,3 Matchup,4 Toss,5 MyTeam,6 Career,
+    // 7 Tournaments,8 Online,9 Training,10 World,11 Settings,12 Help.
+    int MenuScreen=0;
+    float ScreenEnteredAt=0,ScreenFade=1;
+    int TossStage=0; float TossClock=0;
+    bool TossPlayerWon=false,TossPlayerChoseBat=true,TossResolved=false,TossAIChoiceBat=true;
+    FString ResolvedTossText;
+    FName PendingConfirm=NAME_None;
+    FString ToastText; float ToastUntil=0;
+    int SettingsTab=0;
+    FName LastAction=NAME_None; float LastActionAt=-99.f;
+    void SetScreen(int S);
+    void GoBack();
+    void Toast(const FString& S);
 private:
     C26::DeliveryOutcome Pending;
     uint32 DeliveryId=0;
@@ -87,6 +102,8 @@ private:
     float SmokeWatchdog=0;
     int CaptureIndex=0;
     float CaptureHold=0,CaptureWait=0;
+    bool CaptureShotsNavFired=false;
+    bool ClearPauseNext=false;
     FString ProbeName;
     bool ProbeCaptured=false;
     void UpdateCapture(float Dt);

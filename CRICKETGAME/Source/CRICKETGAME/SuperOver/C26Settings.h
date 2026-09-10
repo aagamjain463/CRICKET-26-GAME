@@ -17,6 +17,8 @@ public:
     UPROPERTY() float UIVol=.8f;
     UPROPERTY() bool Vibration=true;
     UPROPERTY() bool Hints=true;
+    UPROPERTY() bool Subtitles=true;
+    UPROPERTY() bool ReducedMotion=false;
     UPROPERTY() float Sensitivity=1.f;
     void Save();
     void Apply();

@@ -1,5 +1,20 @@
 # CRICKET 26 — AI HANDOFF
 
+## Muse Spark continuation — 2026-09-10, complete UI/UX overhaul.
+
+Canvas immediate-mode HUD rebuilt into a design system + full front end.
+`C26HUD.*` rewritten (~1100 lines): tokens, tracked kickers, ghost type,
+corner-cut CTAs, scrims, toasts, confirm modals. GameMode gained frontend
+state (`MenuScreen` 0–12, `TossStage`, `PendingConfirm`, `SettingsTab`,
+`LastAction` press flash); scoring/rules untouched. New: Home/Play/Teams/
+Matchup/Toss flow, 6 honest PREVIEW hubs, categorized settings (+subtitles,
++reduced motion), visual guide, broadcast score bug, animated callouts,
+interval/result+summary, pause hub. `-C26Shots` extended to 25 beats incl.
+toss-result gating + async-safe pause shot. Verified: build clean, 25/25
+shots at 16:9 and 19.5:9, full match completes, commentary firing (35 plays
+in capture run), zero errors. Docs: `UI_DESIGN_SYSTEM.md`.
+Next: ear-check mix in PIE; replace dev TTS per AUDIO_ARCHITECTURE.md.
+
 ## Muse Spark continuation — 2026-09-10, commentary + stadium audio overhaul.
 
 Branch `work/match-world-reborn` (uncommitted at write time; pre-existing dirty
