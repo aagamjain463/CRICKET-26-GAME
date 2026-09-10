@@ -685,3 +685,39 @@ Fixed: gameplay cameras occluded by keeper/bowler on the lens axis; athletes at 
 overlap; invisible ball at broadcast distance; capture beats timing out; helmets buried in hair;
 result camera inside athletes. `Tools/FixCrowd.py` was applied once to `M_Crowd.uasset`.
 Note: several of that pass's conclusions about *why* the venue looked flat were wrong — see §1.
+
+---
+
+## Milestone 2 — Next-Gen Cricketers (2026-09-09, commit `82232c6`)
+
+**What changed.** The entire equipment layer moved from C++ procedural ring-lofts to authored
+Blender geometry. Ten static meshes, 9,984 triangles total, in `/Game/Cricket26/Equipment`:
+`SM_C26_Bat_Hero`, `SM_C26_Helmet_Hero`, `SM_C26_HelmetGrille_Hero`, `SM_C26_Cap_Hero`,
+`SM_C26_Pad_L/R`, `SM_C26_Glove_L/R`, `SM_C26_Shoe_L/R`. Source scripts under
+`ArtSource/Blender/Equipment/`, import and size-assertion in `Tools/ImportEquipment.py`.
+
+`AC26Athlete` lost `BuildEquipment`, `BuildGloves` and `BuildPads` (215 lines) and the
+`Helmet`/`Peak`/`Shell` sphere components; it gained `Headwear`, `ShoeL`, `ShoeR`, `Dress` (bind
+materials by slot name) and `UpdateDetail`/`ApplyDetail` (hero/mid/distant presentation tiers,
+driven from the camera director's position each frame).
+
+Also: cricket whites instead of team-coloured trousers, 21 distinct kit materials with separated
+roughness, a loaded batting stance, and a dedicated bowler-at-his-mark pose.
+
+**Verification.** `Tools/GoldenGate.sh m2_final` → `C26_GATE_PASS failures=0`, release 0.000 cm,
+contact 1.200 cm at Z=-57.9 measured against 724 authored blade triangles. Automation 3/3 PASS.
+Captures in `Artifacts/Captures/m2_kit2` and `m2_final`. Desktop delivery frame time mean
+21.3 → 17.74 ms.
+
+**Traps worth knowing.** Unreal imports these Blender FBX at ×100 whatever `UnitScaleFactor` says,
+so equipment is authored in centimetres and stored in metres (`c26_build.CM = 0.01`); the size
+assertion in `ImportEquipment.py` is what caught that and must stay. Unreal drops material slots
+no triangle references, so slots are bound by name, never index.
+
+**Not done, and why.** The shirt is still the base character's street top recoloured with
+procedural collar/placket/hem/sleeve overlays. Garments cannot be derived from the base `Body`
+mesh — Mixamo deleted all torso and thigh geometry under the clothes — and `Bottoms` stops at the
+knee. `ArtSource/Blender/Characters/build_kit.py` and `Tools/ImportKit.py` are in place for the
+next attempt, which needs genuinely new skinned garments with transferred weights. Equipment LODs
+also did not build (both the deprecated and current UE 5.8 LOD APIs failed in the commandlet);
+detail tiers currently work by hiding components instead. See `Docs/CURRENT_TASK.md`.

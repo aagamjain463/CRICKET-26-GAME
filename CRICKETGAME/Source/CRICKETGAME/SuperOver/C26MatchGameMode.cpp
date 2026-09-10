@@ -667,6 +667,11 @@ void AC26MatchGameMode::Tick(float Dt)
             Athletes[0]->LookAt=Athletes[11]->GetActorLocation();
             for(int I=1;I<11;++I)Athletes[I]->LookAt=Simulation.Ball.Active?Simulation.Ball.Position:Athletes[11]->GetActorLocation();
         }
+        // Presentation budget. The director's own position is the view the frame is composed
+        // from, so athletes are graded against it rather than against the pitch: a fielder who
+        // runs into a replay close-up is promoted for those frames instead of staying cheap.
+        const FVector ViewPoint=Director->GetActorLocation();
+        for(AC26Athlete* Athlete:Athletes)Athlete->UpdateDetail(ViewPoint);
         // Release/contact already evaluated their exact event poses. Advancing them again here
         // detaches the visible hand from the ball and skips the actual bat-impact frame.
         for(int I=0;I<Athletes.Num();++I)

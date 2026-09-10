@@ -1,6 +1,7 @@
 #include "C26Athlete.h"
 #include "C26Types.h"
 #include "Engine/SkeletalMesh.h"
+#include "Engine/StaticMesh.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
 #include "ProceduralMeshComponent.h"
@@ -45,39 +46,51 @@ AC26Athlete::AC26Athlete()
     if(Player.Succeeded())Mesh->SetSkinnedAssetAndUpdate(Player.Object);
     Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);Mesh->SetCastShadow(true);
     // Equipment rides in mesh space so it shares one frame with the posed skeleton.
-    Bat=CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("WillowBat"));Bat->SetupAttachment(Mesh);
-    Bat->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    Grill=CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("HelmetGrill"));Grill->SetupAttachment(Mesh);
-    Grill->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    // Authored in Blender (ArtSource/Blender/Equipment), imported and size-checked by
+    // Tools/ImportEquipment.py. Each mesh is modelled in the local frame the posing code below
+    // already works in, so replacing the old procedural ring-lofts changed the geometry without
+    // re-deriving a single attach transform.
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> BatAsset(TEXT("/Game/Cricket26/Equipment/SM_C26_Bat_Hero.SM_C26_Bat_Hero"));
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> HelmetAsset(TEXT("/Game/Cricket26/Equipment/SM_C26_Helmet_Hero.SM_C26_Helmet_Hero"));
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> GrilleAsset(TEXT("/Game/Cricket26/Equipment/SM_C26_HelmetGrille_Hero.SM_C26_HelmetGrille_Hero"));
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> PadLAsset(TEXT("/Game/Cricket26/Equipment/SM_C26_Pad_L.SM_C26_Pad_L"));
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> PadRAsset(TEXT("/Game/Cricket26/Equipment/SM_C26_Pad_R.SM_C26_Pad_R"));
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> GloveLAsset(TEXT("/Game/Cricket26/Equipment/SM_C26_Glove_L.SM_C26_Glove_L"));
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> GloveRAsset(TEXT("/Game/Cricket26/Equipment/SM_C26_Glove_R.SM_C26_Glove_R"));
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> ShoeLAsset(TEXT("/Game/Cricket26/Equipment/SM_C26_Shoe_L.SM_C26_Shoe_L"));
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> ShoeRAsset(TEXT("/Game/Cricket26/Equipment/SM_C26_Shoe_R.SM_C26_Shoe_R"));
+    auto Part=[this](const TCHAR* Name,const ConstructorHelpers::FObjectFinder<UStaticMesh>& Asset)
+    {
+        auto* C=CreateDefaultSubobject<UStaticMeshComponent>(Name);
+        C->SetupAttachment(Mesh);
+        C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        if(Asset.Succeeded())C->SetStaticMesh(Asset.Object);
+        return C;
+    };
+    Bat=Part(TEXT("WillowBat"),BatAsset);
+    Headwear=Part(TEXT("Headwear"),HelmetAsset);
+    Grill=Part(TEXT("HelmetGrille"),GrilleAsset);
+    PadL=Part(TEXT("LeftPad"),PadLAsset);
+    PadR=Part(TEXT("RightPad"),PadRAsset);
+    GloveL=Part(TEXT("LeftGlove"),GloveLAsset);
+    GloveR=Part(TEXT("RightGlove"),GloveRAsset);
+    ShoeL=Part(TEXT("LeftShoe"),ShoeLAsset);
+    ShoeR=Part(TEXT("RightShoe"),ShoeRAsset);
+    // Headwear sits millimetres from the face. Left casting, the peak, shell and grille throw the
+    // whole head into shadow and the face renders as a dark mass in every replay close-up. Their
+    // ground shadows are sub-pixel at gameplay distance, so unchecking them costs nothing visible.
+    Headwear->SetCastShadow(false);
+    Grill->SetCastShadow(false);
     Uniform=CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("TailoredCricketTrousers"));Uniform->SetupAttachment(Mesh);
     Uniform->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    Shell=CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("CricketHeadwear"));Shell->SetupAttachment(Mesh);
-    Shell->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     ShirtNumber=CreateDefaultSubobject<UTextRenderComponent>(TEXT("KitNumber"));ShirtNumber->SetupAttachment(Mesh);
     ShirtNumber->SetHorizontalAlignment(EHTA_Center);ShirtNumber->SetVerticalAlignment(EVRTA_TextCenter);
     ShirtNumber->SetWorldSize(19);ShirtNumber->SetTextRenderColor(FColor(213,237,231));ShirtNumber->SetCastShadow(false);
-    Helmet=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Helmet"));Helmet->SetupAttachment(Mesh);
-    Peak=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HelmetPeak"));Peak->SetupAttachment(Mesh);
-    PadL=CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("LeftPad"));PadL->SetupAttachment(Mesh);
-    PadR=CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("RightPad"));PadR->SetupAttachment(Mesh);
-    PadL->SetCollisionEnabled(ECollisionEnabled::NoCollision);PadR->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    GloveL=CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("LeftGlove"));GloveL->SetupAttachment(Mesh);
-    GloveR=CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("RightGlove"));GloveR->SetupAttachment(Mesh);
-    GloveL->SetCollisionEnabled(ECollisionEnabled::NoCollision);GloveR->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     // The contact shadow lives on the actor root, not on Mesh: athletes are only ever yawed, so it
     // stays flat on the turf without having to undo the rig's -90 mesh rotation every frame.
     Shade=CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("ContactShadow"));Shade->SetupAttachment(RootComponent);
     Shade->SetCollisionEnabled(ECollisionEnabled::NoCollision);Shade->SetCastShadow(false);
     Shade->bReceivesDecals=false;Shade->SetTranslucentSortPriority(-4);
-    static ConstructorHelpers::FObjectFinder<UStaticMesh> Sphere(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
-    for(auto* P:{Helmet.Get(),Peak.Get()})
-    {P->SetStaticMesh(Sphere.Object);P->SetCollisionEnabled(ECollisionEnabled::NoCollision);P->SetCastShadow(true);}
-    // Headwear sits millimetres from the face. Left casting, the peak, shell and grille throw the
-    // whole head into shadow and the face renders as a dark mass in every replay close-up. Their
-    // ground shadows are sub-pixel at gameplay distance, so unchecking them costs nothing visible.
-    Peak->SetCastShadow(false);
-    Shell->SetCastShadow(false);
-    Grill->SetCastShadow(false);
     // Every component here defaults to Static mobility, which is what CreateDefaultSubobject gives
     // you. A static primitive is never entered into the dynamic shadow pass, so until this loop
     // existed no athlete in the game cast a shadow on the ground at any quality level -- measured
@@ -119,223 +132,45 @@ void AC26Athlete::BeginPlay()
             :54.f;
         UE_LOG(LogTemp,Log,TEXT("C26_RIG shoulder=%.1f hip=%.1f ankle=%.1f armspan=%.1f"),ShoulderZ,HipZ,AnkleZ,ArmSpan);
     }
-    BuildEquipment();
     BuildContactShadow();
+    ApplyDetail();
 }
-void AC26Athlete::BuildEquipment()
+void AC26Athlete::Dress(UStaticMeshComponent* Part,const TCHAR* Key,UMaterialInstanceDynamic* M)
 {
-    TArray<FVector> V,N;TArray<int32>T;TArray<FVector2D>UV;TArray<FLinearColor>C;TArray<FProcMeshTangent>Tan;
-    // Shaped willow: a flat hitting face on +X, a swelled back, tapered shoulders, rounded toe and a
-    // separate rubber grip. The face direction is the component's own +X, so the posing code can aim
-    // the bat face along the shot instead of leaving the roll to chance.
-    const float Z[]={0,-13,-24,-32,-58,-74,-83};
-    const float Wide[]={1.45f,1.45f,2.2f,5.35f,5.40f,5.05f,3.30f};
-    const float Back[]={1.45f,1.45f,2.1f,3.55f,3.60f,3.20f,2.10f};
-    const int Rows=7,Sides=10;
-    for(int R=0;R<Rows;++R)for(int J=0;J<Sides;++J)
-    {
-        const float A=2*PI*J/Sides,S=FMath::Sin(A),Co=FMath::Cos(A);
-        const float Depth=S>0?Back[R]*S:0.55f*S*(R<2?2.6f:1.f);
-        V.Add(FVector(-Depth,Co*Wide[R],Z[R]));
-        N.Add(FVector(-FMath::Sign(Depth==0.f?1.f:Depth)*FMath::Abs(S),Co,0).GetSafeNormal());
-        UV.Add(FVector2D(J/float(Sides),R/float(Rows-1)));
-    }
-    for(int R=0;R<Rows-1;++R)for(int J=0;J<Sides;++J)
-    {const int A=R*Sides+J,B=R*Sides+(J+1)%Sides;T.Append({A,B,A+Sides,B,B+Sides,A+Sides});}
-    Bat->CreateMeshSection_LinearColor(0,V,T,N,UV,C,Tan,false);
-    V.Reset();T.Reset();N.Reset();UV.Reset();
-    for(int R=0;R<2;++R)for(int J=0;J<Sides;++J)
-    {
-        const float A=2*PI*J/Sides;
-        V.Add(FVector(FMath::Sin(A)*1.75f,FMath::Cos(A)*1.75f,R?-25.f:1.f));
-        N.Add(FVector(FMath::Sin(A),FMath::Cos(A),0));UV.Add(FVector2D(J/float(Sides),R));
-    }
-    for(int J=0;J<Sides;++J){const int A=J,B=(J+1)%Sides;T.Append({A,B,A+Sides,B,B+Sides,A+Sides});}
-    Bat->CreateMeshSection_LinearColor(1,V,T,N,UV,C,Tan,false);
-    // Helmet grille: five slim bars across the face, built in the head's own forward frame.
-    V.Reset();T.Reset();N.Reset();UV.Reset();
-    for(int Bar=0;Bar<5;++Bar)
-    {
-        const int K=V.Num();const float H=-1.f-Bar*2.7f,Half=7.6f-Bar*.35f;
-        V.Append({FVector(9.2f,-Half,H),FVector(10.f,-Half,H+.55f),FVector(10.f,Half,H+.55f),FVector(9.2f,Half,H)});
-        T.Append({K,K+1,K+2,K,K+2,K+3});
-        for(int J=0;J<4;++J){N.Add(FVector(1,0,.2f).GetSafeNormal());UV.Add(FVector2D::ZeroVector);}
-    }
-    for(int Side:{-1,1})
-    {
-        const int K=V.Num();
-        V.Append({FVector(9.2f,Side*7.6f,-1.f),FVector(9.2f,Side*8.f,-1.f),FVector(9.2f,Side*8.f,-13.f),FVector(9.2f,Side*7.6f,-13.f)});
-        T.Append({K,K+1,K+2,K,K+2,K+3});
-        for(int J=0;J<4;++J){N.Add(FVector(0,float(Side),0));UV.Add(FVector2D::ZeroVector);}
-    }
-    Grill->CreateMeshSection_LinearColor(0,V,T,N,UV,C,Tan,false);
-    V.Reset();T.Reset();N.Reset();UV.Reset();
-    // Open-faced shell: crown and sides protect the head, while the face stays visible behind
-    // the grille. A complete sphere cannot represent a cricket helmet.
-    constexpr int CrownRings=7,CrownSides=24;
-    for(int R=0;R<CrownRings;++R)for(int J=0;J<CrownSides;++J)
-    {
-        const float A=J*2*PI/CrownSides,E=.02f+R*1.57f/(CrownRings-1);
-        const FVector Normal(FMath::Sin(E)*FMath::Cos(A),FMath::Sin(E)*FMath::Sin(A),FMath::Cos(E));
-        V.Add(Normal*FVector(12.3,11.8,12.3));N.Add(Normal);UV.Add(FVector2D(J/float(CrownSides),R/float(CrownRings-1)));
-    }
-    for(int R=0;R<CrownRings-1;++R)for(int J=0;J<CrownSides;++J)
-    {int A=R*CrownSides+J,B=R*CrownSides+(J+1)%CrownSides;T.Append({A,A+CrownSides,B,B,A+CrownSides,B+CrownSides});}
-    // Ear and nape coverage. A bare crown reads as a cap from every side angle, which is exactly
-    // how the helmet looked in replay close-ups. A cricket helmet drops over the ears and the back
-    // of the skull and stops at the cheekbone, leaving the face open behind the grille. The drop is
-    // driven by azimuth so the opening sweeps up over the face instead of being cut as a hard hole.
-    // Section 1, so a fielder's cap can hide it and keep the squashed crown.
-    V.Reset();T.Reset();N.Reset();UV.Reset();
-    constexpr int SkirtRings=4;
-    for(int R=0;R<SkirtRings;++R)for(int J=0;J<CrownSides;++J)
-    {
-        const float A=J*2*PI/CrownSides,Rear=(1.f-FMath::Cos(A))*.5f;
-        const float Shape=FMath::SmoothStep(.02f,.42f,Rear),Fall=R/float(SkirtRings-1);
-        const FVector Side(FMath::Cos(A),FMath::Sin(A),0);
-        const FVector Point=Side*FVector(12.3,11.8,0)*(1.f-.13f*Fall*Fall)-FVector(0,0,9.f*Shape*Fall);
-        V.Add(Point);N.Add((Side+FVector(0,0,-.35f*Fall)).GetSafeNormal());
-        UV.Add(FVector2D(J/float(CrownSides),.5f+Fall*.5f));
-    }
-    for(int R=0;R<SkirtRings-1;++R)for(int J=0;J<CrownSides;++J)
-    {int A=R*CrownSides+J,B=R*CrownSides+(J+1)%CrownSides;T.Append({A,A+CrownSides,B,B,A+CrownSides,B+CrownSides});}
-    Shell->CreateMeshSection_LinearColor(1,V,T,N,UV,C,Tan,false);
-    BuildGloves();BuildPads();
+    if(!Part||!Part->GetStaticMesh()||!M)return;
+    const TArray<FStaticMaterial>& Slots=Part->GetStaticMesh()->GetStaticMaterials();
+    for(int I=0;I<Slots.Num();++I)
+        if(Slots[I].MaterialSlotName.ToString().Contains(Key))Part->SetMaterial(I,M);
 }
-// A batting glove, not a ball of padding. Local Z runs wrist to fingertip, local +X is the back of
-// the hand: the same frame PlaceGlove poses it in. Built as a flared cuff and fist, four separate
-// finger rolls curling over the knuckles, and a thumb up the side. The previous glove was a scaled
-// engine sphere -- at broadcast and replay distance the batter's hands read as one white lump.
-void AC26Athlete::BuildGloves()
+void AC26Athlete::UpdateDetail(const FVector& ViewPoint)
 {
-    for(int Hand=0;Hand<2;++Hand)
-    {
-        UProceduralMeshComponent* Glove=Hand?GloveR:GloveL;
-        const float Across=Hand?1.f:-1.f;
-        TArray<FVector> V,N;TArray<int32> T;TArray<FVector2D> UV;TArray<FLinearColor> C;TArray<FProcMeshTangent> Tan;
-        // Sweep a circular section along a path. Winding matches the bat's ring loop, so the
-        // outside faces out; the ends close with a fan onto a single apex.
-        auto Tube=[&](const TArray<FVector>& Path,const TArray<float>& Radius,int Sides)
-        {
-            const int Base=V.Num(),Steps=Path.Num();
-            for(int P=0;P<Steps;++P)
-            {
-                const FVector Axis=(P+1<Steps?Path[P+1]-Path[P]:Path[P]-Path[P-1]).GetSafeNormal(UE_SMALL_NUMBER,FVector::UpVector);
-                FVector Across2=FVector::CrossProduct(FVector(0,1,0),Axis);
-                if(Across2.SizeSquared()<1e-4f)Across2=FVector::CrossProduct(FVector(1,0,0),Axis);
-                Across2=Across2.GetSafeNormal();
-                const FVector Up=FVector::CrossProduct(Axis,Across2).GetSafeNormal();
-                for(int J=0;J<Sides;++J)
-                {
-                    const float A=2*PI*J/Sides;
-                    const FVector Normal=Across2*FMath::Cos(A)+Up*FMath::Sin(A);
-                    V.Add(Path[P]+Normal*Radius[P]);N.Add(Normal);UV.Add(FVector2D(J/float(Sides),P/float(Steps-1)));
-                }
-            }
-            for(int P=0;P+1<Steps;++P)for(int J=0;J<Sides;++J)
-            {const int A=Base+P*Sides+J,B=Base+P*Sides+(J+1)%Sides;T.Append({A,B,A+Sides,B,B+Sides,A+Sides});}
-            for(int End=0;End<2;++End)
-            {
-                const int Row=End?Steps-1:0,RowBase=Base+Row*Sides,Apex=V.Num();
-                const FVector Out=(End?Path[Row]-Path[Row-1]:Path[0]-Path[1]).GetSafeNormal(UE_SMALL_NUMBER,FVector::UpVector);
-                V.Add(Path[Row]+Out*Radius[Row]*.75f);N.Add(Out);UV.Add(FVector2D(.5f,float(End)));
-                for(int J=0;J<Sides;++J)
-                {
-                    const int A=RowBase+J,B=RowBase+(J+1)%Sides;
-                    if(End)T.Append({A,B,Apex});else T.Append({Apex,B,A});
-                }
-            }
-        };
-        // Cuff mouth, wrist waist, then the swell of a closed fist.
-        TArray<FVector> Path;TArray<float> Radius;
-        for(const FVector& Point:{FVector(0,0,-10.2),FVector(0,0,-7.6),FVector(0,0,-6.0),FVector(0,0,-3.0),
-                                  FVector(0,0,.6),FVector(0,0,3.0),FVector(0,0,4.6)})Path.Add(Point);
-        for(float Girth:{4.50f,4.15f,3.75f,4.35f,4.55f,4.15f,3.10f})Radius.Add(Girth);
-        Tube(Path,Radius,8);
-        // Four rolls arcing from the knuckles over the top of the fist and down the palm side.
-        const float Roll[4]={1.30f,1.42f,1.36f,1.14f};
-        for(int Finger=0;Finger<4;++Finger)
-        {
-            Path.Reset();Radius.Reset();
-            const float Y=Across*((Finger-1.5f)*2.5f),Length=3.5f-.28f*FMath::Max(0,Finger-2);
-            for(int Step=0;Step<6;++Step)
-            {
-                const float Angle=FMath::DegreesToRadians(FMath::Lerp(72.f,-78.f,Step/5.f));
-                Path.Add(FVector(.2f+FMath::Sin(Angle)*Length,Y,2.6f+FMath::Cos(Angle)*Length));
-                Radius.Add(Roll[Finger]*(Step==0?.86f:Step==5?.80f:Step==1||Step==4?.96f:1.f));
-            }
-            Tube(Path,Radius,6);
-        }
-        Path.Reset();Radius.Reset();
-        for(const FVector& Point:{FVector(.8f,Across*3.6f,-3.4f),FVector(2.2f,Across*4.0f,-.6f),
-                                  FVector(3.4f,Across*3.4f,1.8f),FVector(3.9f,Across*2.4f,3.4f)})Path.Add(Point);
-        for(float Thick:{1.75f,1.60f,1.40f,1.15f})Radius.Add(Thick);
-        Tube(Path,Radius,6);
-        Glove->CreateMeshSection_LinearColor(0,V,T,N,UV,C,Tan,false);
-    }
+    // The striker, the bowler and the keeper are hero wherever they stand: they are what the
+    // presentation is about, and demoting them by distance would drop the grille off a batter
+    // during a wide replay. Fielders earn hero quality by being near the play.
+    const float Range=FVector::Dist(GetActorLocation(),ViewPoint);
+    const bool Principal=Role==EC26Role::Batter||Role==EC26Role::Bowler||Role==EC26Role::Keeper;
+    Wanted=Principal||Range<HeroRange?EDetail::Hero:Range<MidRange?EDetail::Mid:EDetail::Distant;
+    if(Wanted!=Detail)ApplyDetail();
 }
-// A batting pad, not a scaled sphere. Local Z runs up the shin from the instep and +X is the front
-// of the leg: the frame PlacePad poses it in. Three bolsters and a knee roll give the horizontal
-// banding a cricket pad is recognised by, and the wings carry past the widest part of the leg so
-// the pad still reads from behind the striker -- which is the angle the gameplay camera actually
-// watches him from, and the angle at which the old pad disappeared behind his own calf entirely.
-void AC26Athlete::BuildPads()
+void AC26Athlete::ApplyDetail()
 {
-    constexpr int Rows=11,Sides=14;
-    // The mouth stops just above the knee and runs wide: a tall narrow mouth climbs into the bent
-    // thigh on a striding batter and opens a dark crescent the replay camera looks straight into.
-    // Cricket pads strap over full-length trousers, so cloth above and a wide mouth below is the
-    // authentic shape as well as the one that cannot gape.
-    const float Height[Rows]={-24.f,-19.f,-14.f,-9.f,-4.f,1.f,6.f,11.f,15.f,18.5f,21.5f};
-    const float Wide[Rows]  ={7.4f,9.6f,11.0f,11.4f,11.7f,11.9f,12.1f,12.3f,12.2f,11.0f,10.5f};
-    // Front depth carries the bolsters; the back stays a plain roll behind the calf. Both ends
-    // round off rather than closing on a flat disc, which caught the key light as a dark plate.
-    const float Front[Rows] ={9.4f,10.0f,10.6f,9.9f,10.7f,10.0f,10.8f,11.3f,11.4f,10.6f,10.5f};
-    TArray<FVector> V,N;TArray<int32> T;TArray<FVector2D> UV;TArray<FLinearColor> C;TArray<FProcMeshTangent> Tan;
-    for(int R=0;R<Rows;++R)for(int J=0;J<Sides;++J)
-    {
-        const float A=2*PI*J/Sides,Cos=FMath::Cos(A),Sin=FMath::Sin(A);
-        const float Depth=Cos>=0?Front[R]:FMath::Min(9.4f,Wide[R]*1.02f);
-        V.Add(FVector(Cos*Depth,Sin*Wide[R],Height[R]));
-        N.Add(FVector(Cos/Depth,Sin/Wide[R],R==0?-.55f:R==Rows-1?.55f:0.f).GetSafeNormal());
-        UV.Add(FVector2D(J/float(Sides),R/float(Rows-1)));
-    }
-    for(int R=0;R<Rows-1;++R)for(int J=0;J<Sides;++J)
-    {const int A=R*Sides+J,B=R*Sides+(J+1)%Sides;T.Append({A,B,A+Sides,B,B+Sides,A+Sides});}
-    for(int End=0;End<2;++End)
-    {
-        const int Row=End?Rows-1:0,Base=Row*Sides,Apex=V.Num();
-        V.Add(FVector(0,0,Height[Row]+(End?2.6f:-3.2f)));N.Add(FVector(0,0,End?1.f:-1.f));UV.Add(FVector2D(.5f,float(End)));
-        for(int J=0;J<Sides;++J)
-        {
-            const int A=Base+J,B=Base+(J+1)%Sides;
-            if(End)T.Append({A,B,Apex});else T.Append({Apex,B,A});
-        }
-    }
-    PadL->CreateMeshSection_LinearColor(0,V,T,N,UV,C,Tan,false);
-    PadR->CreateMeshSection_LinearColor(0,V,T,N,UV,C,Tan,false);
-    // Thigh seal: a short flare hugging the inside of the wide pad mouth, so the replay camera
-    // meets lit binding instead of the unlit tube interior. It stays below the knee bend, where
-    // shin and thigh still agree, which is what keeps it from gaping on a striding batter.
-    {
-        TArray<FVector> SV,SN;TArray<int32> ST;TArray<FVector2D> SUV;TArray<FLinearColor> SC;TArray<FProcMeshTangent> STan;
-        constexpr int SealSides=14;
-        for(int J=0;J<SealSides;++J)
-        {
-            const float A=2*PI*J/SealSides;
-            const FVector Dir(FMath::Cos(A),FMath::Sin(A),0);
-            const FVector ConeN=(Dir*.76f+FVector::UpVector*.64f).GetSafeNormal();
-            SV.Add(Dir*10.f+FVector(0,0,20.8f));SN.Add(ConeN);SUV.Add(FVector2D(FMath::Cos(A),FMath::Sin(A)));
-            SV.Add(Dir*8.8f+FVector(0,0,22.5f));SN.Add(ConeN);SUV.Add(FVector2D(FMath::Cos(A)*.9f,FMath::Sin(A)*.9f));
-        }
-        for(int J=0;J<SealSides;++J)
-        {
-            const int F0=J*2,T0=J*2+1,F1=((J+1)%SealSides)*2,T1=((J+1)%SealSides)*2+1;
-            ST.Append({F0,F1,T1,F0,T1,T0});
-        }
-        PadL->CreateMeshSection_LinearColor(1,SV,ST,SN,SUV,SC,STan,false);
-        PadR->CreateMeshSection_LinearColor(1,SV,ST,SN,SUV,SC,STan,false);
-    }
+    Detail=Wanted;
+    const bool Guarded=Role==EC26Role::Batter||Role==EC26Role::Keeper;
+    const bool Near=Detail==EDetail::Hero;
+    const bool Far=Detail==EDetail::Distant;
+    // A grille is a cage of 0.3 cm bars. Past hero range it costs 876 triangles to render a grey
+    // smudge, and past mid range the whole head is a few pixels across.
+    Grill->SetVisibility(Guarded&&Near);
+    // Gloves are the smallest piece of kit an athlete carries and the first thing that stops
+    // resolving. Pads and shoes stay on at every tier: they are most of the lower silhouette.
+    GloveL->SetVisibility(Guarded&&!Far);GloveR->SetVisibility(Guarded&&!Far);
+    ShirtNumber->SetVisibility(Role!=EC26Role::Umpire&&!Far);
+    // Collar, placket, hem and leg stripe are centimetre-scale trim. They are what makes the kit
+    // read in a replay close-up and pure cost on a fielder at the rope.
+    for(int Section=3;Section<6;++Section)
+        if(Uniform->GetNumSections()>Section)Uniform->SetMeshSectionVisible(Section,Near);
+    if(Uniform->GetNumSections()>1)Uniform->SetMeshSectionVisible(1,!Far);
+    Mesh->SetCastShadow(!Far);
 }
 void AC26Athlete::BuildContactShadow()
 {
@@ -435,9 +270,12 @@ void AC26Athlete::Configure(EC26Role NewRole,int Team,int Number)
     const FLinearColor Kit=Role==EC26Role::Umpire?Official:Team==0?Team0:Team1;
     auto* Fabric=LoadObject<UMaterialInterface>(nullptr,TEXT("/Game/Cricket26/Materials/M_Fabric.M_Fabric"));
     Shirt=UMaterialInstanceDynamic::Create(Fabric?Fabric:Base,this);Shirt->SetVectorParameterValue(TEXT("Tint"),Kit);
-    // Trousers sit a shade cooler and flatter than the shirt so the two halves of the kit separate
-    // in silhouette instead of reading as one moulded block of colour.
-    Trousers=Make(Role==EC26Role::Umpire?FLinearColor(.020,.024,.036):Kit*.62f+FLinearColor(.055,.058,.062),.90f);
+    // Cricket whites. Team-coloured trousers made the striker read as one teal mass from the
+    // batting camera: shirt, trousers and helmet all returned the same value, so the only thing
+    // separating his legs from his torso was a shadow. Cream trousers also give the pads
+    // something to sit against -- white gear on a white leg is the one pairing that does not
+    // read, so the trouser is warmed and the pads stay cool and brighter.
+    Trousers=Make(Role==EC26Role::Umpire?FLinearColor(.020,.024,.036):FLinearColor(.560,.545,.500),.92f);
     // Skin has to survive the same floodlit night as the shirt. The imported Bodymat response goes
     // almost black on vertical surfaces, so the head and forearms take a controlled mid-brown that
     // stays readable without blowing out. Linear-space, roughly sRGB (215,168,146) darkened a stop
@@ -458,33 +296,91 @@ void AC26Athlete::Configure(EC26Role NewRole,int Team,int Number)
     }
     Uniform->SetMaterial(2,Shirt);Uniform->SetMaterial(0,Trousers);Uniform->SetMaterial(1,Make(Team==0?FLinearColor(.10,.40,.43):FLinearColor(.72,.24,.07),.88f));
     Uniform->SetMaterial(3,Shirt);Uniform->SetMaterial(4,Shirt);Uniform->SetMaterial(5,Shirt);
-    Bat->SetMaterial(0,Make(FLinearColor(.315,.258,.158),.60f));
-    Bat->SetMaterial(1,Make(FLinearColor(.020,.022,.026),.86f));
-    Helmet->SetMaterial(0,Make(Kit*.85f,.30f));Peak->SetMaterial(0,Make(Kit*.85f,.30f));
-    Shell->SetMaterial(0,Make(Kit*.62f,.36f));Shell->SetMaterial(1,Make(Kit*.55f,.36f));
-    Grill->SetMaterial(0,Make(FLinearColor(.045,.050,.058),.34f));
-    PadL->SetMaterial(0,Gear);PadR->SetMaterial(0,Gear);
-    PadL->SetMaterial(1,Gear);PadR->SetMaterial(1,Gear);
-    GloveL->SetMaterial(0,Gear);GloveR->SetMaterial(0,Gear);
+
+    // Authored kit materials. The old kit ran on three instances -- one for the bat, one for the
+    // helmet, one grey "Gear" shared by pads and gloves -- so every piece of protective equipment
+    // returned the same value under the floodlights and the batter's hands, pads and helmet
+    // merged into one pale mass at gameplay distance. Each authored slot now gets its own tone
+    // and, more importantly, its own roughness, because roughness separation is what actually
+    // reads at 900 cm: a hard helmet shell, matte pad fronts, a leather palm, a rubber grip and
+    // a satin blade must not all return the same highlight.
+    const FLinearColor Accent=Role==EC26Role::Umpire?FLinearColor(.28,.30,.33):Kit;
+    auto* Willow=LoadObject<UMaterialInterface>(nullptr,TEXT("/Game/Cricket26/Materials/M_Willow.M_Willow"));
+    auto MakeFrom=[&](UMaterialInterface* From,FLinearColor C,float Rough)
+    {auto* M=UMaterialInstanceDynamic::Create(From?From:Base,this);M->SetVectorParameterValue(TEXT("Tint"),C);M->SetScalarParameterValue(TEXT("Roughness"),Rough);M->SetScalarParameterValue(TEXT("Glow"),0.f);return M;};
+
+    Dress(Bat,TEXT("Willow"),MakeFrom(Willow,FLinearColor(.402,.330,.196),.42f));
+    Dress(Bat,TEXT("Grip"),Make(FLinearColor(.016,.018,.022),.88f));
+    Dress(Bat,TEXT("Cane"),Make(FLinearColor(.300,.222,.118),.56f));
+    Dress(Bat,TEXT("Twine"),Make(FLinearColor(.052,.046,.040),.80f));
+    Dress(Bat,TEXT("Label"),Make(Accent*1.15f+FLinearColor(.03,.03,.03),.34f));
+
+    Dress(Headwear,TEXT("Shell"),Make(Kit*.92f,.20f));
+    Dress(Headwear,TEXT("Crown"),Make(Kit*.92f,.58f));
+    Dress(Headwear,TEXT("Peak"),Make(Kit*.66f,.19f));
+    Dress(Headwear,TEXT("Trim"),Make(FLinearColor(.022,.024,.029),.55f));
+    Dress(Headwear,TEXT("Pad"),Make(FLinearColor(.036,.034,.032),.93f));
+    Dress(Grill,TEXT("Bar"),Make(FLinearColor(.300,.318,.348),.22f));
+    Dress(Grill,TEXT("Trim"),Make(FLinearColor(.022,.024,.029),.55f));
+
+    // Pads and gloves read as protective gear because they are matte and slightly off-white, and
+    // because the straps and buckles that break them up are dark and sharp against that.
+    auto* PadFace=Make(FLinearColor(.700,.712,.686),.76f);
+    auto* PadRoll=Make(FLinearColor(.612,.624,.600),.84f);
+    auto* Strap=Make(FLinearColor(.028,.030,.036),.70f);
+    auto* Buckle=Make(FLinearColor(.330,.342,.362),.26f);
+    for(UStaticMeshComponent* P:{PadL.Get(),PadR.Get()})
+    {
+        Dress(P,TEXT("PadFace"),PadFace);Dress(P,TEXT("PadRoll"),PadRoll);
+        Dress(P,TEXT("PadStrap"),Strap);Dress(P,TEXT("PadBuckle"),Buckle);
+    }
+    auto* GlovePalm=Make(FLinearColor(.212,.150,.098),.62f);
+    auto* GlovePad=Make(FLinearColor(.732,.744,.716),.74f);
+    for(UStaticMeshComponent* G:{GloveL.Get(),GloveR.Get()})
+    {
+        Dress(G,TEXT("GlovePalm"),GlovePalm);Dress(G,TEXT("GlovePad"),GlovePad);
+        Dress(G,TEXT("GloveCuff"),PadRoll);Dress(G,TEXT("PadStrap"),Strap);
+    }
+    // Cricket shoes, not the base character's street trainers. Under the night rig those read as
+    // two black holes exactly where the athlete meets the turf, which is the worst place in the
+    // frame to lose contrast: the feet are what ground the player.
+    auto* ShoeUpper=Make(FLinearColor(.740,.752,.734),.44f);
+    auto* ShoeSole=Make(FLinearColor(.048,.052,.062),.66f);
+    auto* ShoeFlash=Make(Accent,.40f);
+    auto* ShoeLace=Make(FLinearColor(.520,.528,.512),.90f);
+    for(UStaticMeshComponent* S:{ShoeL.Get(),ShoeR.Get()})
+    {
+        Dress(S,TEXT("ShoeUpper"),ShoeUpper);Dress(S,TEXT("ShoeSole"),ShoeSole);
+        Dress(S,TEXT("ShoeFlash"),ShoeFlash);Dress(S,TEXT("ShoeLace"),ShoeLace);
+        Dress(S,TEXT("ShoeSpike"),Buckle);
+    }
+
     const bool Batting=Role==EC26Role::Batter,Keeping=Role==EC26Role::Keeper;
     const bool Guarded=Batting||Keeping;
     Bat->SetVisibility(Batting);
-    Helmet->SetVisibility(false);Shell->SetVisibility(true);Peak->SetVisibility(true);Grill->SetVisibility(Guarded);
-    Shell->SetRelativeScale3D(Guarded?FVector(1):FVector(1,1,.68f));
-    // A fielder wears a cap: keep the squashed crown, drop the ear and nape shell.
-    Shell->SetMeshSectionVisible(1,Guarded);
+    // A batter and a keeper wear a helmet with a grille; everyone else wears the team cap. These
+    // are separate authored meshes, not one mesh squashed by a scale, because a cap crown and a
+    // helmet shell are different shapes and squashing a helmet only ever produced a helmet.
+    const TCHAR* HeadAsset=Guarded
+        ?TEXT("/Game/Cricket26/Equipment/SM_C26_Helmet_Hero.SM_C26_Helmet_Hero")
+        :TEXT("/Game/Cricket26/Equipment/SM_C26_Cap_Hero.SM_C26_Cap_Hero");
+    if(UStaticMesh* Head=LoadObject<UStaticMesh>(nullptr,HeadAsset))
+        if(Headwear->GetStaticMesh()!=Head)Headwear->SetStaticMesh(Head);
     PadL->SetVisibility(Guarded);PadR->SetVisibility(Guarded);
     GloveL->SetVisibility(Guarded);GloveR->SetVisibility(Guarded);
-    Helmet->SetRelativeScale3D(FVector(.235,.250,.250));
-    // An umpire's sun hat has a brim all the way round; a player's cap peaks forward only.
-    Peak->SetRelativeScale3D(Role==EC26Role::Umpire?FVector(.150,.215,.038):FVector(.155,.172,.034));
-    // Local X is depth (out the front of the shin), Y is width across it, Z is along it. The pad has
-    // to be visibly wider and deeper than the trouser tube underneath or the leg extrudes through it.
-    const FVector PadSize=Keeping?FVector(.88,.82,.78):FVector(1);
+    // Keeping gauntlets are the same glove worn wider across the palm and longer in the cuff;
+    // keeping pads are cut shorter than a batter's. Both are real differences in how the
+    // equipment is worn, not one mesh disguised as two.
+    const FVector PadSize=Keeping?FVector(.90,.86,.80):FVector(1);
     PadL->SetRelativeScale3D(PadSize);PadR->SetRelativeScale3D(PadSize);
-    // Keeping gauntlets are built from the same glove, wider across the palm and longer in the cuff.
-    const FVector GloveSize=Keeping?FVector(1.34,1.24,1.14):FVector(1);
+    const FVector GloveSize=Keeping?FVector(1.30,1.22,1.12):FVector(1);
     GloveL->SetRelativeScale3D(GloveSize);GloveR->SetRelativeScale3D(GloveSize);
+    // The base character's trainers are replaced outright by the authored cricket shoe, so the
+    // skinned Shoesmat section is switched off rather than left to poke through it.
+    if(auto* Sk=Cast<USkeletalMesh>(Mesh->GetSkinnedAsset()))
+        for(int I=0;I<Sk->GetMaterials().Num();++I)
+            if(Sk->GetMaterials()[I].MaterialSlotName.ToString().Contains(TEXT("Shoes")))
+                for(int LOD=0;LOD<Sk->GetLODNum();++LOD)Mesh->ShowMaterialSection(I,0,false,LOD);
     ShirtNumber->SetText(FText::AsNumber(Number));ShirtNumber->SetVisibility(Role!=EC26Role::Umpire);
     SetAction(EC26Action::Ready);
 }
@@ -570,9 +466,7 @@ void AC26Athlete::PlaceKit(const FVector& Grip,const FVector& Dir,bool Batting,b
         const FRotator Look=FRotationMatrix::MakeFromXZ(Face,Up).Rotator();
         // Crown offset belongs to the head frame, including its nod/roll, not world vertical.
         const FVector Skull=Pose[Head].GetLocation()+Up*10.5f+Face*.8f;
-        Helmet->SetRelativeLocation(Skull);Helmet->SetRelativeRotation(Look);
-        Shell->SetRelativeLocation(Skull);Shell->SetRelativeRotation(Look);
-        Peak->SetRelativeLocation(Skull+Face*9.5f+Up*2.5f);Peak->SetRelativeRotation(Look);
+        Headwear->SetRelativeLocation(Skull);Headwear->SetRelativeRotation(Look);
         Grill->SetRelativeLocation(Skull);Grill->SetRelativeRotation(Look);
     }
     // Everything below hangs off joints that were actually posed, never off the targets the shot
@@ -605,7 +499,7 @@ void AC26Athlete::PlaceKit(const FVector& Grip,const FVector& Dir,bool Batting,b
         Bat->SetRelativeLocation((Top.IsZero()?Grip:Top)+Shaft*4.5f);
         Bat->SetRelativeRotation(FRotationMatrix::MakeFromZX(Shaft,FaceDir).Rotator());
     }
-    auto PlacePad=[&](UProceduralMeshComponent* Pad,const FString& Knee,const FString& Foot)
+    auto PlacePad=[&](UStaticMeshComponent* Pad,const FString& Knee,const FString& Foot)
     {
         const int K=Bone(Knee),F=Bone(Foot);if(K<0||F<0)return;
         const FVector Kn=Pose[K].GetLocation(),Ft=Pose[F].GetLocation();
@@ -617,7 +511,7 @@ void AC26Athlete::PlaceKit(const FVector& Grip,const FVector& Dir,bool Batting,b
         Pad->SetRelativeRotation(FRotationMatrix::MakeFromZX(Shin,Facing).Rotator());
     };
     PlacePad(PadL,TEXT("LeftLeg"),TEXT("LeftFoot"));PlacePad(PadR,TEXT("RightLeg"),TEXT("RightFoot"));
-    auto PlaceGlove=[&](UProceduralMeshComponent* Glove,const FString& Side)
+    auto PlaceGlove=[&](UStaticMeshComponent* Glove,const FString& Side)
     {
         const int H=Bone(Side+TEXT("Hand")),F=Bone(Side+TEXT("ForeArm"));if(H<0||F<0)return;
         const FVector Along=(Pose[H].GetLocation()-Pose[F].GetLocation()).GetSafeNormal(UE_SMALL_NUMBER,RigForward);
@@ -627,6 +521,23 @@ void AC26Athlete::PlaceKit(const FVector& Grip,const FVector& Dir,bool Batting,b
         Glove->SetRelativeRotation(FRotationMatrix::MakeFromZX(Along,Facing).Rotator());
     };
     PlaceGlove(GloveL,TEXT("Left"));PlaceGlove(GloveR,TEXT("Right"));
+    // The shoe is authored standing on its own sole with the origin at ground level under the
+    // ankle, so it is placed by dropping from the ankle joint along the foot's OWN up axis. Using
+    // world up instead would leave the shoe flat on the turf while the foot rolled onto its toe,
+    // which is exactly the moment -- the back foot of a drive, every stride of the run-up -- that
+    // a viewer looks at the feet.
+    auto PlaceShoe=[&](UStaticMeshComponent* Shoe,const FString& Side)
+    {
+        const int F=Bone(Side+TEXT("Foot")),T=Bone(Side+TEXT("ToeBase"));
+        if(F<0)return;
+        const FQuat Roll=Pose[F].GetRotation()*Reference[F].GetRotation().Inverse();
+        const FVector Up=Roll.RotateVector(FVector::UpVector).GetSafeNormal(UE_SMALL_NUMBER,FVector::UpVector);
+        FVector Ahead=T>=0?Pose[T].GetLocation()-Pose[F].GetLocation():Facing;
+        Ahead-=Up*FVector::DotProduct(Ahead,Up);
+        Shoe->SetRelativeLocation(Pose[F].GetLocation()-Up*(AnkleZ-0.6f));
+        Shoe->SetRelativeRotation(FRotationMatrix::MakeFromXZ(Ahead.GetSafeNormal(UE_SMALL_NUMBER,Facing),Up).Rotator());
+    };
+    PlaceShoe(ShoeL,TEXT("Left"));PlaceShoe(ShoeR,TEXT("Right"));
     const int Chest=Bone(TEXT("Spine2"));
     if(Chest>=0)
     {
@@ -703,7 +614,9 @@ void AC26Athlete::UpdateUniform()
         const FVector Centers[]={Top-Along*5.f,FMath::Lerp(Top,Bend,.24f),FMath::Lerp(Top,Bend,.44f),FMath::Lerp(Top,Bend,.49f)};
         // Shoulder, upper bicep, sleeve, hem. A 185 cm athlete's bicep is about 13 cm across; the
         // cloth sits just outside that, and only the hem flares.
-        const float Widths[]={9.4f,7.4f,6.7f,7.1f};
+        // Row 0 is buried inside the torso, so it only has to be wide enough to close the seam;
+        // at 9.4 it pushed out past the deltoid and read as a shoulder pad.
+        const float Widths[]={8.2f,7.4f,6.7f,7.1f};
         const FVector Across=FVector::CrossProduct(Along,Upright(Along)).GetSafeNormal(UE_SMALL_NUMBER,FVector::UpVector);
         const FVector Front=FVector::CrossProduct(Across,Along).GetSafeNormal();
         const int Base=SleeveV.Num();constexpr int Sides=10;
@@ -782,8 +695,11 @@ void AC26Athlete::UpdateUniform()
         for(int Row=0;Row<2;++Row)for(int J=0;J<Sides;++J)
         {
             const float A=2*PI*J/Sides;
-            const FVector Out=SideH*FMath::Cos(A)*18.2f+ChestFacing*FMath::Sin(A)*13.2f;
-            HemV.Add(C+Out-FVector(0,0,Row*3.2f));HemN.Add(Out.GetSafeNormal());HemUV.Add(FVector2D(J/float(Sides),Row));
+            // Hugs the waist. Cut proud enough to read as cloth and no further: at 18.2 x 13.2
+            // the band stood clear of the shirt as a shelf around the hips, which is exactly the
+            // silhouette a viewer reads as "this is not a real garment".
+            const FVector Out=SideH*FMath::Cos(A)*15.2f+ChestFacing*FMath::Sin(A)*11.4f;
+            HemV.Add(C+Out-FVector(0,0,Row*2.4f));HemN.Add(Out.GetSafeNormal());HemUV.Add(FVector2D(J/float(Sides),Row));
         }
         for(int J=0;J<Sides;++J)
         {const int A=Base+J,B=Base+(J+1)%Sides;HemT.Append({A,B,A+Sides,B,B+Sides,A+Sides});}
@@ -853,13 +769,30 @@ void AC26Athlete::Animate(float Dt)
     }
     else if(Batting)
     {
-        // Side-on: chest opened toward the off side with the head free to come back to the ball.
-        TurnRight=46.f;LeanForward=22.f;LeanRight=4.f;
-        FL=Rig(15.f+FootworkIntent*4.f,-1.f+StrideIntent*3.f,AnkleZ);
-        FR=Rig(-13.f,9.f,AnkleZ);
+        // A batting stance, not a standing pose. Side-on with the chest opened toward the off
+        // side, weight forward over the balls of the feet, and -- the part that actually reads at
+        // gameplay distance -- knees genuinely loaded and a base wide enough to see. The old
+        // stance stood nearly upright with the feet almost together, which is why the striker
+        // looked like a mannequin holding a bat rather than a batter waiting for one.
+        TurnRight=48.f;LeanForward=25.f;LeanRight=5.f;
+        Crouch=-19.f;
+        FL=Rig(17.f+FootworkIntent*4.f,-4.f+StrideIntent*3.f,AnkleZ);
+        FR=Rig(-16.f,13.f,AnkleZ);
     }
     else if(Keeping){FL=Rig(4,-21,AnkleZ);FR=Rig(4,21,AnkleZ);LH=Rig(33,-14,44);RH=Rig(33,14,44);}
     else if(Role==EC26Role::Umpire){FL=Rig(0,-13,AnkleZ);FR=Rig(0,13,AnkleZ);LH=Rig(1,-23,95);RH=Rig(1,23,95);}
+    else if(Role==EC26Role::Bowler)
+    {
+        // At the top of his mark. A bowler waiting to run in stands tall and square with the ball
+        // held in both hands at chest height and his weight rocking onto the front foot -- it is
+        // a completely different body language from a fielder crouched in the ring, and until now
+        // the two were the same pose. This is what makes the active bowler readable as the active
+        // bowler from the batting camera before he has moved.
+        Crouch=-4.f;LeanForward=9.f;TurnRight=-14.f;
+        FL=Rig(9,-11,AnkleZ);FR=Rig(-9,13,AnkleZ);
+        const float Rock=FMath::Sin(MotionTime*1.35f);
+        LH=Rig(26.f+Rock*1.6f,-6.f,124.f);RH=Rig(26.f+Rock*1.6f,4.f,124.f);
+    }
     else
     {
         // Fielder at the ready: split stance, weight forward, hands live.

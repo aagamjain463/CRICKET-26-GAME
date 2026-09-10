@@ -64,3 +64,30 @@ Still procedural, not authored: batting, bowling, locomotion, fielding scores
 unchanged. Desktop editor delivery frame time mean 21.3 ms, p95 25.7 ms with
 screenshots on (+3 sections/athlete, ~600 tris) — not a device claim.
 
+
+## 2026-09-09, Milestone 2 next-gen cricketers — `m2_final` (Claude Opus 5)
+
+Evidence: `Artifacts/Captures/m2_final/` and `Artifacts/Captures/m2_kit2/`, inspected with
+`Tools/CropFrame.py` at 2-3x. Gate `C26_GATE_PASS failures=0`, contact 1.200 cm at Z=-57.9 against
+724 authored blade triangles, automation 3/3 PASS. Only areas this session touched are re-scored.
+
+| Area | Before /10 | Now /10 | What changed, measurably |
+|---|---:|---:|---|
+| Player models | 7 | 8 | Every piece of equipment is authored geometry (9,984 tris across 10 meshes) instead of C++ ring-lofts. Torso is still the base character's street top. |
+| Cricket bat | 3 | 8 | 1,620-tri willow with a real blade profile: parallel edges, 10.8 cm width, 3.8 cm blunt edges, spine ridge, definite shoulders, splice binding, cane handle, banded rubber grip. Was a 10-sided ellipse. |
+| Helmet | 5 | 8 | Shell with a rim that sweeps up over the face and down over the ears and nape, downturned peak with thickness and trim, crown crest, and a 5-bar round-section titanium grille with side stems. Was an engine sphere plus a squashed sphere. |
+| Pads | 6 | 8 | Three vertical bolsters, knee roll, side wings, three straps that follow the bolster surface, buckles, instep flap. Unmistakable at gameplay distance. |
+| Gloves | 5 | 7 | Four waisted finger rolls arcing over the knuckles, moulded thumb guard, cuff band and wrist strap. |
+| Shoes | 2 | 7 | Authored cricket shoe: white upper, dark midsole, team flash, lace bands, six studs. Replaces the base character's dark street trainers, which read as two black holes at the point of ground contact. |
+| Kit readability | 6 | 8 | Cricket whites. Team-coloured trousers made the striker one teal mass; cream trousers separate legs from torso and give the white pads something to sit against. |
+| Materials | 5 | 7 | 21 distinct kit instances with separated roughness (helmet shell .20, blade .42, pad face .76, grip .88) instead of one grey "Gear" shared by pads and gloves. |
+| Batting stance | 4 | 6 | Knees genuinely loaded (crouch -13 to -19), wider base, more side-on. Still procedural. |
+| Bowling presentation | 3 | 5 | The bowler at his mark now has his own pose -- tall, square, ball in both hands at chest, weight rocking -- instead of sharing the crouched fielder idle. |
+| Mobile performance | NV | NV | Desktop delivery frame time mean 21.3 -> 17.74 ms, p95 25.7 -> 16.67 ms, because the per-frame procedural equipment rebuild is gone. Not a device claim. |
+
+Not re-scored: pitch, outfield, stadium, crowd, lighting, camera, UI, sound, responsiveness,
+tactile feedback. No measurement exists on a phone.
+
+Blender was used for all ten equipment meshes. Cascadeur MCP was verified live
+(`127.0.0.1:8765` answers `tools/list`) and deliberately unused: this pass is geometry and
+material work, and the free tier cannot export the authored motion that would justify it.

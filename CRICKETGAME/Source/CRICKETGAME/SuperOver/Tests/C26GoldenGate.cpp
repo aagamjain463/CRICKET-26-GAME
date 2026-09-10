@@ -5,6 +5,8 @@
 #include "../C26CameraDirector.h"
 #include "../C26Stadium.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "StaticMeshResources.h"
 #include "ProceduralMeshComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "HAL/FileManager.h"
@@ -107,18 +109,31 @@ void AC26MatchGameMode::UpdateGoldenGate(float Dt)
         if(PhaseTime==0&&CaptureFrame(TEXT("05_contact")))
         {
             const FVector Local=Athletes[11]->Bat->GetComponentTransform().InverseTransformPosition(Simulation.Ball.Position);
-            // Measure the actual generated blade triangles, not just the simulation contact plane.
+            // Measure the actual rendered blade triangles, not just the simulation contact plane.
+            // The bat is now an authored static mesh rather than a generated procedural section,
+            // so the same assertion reads LOD0 of the imported willow. Keeping the measurement on
+            // real geometry is the whole point of this check: it is what caught contact landing
+            // on the toe of the old procedural blade rather than the middle.
             float Gap=BIG_NUMBER;
-            const FProcMeshSection* Blade=Athletes[11]->Bat->GetProcMeshSection(0);
-            if(Blade)for(int Triangle=0;Triangle+2<Blade->ProcIndexBuffer.Num();Triangle+=3)
-            {
-                const FVector A=Blade->ProcVertexBuffer[Blade->ProcIndexBuffer[Triangle]].Position;
-                const FVector B=Blade->ProcVertexBuffer[Blade->ProcIndexBuffer[Triangle+1]].Position;
-                const FVector C=Blade->ProcVertexBuffer[Blade->ProcIndexBuffer[Triangle+2]].Position;
-                if(FMath::Max3(A.Z,B.Z,C.Z)>-24.f)continue; // Exclude handle/shoulder.
-                Gap=FMath::Min(Gap,float(FVector::Dist(Local,FMath::ClosestPointOnTriangleToPoint(Local,A,B,C))));
-            }
-            UE_LOG(LogC26,Display,TEXT("C26_GATE_CONTACT gap_cm=%.3f ball_local=%s pose_time=%.4f"),Gap,*Local.ToString(),Athletes[11]->ActionTime);
+            int BladeTris=0;
+            if(const UStaticMesh* Willow=Athletes[11]->Bat->GetStaticMesh())
+                if(Willow->GetRenderData()&&Willow->GetRenderData()->LODResources.Num())
+                {
+                    const FStaticMeshLODResources& LOD=Willow->GetRenderData()->LODResources[0];
+                    const FPositionVertexBuffer& Positions=LOD.VertexBuffers.PositionVertexBuffer;
+                    FIndexArrayView Indices=LOD.IndexBuffer.GetArrayView();
+                    for(int32 Triangle=0;Triangle+2<Indices.Num();Triangle+=3)
+                    {
+                        const FVector A(Positions.VertexPosition(Indices[Triangle]));
+                        const FVector B(Positions.VertexPosition(Indices[Triangle+1]));
+                        const FVector C(Positions.VertexPosition(Indices[Triangle+2]));
+                        if(FMath::Max3(A.Z,B.Z,C.Z)>-24.f)continue; // Exclude handle/splice.
+                        ++BladeTris;
+                        Gap=FMath::Min(Gap,float(FVector::Dist(Local,FMath::ClosestPointOnTriangleToPoint(Local,A,B,C))));
+                    }
+                }
+            Check(BladeTris>0,TEXT("bat mesh exposes blade triangles to measure"));
+            UE_LOG(LogC26,Display,TEXT("C26_GATE_CONTACT gap_cm=%.3f ball_local=%s pose_time=%.4f blade_tris=%d"),Gap,*Local.ToString(),Athletes[11]->ActionTime,BladeTris);
             Check(LastContact.Shot==TEXT("STRAIGHT DRIVE")&&Simulation.Ball.Struck&&!Intent.Loft,
                 TEXT("real straight-drive contact, ground intent"));
             Check(Gap<=Tuning.BallRadius,TEXT("ball intersects rendered blade triangles"));
