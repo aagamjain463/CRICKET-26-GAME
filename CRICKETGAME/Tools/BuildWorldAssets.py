@@ -64,17 +64,26 @@ for iy in range(size):
         x=(ix/(size-1)-.5)*18000
         broad=math.sin(x*.0017+math.sin(y*.002))*math.sin(y*.0021)
         grain=math.sin(x*.137+y*.071)*math.sin(y*.193-x*.071)
-        mow=math.tanh(math.sin((y+x*.22)*math.pi/610)*4)
-        v=1+.052*mow+.035*broad+.011*grain
+        # Mower stripes. A groundsman cuts the outfield in one direction and the blades lie toward
+        # or away from the camera, so alternate 6 m bands genuinely differ in brightness. At the
+        # previous 5.2 percent they survived neither the tonemapper nor a phone screen: sampling
+        # the render showed the outfield reading as one flat sheet of green from the batting camera.
+        mow=math.tanh(math.sin((y+x*.22)*math.pi/640)*3.2)
+        # The square is shaved flat in a single pass, so the stripes stop dead at its edge. That
+        # contrast -- striped outfield against a plain, paler square -- is what actually identifies
+        # a cricket ground, and it was being lost in a 65 cm fade that smeared the two together.
+        insq=(1-smooth(690,742,abs(x)))*(1-smooth(1180,1242,abs(y)))
+        v=1+.092*mow*(1-insq)+.035*broad+.011*grain
         c=tuple(a*v for a in (.068,.205,.048))
-        # The square's edge fades through 65 cm of maintained turf.
-        sq=(1-smooth(705,770,abs(x)))*(1-smooth(1200,1280,abs(y)))
-        c=mix(c,(.084*v,.179*v,.052*v),sq*.58)
-        # Resting strips retain grass, subtly showing the roller direction.
-        for s in [-2,-1,1,2]:
-            if abs(x-s*305)<152:
-                rest=(1-smooth(136,152,abs(x-s*305)))*(1-smooth(1090,1190,abs(y)))
-                c=mix(c,(.108*v,.180*v,.062*v),rest*.32)
+        c=mix(c,(.091*v,.186*v,.055*v),insq*.72)
+        # Prepared strips: 3.05 m of rolled, closely shaved turf each, with a defined shoulder and
+        # its own age. Overlapping soft falloffs turned the whole square into one pale stain.
+        for s in (-2,-1,1,2):
+            d=abs(x-s*305)
+            if d<155:
+                rest=(1-smooth(130,149,d))*(1-smooth(1080,1180,abs(y)))
+                age=.88+.13*((s*7)%3)
+                c=mix(c,(.118*v*age,.183*v*age,.066*v*age),rest*.55)
         edge=abs(x)+grain*2.5
         pitch=(1-smooth(143,154,edge))*(1-smooth(1153,1185,abs(y)+grain*4))
         if pitch>0:
@@ -158,6 +167,24 @@ base=node(m,u.MaterialExpressionLinearInterpolate);link(vc,base,'A','');link(shi
 result(base,u.MaterialProperty.MP_BASE_COLOR)
 rough=node(m,u.MaterialExpressionConstant,r=.96);result(rough,u.MaterialProperty.MP_ROUGHNESS)
 spec=node(m,u.MaterialExpressionConstant,r=.08);result(spec,u.MaterialProperty.MP_SPECULAR)
+# A crowd that never moves is scenery. Every spectator rises on his own beat -- per-instance random
+# phases the sine, so twenty thousand of them never pulse in unison -- and the amplitude is driven
+# from the match's own reaction level, so a six lifts the ground and a dot ball does not. This is
+# vertex motion in the shader on geometry that is already instanced: no ticking actors, no skeletal
+# meshes, no per-instance CPU work, which is the only way a crowd this size is affordable on a phone.
+excite=node(m,u.MaterialExpressionScalarParameter,parameter_name='Excitement',default_value=0.)
+clock=node(m,u.MaterialExpressionTime)
+phase=node(m,u.MaterialExpressionMultiply,const_b=6.283);link(random,phase,'A')
+beat=node(m,u.MaterialExpressionMultiply,const_b=7.4);link(clock,beat,'A')
+sum_=node(m,u.MaterialExpressionAdd);link(beat,sum_,'A');link(phase,sum_,'B')
+wave=node(m,u.MaterialExpressionSine);link(sum_,wave,'')
+rise=node(m,u.MaterialExpressionSaturate);link(wave,rise,'')
+amp=node(m,u.MaterialExpressionMultiply,const_b=29.);link(excite,amp,'A')
+idle=node(m,u.MaterialExpressionAdd,const_b=1.2);link(amp,idle,'A')
+lift=node(m,u.MaterialExpressionMultiply);link(rise,lift,'A');link(idle,lift,'B')
+up=node(m,u.MaterialExpressionConstant3Vector,constant=u.LinearColor(0,0,1,0))
+offset=node(m,u.MaterialExpressionMultiply);link(up,offset,'A');link(lift,offset,'B')
+result(offset,u.MaterialProperty.MP_WORLD_POSITION_OFFSET)
 finish(m)
 
 sub=u.get_editor_subsystem(u.StaticMeshEditorSubsystem)

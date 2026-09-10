@@ -674,5 +674,9 @@ void AC26Stadium::UpdateAtmosphere(float Time)
     CrowdReaction=FMath::Max(0.f,CrowdReaction-Step*.42f);
     const float Pulse=FMath::Max(0.f,FMath::Sin(Time*4.1f));
     if(LED)LED->SetScalarParameterValue(TEXT("Glow"),.42f+CrowdReaction*Pulse*.18f);
+    // Hand the same reaction level to the crowd shader. The spectators' rise is vertex motion with
+    // a per-instance random phase, so this one scalar is the whole cost of a ground that gets to
+    // its feet for a six and settles again over the next couple of seconds.
+    for(auto& M:CrowdMaterials)if(M)M->SetScalarParameterValue(TEXT("Excitement"),CrowdReaction);
     // Lamp exposure and crowd albedo remain stable during score events.
 }

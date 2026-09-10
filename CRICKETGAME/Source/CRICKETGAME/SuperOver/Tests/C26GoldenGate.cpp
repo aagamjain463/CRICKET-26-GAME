@@ -5,6 +5,8 @@
 #include "../C26CameraDirector.h"
 #include "../C26Stadium.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "StaticMeshResources.h"
 #include "ProceduralMeshComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "HAL/FileManager.h"
@@ -13,6 +15,7 @@
 
 void AC26MatchGameMode::UpdateGoldenGate(float Dt)
 {
+    if(GateSuite&&GateStage>=3){UpdateProductionGate(Dt);return;}
     auto Check=[&](bool Passed,const TCHAR* Message)
     {
         if(!Passed)++GateFailures;
@@ -26,7 +29,7 @@ void AC26MatchGameMode::UpdateGoldenGate(float Dt)
         if(!GateNoScreens)FScreenshotRequest::RequestScreenshot(GateDirectory/(Key+TEXT(".png")),true,false);
         UE_LOG(LogC26,Display,TEXT("C26_GATE_FRAME %s"),*Key);return true;
     };
-    if(FPlatformTime::Seconds()-GateStarted>120)
+    if(FPlatformTime::Seconds()-GateStarted>180)
     {
         UE_LOG(LogC26,Error,TEXT("C26_GATE_TIMEOUT stage=%d phase=%d"),GateStage,int(Phase));
         GoldenGate=false;FPlatformMisc::RequestExitWithStatus(false,1);return;
@@ -54,6 +57,7 @@ void AC26MatchGameMode::UpdateGoldenGate(float Dt)
         else if(GateStage==2&&Rules.Now().LegalBalls==1)
         {
             Check(Rules.Now().Ledger.size()==1,TEXT("delivery after restart commits exactly once"));
+            if(GateSuite){GateStage=3;PlayerBatsFirst=true;StartMatch();Skip();return;}
             GateFrameTimes.Sort();
             float Sum=0;for(float Ms:GateFrameTimes)Sum+=Ms;
             const int Count=GateFrameTimes.Num();
@@ -66,9 +70,9 @@ void AC26MatchGameMode::UpdateGoldenGate(float Dt)
         {
             auto* PC=GetWorld()->GetFirstPlayerController();int W=0,H=0;PC->GetViewportSize(W,H);
             FVector2D Feet,Head,Bowler;
-            const FVector Striker=Athletes[11]->GetActorLocation();
-            PC->ProjectWorldLocationToScreen(Striker,Feet);
-            PC->ProjectWorldLocationToScreen(Striker+FVector(0,0,180),Head);
+            const FVector StrikerPos=Athletes[11]->GetActorLocation();
+            PC->ProjectWorldLocationToScreen(StrikerPos,Feet);
+            PC->ProjectWorldLocationToScreen(StrikerPos+FVector(0,0,180),Head);
             PC->ProjectWorldLocationToScreen(Athletes[0]->GetActorLocation()+FVector(0,0,150),Bowler);
             const float Height=(Feet.Y-Head.Y)/FMath::Max(1,H);
             UE_LOG(LogC26,Display,TEXT("C26_GATE_COMPOSITION athlete_height_fraction=%.3f feet=%s head=%s bowler=%s"),Height,*Feet.ToString(),*Head.ToString(),*Bowler.ToString());
@@ -89,6 +93,8 @@ void AC26MatchGameMode::UpdateGoldenGate(float Dt)
     else if(Phase==EC26Phase::RunUp)
     {
         if(PhaseTime>1.9f)CaptureFrame(TEXT("02_runup"));
+        if(PhaseTime>C26Field::RunUpDuration-.48f)CaptureFrame(TEXT("02b_gather"));
+        if(PhaseTime>C26Field::RunUpDuration-.15f)CaptureFrame(TEXT("02c_plant"));
         if(GateStage==1&&!ShotQueued&&PhaseTime>.4f)Shot(Intent);
     }
     else if(Phase==EC26Phase::Delivery)
@@ -107,18 +113,31 @@ void AC26MatchGameMode::UpdateGoldenGate(float Dt)
         if(PhaseTime==0&&CaptureFrame(TEXT("05_contact")))
         {
             const FVector Local=Athletes[11]->Bat->GetComponentTransform().InverseTransformPosition(Simulation.Ball.Position);
-            // Measure the actual generated blade triangles, not just the simulation contact plane.
+            // Measure the actual rendered blade triangles, not just the simulation contact plane.
+            // The bat is now an authored static mesh rather than a generated procedural section,
+            // so the same assertion reads LOD0 of the imported willow. Keeping the measurement on
+            // real geometry is the whole point of this check: it is what caught contact landing
+            // on the toe of the old procedural blade rather than the middle.
             float Gap=BIG_NUMBER;
-            const FProcMeshSection* Blade=Athletes[11]->Bat->GetProcMeshSection(0);
-            if(Blade)for(int Triangle=0;Triangle+2<Blade->ProcIndexBuffer.Num();Triangle+=3)
-            {
-                const FVector A=Blade->ProcVertexBuffer[Blade->ProcIndexBuffer[Triangle]].Position;
-                const FVector B=Blade->ProcVertexBuffer[Blade->ProcIndexBuffer[Triangle+1]].Position;
-                const FVector C=Blade->ProcVertexBuffer[Blade->ProcIndexBuffer[Triangle+2]].Position;
-                if(FMath::Max3(A.Z,B.Z,C.Z)>-24.f)continue; // Exclude handle/shoulder.
-                Gap=FMath::Min(Gap,float(FVector::Dist(Local,FMath::ClosestPointOnTriangleToPoint(Local,A,B,C))));
-            }
-            UE_LOG(LogC26,Display,TEXT("C26_GATE_CONTACT gap_cm=%.3f ball_local=%s pose_time=%.4f"),Gap,*Local.ToString(),Athletes[11]->ActionTime);
+            int BladeTris=0;
+            if(const UStaticMesh* Willow=Athletes[11]->Bat->GetStaticMesh())
+                if(Willow->GetRenderData()&&Willow->GetRenderData()->LODResources.Num())
+                {
+                    const FStaticMeshLODResources& LOD=Willow->GetRenderData()->LODResources[0];
+                    const FPositionVertexBuffer& Positions=LOD.VertexBuffers.PositionVertexBuffer;
+                    FIndexArrayView Indices=LOD.IndexBuffer.GetArrayView();
+                    for(int32 Triangle=0;Triangle+2<Indices.Num();Triangle+=3)
+                    {
+                        const FVector A(Positions.VertexPosition(Indices[Triangle]));
+                        const FVector B(Positions.VertexPosition(Indices[Triangle+1]));
+                        const FVector C(Positions.VertexPosition(Indices[Triangle+2]));
+                        if(FMath::Max3(A.Z,B.Z,C.Z)>-24.f)continue; // Exclude handle/splice.
+                        ++BladeTris;
+                        Gap=FMath::Min(Gap,float(FVector::Dist(Local,FMath::ClosestPointOnTriangleToPoint(Local,A,B,C))));
+                    }
+                }
+            Check(BladeTris>0,TEXT("bat mesh exposes blade triangles to measure"));
+            UE_LOG(LogC26,Display,TEXT("C26_GATE_CONTACT gap_cm=%.3f ball_local=%s pose_time=%.4f blade_tris=%d"),Gap,*Local.ToString(),Athletes[11]->ActionTime,BladeTris);
             Check(LastContact.Shot==TEXT("STRAIGHT DRIVE")&&Simulation.Ball.Struck&&!Intent.Loft,
                 TEXT("real straight-drive contact, ground intent"));
             Check(Gap<=Tuning.BallRadius,TEXT("ball intersects rendered blade triangles"));
@@ -131,6 +150,8 @@ void AC26MatchGameMode::UpdateGoldenGate(float Dt)
         {
             GateCollected=true;CaptureFrame(TEXT("07_pickup"));
             if(ThrowReleased){GateThrown=true;CaptureFrame(TEXT("08_throw"));}
+            if(ThrowReleased&&FMath::IsNearlyEqual(ThrowClock,.73f,.001f)&&CaptureFrame(TEXT("08a_throw_release")))
+                Check(FVector::Dist(Simulation.Ball.Position,Athletes[ActiveFielder]->HandPosition())<1.f,TEXT("return leaves rendered throwing hand"));
         }
     }
     else if(Phase==EC26Phase::Reaction)

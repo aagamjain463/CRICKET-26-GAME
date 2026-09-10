@@ -1,32 +1,39 @@
 # Current task
 
-Golden Delivery presentation, branch `work/golden-delivery-contact`.
+Milestone 2 — Next-Gen Cricketers, branch `work/match-world-reborn`.
 
 ## State
 
-The technical gate is closed and green. `Tools/GoldenGate.sh <label>` renders
-drive -> miss -> restart -> drive and asserts against the rendered frame:
-release on the hand (0.000 cm), ball on the blade (0.523 cm gap), contact 57.9 cm
-down an 83 cm bat (the widest point of the willow), one score commit per delivery,
-clean epoch after restart. Run it after any change to the athlete, the camera,
-the simulation or the match flow. `C26_GATE_PASS failures=0` is the bar.
+Green. `Tools/GoldenGate.sh m2_final` passes (`C26_GATE_PASS failures=0`,
+release 0.000 cm, contact 1.200 cm at Z=-57.9 measured against **724 authored
+blade triangles**), automation 3/3 PASS (`Cricket26.Rules.SuperOver`,
+`Cricket26.Simulation.GoldenDelivery`, `Cricket26.Simulation.Trajectories`).
+Desktop delivery frame time improved from mean 21.3 ms to **17.74 ms** because
+the per-frame procedural equipment rebuild is gone.
 
-## Next
+The whole equipment layer is now authored geometry instead of C++ ring-lofts.
+See `Docs/VISUAL_QUALITY_LOG.md` for the scored before/after and
+`Docs/ASSET_PIPELINE.md` for how to rebuild any of it.
 
-Character fidelity is now the visible bottleneck, in this order:
+## Next, in order
 
-1. **Head and face.** The head is a dark mass under the helmet at any distance
-   closer than the broadcast lens. The grille resolves; the face does not. This
-   is the most obvious remaining prototype signal in `0_10_replay_contact.png`.
-2. **The gather is 0.31 s long.** `C26Field::ReleasePoseTime` and the bowling
-   arm arc are derived from each other: the arm reaches the top of its circle at
-   `ActionTime == ReleasePoseTime` exactly, which is what keeps the ball leaving
-   the hand. Lengthening the gather means re-deriving both together, and it
-   touches release synchronisation, so do it deliberately and re-run the gate.
-3. **Outfield and stadium.** Only after the athletes stop being the weakest
-   thing on screen. The brief is explicit that a beautiful stadium around poor
-   cricket motion is the wrong order.
+1. **The base character's torso mesh is the last prototype-grade surface.**
+   `Body` has no torso or thigh geometry at all -- Mixamo deleted everything
+   under the clothes -- so a jersey cannot be derived from it, and `Bottoms`
+   stops at the knee so it cannot be full cricket trousers. The shirt is still
+   the base character's street top recoloured, with procedural collar, placket,
+   hem and sleeve overlays on top. Fixing this properly means authoring a
+   jersey and trousers as new skinned meshes with weights transferred onto the
+   existing skeleton, exported as a new `SK_Cricketer_*` asset. Do not
+   overwrite `SK_Cricketer_KitBase`; `Tools/ImportKit.py` already exists and
+   asserts height, width and skeleton sharing against it.
+2. **Equipment LODs are not built.** `Tools/ImportEquipment.py` reports
+   `lods=1`: `EditorStaticMeshLibrary.set_lods` is deprecated in 5.8 and
+   `StaticMeshEditorSubsystem` did not resolve in the commandlet. Detail tiers
+   currently work by hiding whole components (`AC26Athlete::ApplyDetail`),
+   which is effective but coarser than real LODs.
+3. **The gather is still 0.31 s** and the bowling action is still procedural.
+   Unchanged from Milestone 1; Milestone 3 territory.
 
 Do not expand the stadium, the crowd or the shot library. Premium authored or
-captured cricket motion is still an open asset gate: the stroke is procedural
-and refined, not mocap.
+captured cricket motion is still an open asset gate.

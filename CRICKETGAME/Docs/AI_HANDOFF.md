@@ -1,5 +1,115 @@
 # CRICKET 26 — AI HANDOFF
 
+## Muse Spark continuation — 2026-09-10, complete UI/UX overhaul.
+
+Canvas immediate-mode HUD rebuilt into a design system + full front end.
+`C26HUD.*` rewritten (~1100 lines): tokens, tracked kickers, ghost type,
+corner-cut CTAs, scrims, toasts, confirm modals. GameMode gained frontend
+state (`MenuScreen` 0–12, `TossStage`, `PendingConfirm`, `SettingsTab`,
+`LastAction` press flash); scoring/rules untouched. New: Home/Play/Teams/
+Matchup/Toss flow, 6 honest PREVIEW hubs, categorized settings (+subtitles,
++reduced motion), visual guide, broadcast score bug, animated callouts,
+interval/result+summary, pause hub. `-C26Shots` extended to 25 beats incl.
+toss-result gating + async-safe pause shot. Verified: build clean, 25/25
+shots at 16:9 and 19.5:9, full match completes, commentary firing (35 plays
+in capture run), zero errors. Docs: `UI_DESIGN_SYSTEM.md`.
+Next: ear-check mix in PIE; replace dev TTS per AUDIO_ARCHITECTURE.md.
+
+## Muse Spark continuation — 2026-09-10, commentary + stadium audio overhaul.
+
+Branch `work/match-world-reborn` (uncommitted at write time; pre-existing dirty
+venue/kit files NOT mine — only stage the audio file list in this entry).
+Rules/scoring/cameras untouched; audio observes events, never owns truth.
+
+### What changed
+
+- `C26Audio.h/.cpp` — now the Match Audio Director: CommentaryManager
+  (118-line VO bank, priority queue, cooldowns, follow-ups), CrowdDirector
+  (persistent bed + tension layer + overlays + ducking), CricketSFXDirector
+  (8×2D pool + 6×3D broadcast field-mic pool, duplicate guard). Tick-driven.
+- `C26Commentary.h` (new) + `C26CommentaryData.inc` (generated from
+  `Tools/CommentaryScript.py`, the single source of truth).
+- `C26MatchGameMode.*` — `MakeCommentaryContext()`, one notify per event,
+  4-way bat mapping, all hero SFX spatialized, `c <cat>`/`c dump` debug.
+- `C26Settings.h` — Commentary/Crowd/SFX/UI volumes (persisted).
+- `C26HUD.*` — commentary subtitles + 4 bus toggles in settings.
+- `Tools/`: `CommentaryScript.py` (118 original lines), generator (macOS
+  `say`: Daniel=A, Samantha=B; peak-normalized), `EmitCommentaryData.py`,
+  `BuildOverhaulSFX.py` (bat_mistimed, foot_plant), `ImportOverhaulAudio.py`.
+- Assets: 118 `Content/Cricket26/Audio/Commentary/*.uasset` + 2 Foley uassets.
+- Docs: `AUDIO_ARCHITECTURE.md`, `AUDIO_LICENSES.md` (new).
+
+### Verification
+
+Build succeeds. `C26Smoke` 10/10 matches PASS (2 runs: boundaries 31/29,
+wickets 19/16, replays 50/45, extras 2/1). Bank 118/118 loaded, 259 plays,
+0 cooldown violations (ball-gap audited), CHASE_START 10/10, results 10/10,
+0 invalid transitions, 0 rejected outcomes. Headless ⇒ audibility proven by
+asset resolution + Play() path, not by ear: first PIE run should confirm mix
+levels on real speakers (start from defaults, they were set analytically).
+
+### Known issues, honestly
+
+- `Content/Cricket26/Audio/Mix/` SoundClasses did not persist from the
+  headless import (empty dir); code buses are the authoritative mix. 5-minute
+  optional editor task, documented in AUDIO_ARCHITECTURE.md.
+- Pre-existing `Content/Cricket26/Audio/*.uasset` provenance unverified
+  (predates this task); flagged in AUDIO_LICENSES.md.
+- DOT/PRESSURE lines play rarely in autoplay (AI attacks); frequency gates
+  verified in code, human play will exercise them more.
+- Follow-up cooldown fix + CHASE_START priority fix went into the second
+  smoke run only; first-run log kept at `Artifacts/audio_smoke.log`.
+
+### Next exact task
+
+PIE listening pass on phone/laptop speakers → adjust bus defaults if needed;
+then replace dev TTS per AUDIO_ARCHITECTURE.md §"Replacing dev VO".
+
+## Muse Spark continuation — 2026-09-09, kit readability. Supersedes nothing; extends the sections below.
+
+Branch `work/match-world-reborn`. Milestone 1 (world) already committed as `b4281e7`;
+this session did NOT touch venue/camera/rules. It closed the two character-fidelity
+items the handoff named as the visible bottleneck: head/face dark mass and torso/sleeve
+merge. Build **succeeds**, gate **PASS** (`kit_readability5`: `failures=0`,
+`hand_gap_cm=0.000`, contact `gap_cm=0.523` at `Z=-57.9`), automation **3/3 PASS**,
+smoke background-running (`Artifacts/smoke_kit.log`, clean through match 2+ at write time).
+
+### What changed (all `Source/CRICKETGAME/SuperOver/`, rules/scoring untouched)
+
+- `C26Athlete.h/.cpp` — `Skin` MID (M_Surface, linear `(.42,.235,.155)`, rough .62)
+  overrides `Bodymat` slots; `Peak`/`Shell`/`Grill` cast no shadow; `Uniform`
+  sections 3/4/5 (collar off neck bone, chest placket, hem off pelvis, all
+  bone-derived); trousers hip 11.6 / mid-thigh 10.2 / knee 8.4; pads end above
+  the knee (21.5) with wide mouths (10.5) and a short lit throat flare (§1 Gear).
+- `Tests/C26GoldenGate.cpp` — unity-build `-Wshadow` fix: gate local `Striker`
+  shadowed the anonymous `Striker` in `C26CameraDirector.cpp`; renamed `StrikerPos`.
+  The committed tree did not compile without this.
+- Cost: +3 small sections/athlete (~600 tris). Gate frame time mean 21.3 ms /
+  p95 25.7 ms desktop editor with screenshots (baseline 20.4/22.3). Not a device claim.
+
+### Tooling verified, deliberately unused for authoring
+
+- Cascadeur MCP live on `127.0.0.1:8765`, Blender 5.2.1 MCP connected (used for
+  measuring `C26_KitBase`, not re-export). Procedural overlays were chosen over
+  skinned re-export so skin weights were never at risk. No Meshy usage.
+
+### Known issues, honestly
+
+- Pad mouths can keep a thin dark crescent at extreme grazing angles; reads as strap.
+- Shirt back is still one smooth volume behind the number; front/side read tailored.
+- Eyes share the Body slot and take the skin tone at this fidelity.
+- Motion is still procedural, not authored/mocap. The 0.31 s gather is the next
+  visible motion bottleneck and the place to aim Cascadeur.
+
+### Next exact task
+
+Confirm `C26_SMOKE_PASS` in `Artifacts/smoke_kit.log`, then commit this session,
+then lengthen the bowling gather with release sync re-derived and gate re-run.
+Full detail (with blind alleys preserved so nobody repeats them) is in
+`Docs/CURRENT_TASK.md` and the `kit_readability*` captures.
+
+---
+
 ## Claude (Opus 5) continuation — 2026-09-09, kit and drive pose. Supersedes the sections below.
 
 Branch `work/golden-delivery-contact`. Commits `4f5ab04` (rendered golden gate) and the kit/pose
@@ -640,3 +750,39 @@ Fixed: gameplay cameras occluded by keeper/bowler on the lens axis; athletes at 
 overlap; invisible ball at broadcast distance; capture beats timing out; helmets buried in hair;
 result camera inside athletes. `Tools/FixCrowd.py` was applied once to `M_Crowd.uasset`.
 Note: several of that pass's conclusions about *why* the venue looked flat were wrong — see §1.
+
+---
+
+## Milestone 2 — Next-Gen Cricketers (2026-09-09, commit `82232c6`)
+
+**What changed.** The entire equipment layer moved from C++ procedural ring-lofts to authored
+Blender geometry. Ten static meshes, 9,984 triangles total, in `/Game/Cricket26/Equipment`:
+`SM_C26_Bat_Hero`, `SM_C26_Helmet_Hero`, `SM_C26_HelmetGrille_Hero`, `SM_C26_Cap_Hero`,
+`SM_C26_Pad_L/R`, `SM_C26_Glove_L/R`, `SM_C26_Shoe_L/R`. Source scripts under
+`ArtSource/Blender/Equipment/`, import and size-assertion in `Tools/ImportEquipment.py`.
+
+`AC26Athlete` lost `BuildEquipment`, `BuildGloves` and `BuildPads` (215 lines) and the
+`Helmet`/`Peak`/`Shell` sphere components; it gained `Headwear`, `ShoeL`, `ShoeR`, `Dress` (bind
+materials by slot name) and `UpdateDetail`/`ApplyDetail` (hero/mid/distant presentation tiers,
+driven from the camera director's position each frame).
+
+Also: cricket whites instead of team-coloured trousers, 21 distinct kit materials with separated
+roughness, a loaded batting stance, and a dedicated bowler-at-his-mark pose.
+
+**Verification.** `Tools/GoldenGate.sh m2_final` → `C26_GATE_PASS failures=0`, release 0.000 cm,
+contact 1.200 cm at Z=-57.9 measured against 724 authored blade triangles. Automation 3/3 PASS.
+Captures in `Artifacts/Captures/m2_kit2` and `m2_final`. Desktop delivery frame time mean
+21.3 → 17.74 ms.
+
+**Traps worth knowing.** Unreal imports these Blender FBX at ×100 whatever `UnitScaleFactor` says,
+so equipment is authored in centimetres and stored in metres (`c26_build.CM = 0.01`); the size
+assertion in `ImportEquipment.py` is what caught that and must stay. Unreal drops material slots
+no triangle references, so slots are bound by name, never index.
+
+**Not done, and why.** The shirt is still the base character's street top recoloured with
+procedural collar/placket/hem/sleeve overlays. Garments cannot be derived from the base `Body`
+mesh — Mixamo deleted all torso and thigh geometry under the clothes — and `Bottoms` stops at the
+knee. `ArtSource/Blender/Characters/build_kit.py` and `Tools/ImportKit.py` are in place for the
+next attempt, which needs genuinely new skinned garments with transferred weights. Equipment LODs
+also did not build (both the deprecated and current UE 5.8 LOD APIs failed in the commandlet);
+detail tiers currently work by hiding components instead. See `Docs/CURRENT_TASK.md`.
