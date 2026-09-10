@@ -1,6 +1,7 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "GameFramework/HUD.h"
+#include "C26UILayout.h"
 #include "C26HUD.generated.h"
 class AC26MatchGameMode;
 struct FC26HitZone{FName Action;FBox2D Rect;};
@@ -13,8 +14,30 @@ public:
     virtual void DrawHUD() override;
     FName ActionAt(FVector2D Point) const;
     FVector2D ToDesign(FVector2D Point) const;
+    bool IsFootworkPoint(FVector2D Point) const;
+    FVector2D FootworkInput(FVector2D Point) const;
+    bool BlocksGameplayInput() const;
+    bool HandleLocalAction(FName Action);
 private:
     UPROPERTY() TObjectPtr<UFont> DisplayFont;
+    UPROPERTY() TObjectPtr<UFont> BodyFont;
+    C26UI::Layout Layout;
+    FVector2D SafePaddingRatio = FVector2D::ZeroVector;
+    FVector2D Pointer = FVector2D(-1.f, -1.f);
+    bool MenuExpanded = false;
+    int CompactPage = 0;
+    int PreviousMenuScreen = -1;
+    UFont* FontFor(float Size) const;
+    float FontWidth(const FString& S, float Size, UFont* Font) const;
+    void FontText(const FString& S, float X, float Y, float Size, FLinearColor Color, bool Center, UFont* Font);
+    TArray<FString> Wrapped(const FString& S, float Size, float MaxW) const;
+    void BoundedCopy(const FString& S, float X, float Y, float Size, FLinearColor Color, float W, int MaxLines, bool Center=false);
+    void CompactMenu();
+    void CompactControls();
+    void CompactHeader(const FString& Kicker, const FString& Title);
+    void CompactFooter(FName Action, const FString& Label, FName Back=FName(TEXT("nav_home")));
+    void CategoryMark(float X, float Y, int Kind);
+    void SettingRows(float X, float Y, float W, bool Compact);
     TArray<FC26HitZone> Zones;
     float Scale=1,OffsetX=0,OffsetY=0;
     AC26MatchGameMode* Match=nullptr;
