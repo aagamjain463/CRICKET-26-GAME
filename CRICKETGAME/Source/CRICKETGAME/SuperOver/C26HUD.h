@@ -45,6 +45,14 @@ private:
     FLinearColor TeamColor(int Team) const;
     FString TeamTagline(int Team) const;
     FString Track(const FString& S) const;
+    // ---- premium presentational helpers (measure-aware, no overlaps) ----
+    void Vignette();
+    void Panel(float X,float Y,float W,float H,FLinearColor Edge);
+    void Rule(float X,float Y,float W);
+    void Ghost(const FString& S,float X,float Y,float Size);
+    void Crest(float X,float Y,float R,int Team);
+    void PlayGlyph(float X,float Y,float S,FLinearColor C);
+    float TH(float Size) const;
     void Menu();
     void Home(); void Play(); void Teams(); void Matchup(); void Toss();
     void Future(int Kind);

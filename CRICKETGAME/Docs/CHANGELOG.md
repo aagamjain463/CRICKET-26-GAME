@@ -20,3 +20,11 @@
 - Design system: tokens, tracked kickers, ghost type, corner-cut CTAs,
   scrims, toasts, motion language. 25-beat screenshot suite, 16:9 + 19.5:9.
 - See `Docs/UI_DESIGN_SYSTEM.md`.
+
+## 2026-09-10 — UI premium pass: overlap purge + broadcast-noir grade
+
+- Rewrote all screens on cursor-stacked layout with measured widths; fixed
+  every reported text/element collision (hero, score bug, pause, result).
+- New look: cinematic vignette grade, glass panels with hairline borders,
+  shield crests with initials, ghost numerals, tracked labels, corner-cut
+  CTAs. Verified 25/25 beats, full match, zero errors.
