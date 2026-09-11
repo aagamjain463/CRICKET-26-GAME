@@ -55,7 +55,13 @@ AC26Athlete::AC26Athlete()
     // turning to the middle, the striker facing the bowler, the bowler running in -- points the
     // right way. Without this the whole side stands square to the play.
     Mesh->SetRelativeRotation(FRotator(0,-90,0));
-    static ConstructorHelpers::FObjectFinder<USkeletalMesh> Player(TEXT("/Game/Cricket26/Characters/SK_Cricketer_KitBase.SK_Cricketer_KitBase"));
+    // USER DIRECTIVE: SK_Cricketer_KitBase's own body/trouser geometry is documented-incomplete
+    // (Mixamo deleted torso/thigh geometry under the clothes; Bottoms stops at the knee), which is
+    // the real cause of the blotchy, gapped-looking hip/thigh seen in gameplay captures -- not a
+    // material bug. SK_Cricketer_Match (ArtSource/Blender/Characters/build_match_kit.py) is the
+    // already-authored, already-imported fix: full torso/thigh skin plus properly weighted
+    // full-length jersey and trousers on the same shared skeleton. Switching to it.
+    static ConstructorHelpers::FObjectFinder<USkeletalMesh> Player(TEXT("/Game/Cricket26/Characters/SK_Cricketer_Match.SK_Cricketer_Match"));
     if(Player.Succeeded())Mesh->SetSkinnedAssetAndUpdate(Player.Object);
     Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);Mesh->SetCastShadow(false);
     Mesh->SetVisibility(false);Mesh->SetHiddenInGame(true);
@@ -117,43 +123,56 @@ AC26Athlete::AC26Athlete()
     for(UActorComponent* Component:GetComponents())
         if(auto* Scene=Cast<USceneComponent>(Component))Scene->SetMobility(EComponentMobility::Movable);
 }
+void AC26Athlete::RebuildReference()
+{
+    auto* S=Cast<USkeletalMesh>(Mesh->GetSkinnedAsset());
+    if(!S)return;
+    AuthoredKit=S->GetName().Contains(TEXT("_Match"));
+    const auto& R=S->GetRefSkeleton();Reference.SetNum(R.GetNum());Parents.SetNum(R.GetNum());
+    Bones.Empty();
+    for(int I=0;I<R.GetNum();++I)
+    {
+        Parents[I]=R.GetParentIndex(I);Reference[I]=R.GetRefBonePose()[I];
+        if(Parents[I]>=0)Reference[I]*=Reference[Parents[I]];
+        FString Name=R.GetBoneName(I).ToString();Name.RemoveFromStart(TEXT("mixamorig:"));Name.RemoveFromStart(TEXT("mixamorig_"));
+        Bones.Add(Name,I);
+    }
+    // The legacy Mixamo rig imports at roughly 378 cm while the venue is real-world scale;
+    // the authored hero meshes export at real height (~150-200 cm). Shrink about the ground
+    // origin only when the reference hips arrive at import scale, so every authored IK
+    // target, piece of equipment and contact point lines up on either mesh.
+    float HipCheck=100.f;
+    for(int I=0;I<R.GetNum();++I)
+    {
+        FString Name=R.GetBoneName(I).ToString();Name.RemoveFromStart(TEXT("mixamorig:"));Name.RemoveFromStart(TEXT("mixamorig_"));
+        if(Name==TEXT("Hips")){HipCheck=Reference[I].GetLocation().Z;break;}
+    }
+    const float GroundScale=HipCheck>140.f?0.48f:1.f;
+    // Scale the skinning transforms as well as joint positions. Translating the joints alone
+    // compresses the limbs while leaving vertex offsets (head, hair, shoulders) at import size.
+    // Equipment is already authored in real centimetres and must not inherit that import scale.
+    for(auto& T:Reference)
+    {T.SetLocation(T.GetLocation()*GroundScale);T.SetScale3D(T.GetScale3D()*GroundScale);}
+    Pose=Reference;
+    const int Sh=Bone(TEXT("LeftArm")),Hp=Bone(TEXT("Hips")),An=Bone(TEXT("LeftFoot"));
+    ShoulderZ=Sh>=0?Reference[Sh].GetLocation().Z:144.f;
+    HipZ=Hp>=0?Reference[Hp].GetLocation().Z:100.f;
+    AnkleZ=An>=0?Reference[An].GetLocation().Z:11.8f;
+    const int Fa=Bone(TEXT("LeftForeArm")),Hd=Bone(TEXT("LeftHand"));
+    ArmSpan=Sh>=0&&Fa>=0&&Hd>=0
+        ?(Reference[Fa].GetLocation()-Reference[Sh].GetLocation()).Size()
+            +(Reference[Hd].GetLocation()-Reference[Fa].GetLocation()).Size()
+        :54.f;
+    const int Wr=Bone(TEXT("RightHand")),Kn=Bone(TEXT("RightHandMiddle1")),Tp=Bone(TEXT("RightHandMiddle3"));
+    if(Wr>=0&&Kn>=0&&Tp>=0)
+        PalmReach=float((FMath::Lerp(Reference[Kn].GetLocation(),Reference[Tp].GetLocation(),.72f)-Reference[Wr].GetLocation()).Size());
+    UE_LOG(LogTemp,Log,TEXT("C26_RIG mesh=%s scale=%.2f shoulder=%.1f hip=%.1f ankle=%.1f armspan=%.1f palm=%.1f"),
+        *S->GetName(),GroundScale,ShoulderZ,HipZ,AnkleZ,ArmSpan,PalmReach);
+}
 void AC26Athlete::BeginPlay()
 {
     Super::BeginPlay();
-    if(auto* S=Cast<USkeletalMesh>(Mesh->GetSkinnedAsset()))
-    {
-        AuthoredKit=S->GetName().Contains(TEXT("_Match"));
-        const auto& R=S->GetRefSkeleton();Reference.SetNum(R.GetNum());Parents.SetNum(R.GetNum());
-        for(int I=0;I<R.GetNum();++I)
-        {
-            Parents[I]=R.GetParentIndex(I);Reference[I]=R.GetRefBonePose()[I];
-            if(Parents[I]>=0)Reference[I]*=Reference[Parents[I]];
-            FString Name=R.GetBoneName(I).ToString();Name.RemoveFromStart(TEXT("mixamorig:"));Name.RemoveFromStart(TEXT("mixamorig_"));
-            Bones.Add(Name,I);
-        }
-        // The Mixamo rig imports at roughly 378 cm; the venue is real-world scale. Shrinking the
-        // reference pose about the ground origin puts the athlete at about 182 cm so every authored
-        // IK target, piece of equipment and contact point lines up. Rotations are untouched.
-        // Scale the skinning transforms as well as joint positions. Translating the joints alone
-        // compresses the limbs while leaving vertex offsets (head, hair, shoulders) at import size.
-        // Equipment is already authored in real centimetres and must not inherit that import scale.
-        for(auto& T:Reference)
-        {T.SetLocation(T.GetLocation()*0.48f);T.SetScale3D(T.GetScale3D()*0.48f);}
-        Pose=Reference;
-        const int Sh=Bone(TEXT("LeftArm")),Hp=Bone(TEXT("Hips")),An=Bone(TEXT("LeftFoot"));
-        ShoulderZ=Sh>=0?Reference[Sh].GetLocation().Z:144.f;
-        HipZ=Hp>=0?Reference[Hp].GetLocation().Z:100.f;
-        AnkleZ=An>=0?Reference[An].GetLocation().Z:11.8f;
-        const int Fa=Bone(TEXT("LeftForeArm")),Hd=Bone(TEXT("LeftHand"));
-        ArmSpan=Sh>=0&&Fa>=0&&Hd>=0
-            ?(Reference[Fa].GetLocation()-Reference[Sh].GetLocation()).Size()
-                +(Reference[Hd].GetLocation()-Reference[Fa].GetLocation()).Size()
-            :54.f;
-        const int Wr=Bone(TEXT("RightHand")),Kn=Bone(TEXT("RightHandMiddle1")),Tp=Bone(TEXT("RightHandMiddle3"));
-        if(Wr>=0&&Kn>=0&&Tp>=0)
-            PalmReach=float((FMath::Lerp(Reference[Kn].GetLocation(),Reference[Tp].GetLocation(),.72f)-Reference[Wr].GetLocation()).Size());
-        UE_LOG(LogTemp,Log,TEXT("C26_RIG shoulder=%.1f hip=%.1f ankle=%.1f armspan=%.1f palm=%.1f"),ShoulderZ,HipZ,AnkleZ,ArmSpan,PalmReach);
-    }
+    RebuildReference();
     BuildContactShadow();
     ApplyDetail();
 }
@@ -468,51 +487,48 @@ void AC26Athlete::Configure(EC26Role NewRole,int Team,int Number)
         UMaterialInterface* MI=TryMat(TP);if(!MI)return false;
         MeshPath=MP;MatPath=TP;return true;
     };
+    // Role-specific hero bodies: the ten SK_Cricketer_Hero* skeletal meshes imported by
+    // Tools/ImportHeroSkeletal.py (ArtSource/Exports/PlayersSkeletal). Each carries its own
+    // skeleton with the same Mixamo bone names/hierarchy, so the pose/IK/equipment pipeline
+    // below works unchanged -- RebuildReference() re-derives every joint from whichever mesh
+    // is bound. Batters share the HeroBatter mesh; fielders cycle six variants by squad
+    // number so the field no longer renders as clones. Any missing mesh falls back to the
+    // animated team kit (never a hidden athlete) and logs an error.
     bHeroVisual=false;
-    if(Role==EC26Role::Batter)
+    MeshPath=nullptr;
+    MatPath=nullptr;
+    (void)Consider;
+    const TCHAR* HeroBodyPath=nullptr;
+    switch(Role)
     {
-        // USER DIRECTIVE: Fix the batter with a half body, make him full body.
-        // Also he should have normal batting movement, not a static box-like figure.
-        // Same for non-striker.
-        // Striker and non-striker use the full-body animated skeletal mesh (SK_Cricketer_KitBase).
-        MeshPath=nullptr;
-        MatPath=nullptr;
+    case EC26Role::Batter: HeroBodyPath=TEXT("/Game/Cricket26/Characters/Players/SK_Cricketer_HeroBatter.SK_Cricketer_HeroBatter"); break;
+    case EC26Role::Bowler: HeroBodyPath=TEXT("/Game/Cricket26/Characters/Players/SK_Cricketer_HeroBowler.SK_Cricketer_HeroBowler"); break;
+    case EC26Role::Keeper: HeroBodyPath=TEXT("/Game/Cricket26/Characters/Players/SK_Cricketer_HeroKeeper.SK_Cricketer_HeroKeeper"); break;
+    case EC26Role::Umpire: HeroBodyPath=TEXT("/Game/Cricket26/Characters/Players/SK_Cricketer_HeroUmpire.SK_Cricketer_HeroUmpire"); break;
+    case EC26Role::Fielder:
+    default:
+        switch(FMath::Abs(Number)%6)
+        {
+        case 0: HeroBodyPath=TEXT("/Game/Cricket26/Characters/Players/SK_Cricketer_HeroFielder01.SK_Cricketer_HeroFielder01"); break;
+        case 1: HeroBodyPath=TEXT("/Game/Cricket26/Characters/Players/SK_Cricketer_HeroFielder02.SK_Cricketer_HeroFielder02"); break;
+        case 2: HeroBodyPath=TEXT("/Game/Cricket26/Characters/Players/SK_Cricketer_HeroFielder03.SK_Cricketer_HeroFielder03"); break;
+        case 3: HeroBodyPath=TEXT("/Game/Cricket26/Characters/Players/SK_Cricketer_HeroFielder04.SK_Cricketer_HeroFielder04"); break;
+        case 4: HeroBodyPath=TEXT("/Game/Cricket26/Characters/Players/SK_Cricketer_HeroFielder05.SK_Cricketer_HeroFielder05"); break;
+        default: HeroBodyPath=TEXT("/Game/Cricket26/Characters/Players/SK_Cricketer_HeroFielder06.SK_Cricketer_HeroFielder06"); break;
+        }
+        break;
     }
-    else if(Role==EC26Role::Keeper)
+    if(HeroBodyPath)
     {
-        Consider(TEXT("/Game/Cricket26/Characters/Players/SM_C26_Player_Keeper.SM_C26_Player_Keeper"),
-            TEXT("/Game/Cricket26/Materials/Players/MI_Player_Keeper.MI_Player_Keeper"));
-    }
-    else if(Role==EC26Role::Umpire)
-    {
-        Consider(TEXT("/Game/Cricket26/Characters/Players/SM_C26_Player_Umpire.SM_C26_Player_Umpire"),
-            TEXT("/Game/Cricket26/Materials/Players/MI_Player_Umpire.MI_Player_Umpire"));
-    }
-    else if(Role==EC26Role::Bowler)
-    {
-        Consider(TEXT("/Game/Cricket26/Characters/Players/SM_C26_Player_Bowler.SM_C26_Player_Bowler"),
-            TEXT("/Game/Cricket26/Materials/Players/MI_Player_Bowler.MI_Player_Bowler"));
-    }
-    else // Fielders
-    {
-        static const TCHAR* FielderMeshes[] = {
-            TEXT("/Game/Cricket26/Characters/Players/SM_C26_Player_Fielder_01.SM_C26_Player_Fielder_01"),
-            TEXT("/Game/Cricket26/Characters/Players/SM_C26_Player_Fielder_02.SM_C26_Player_Fielder_02"),
-            TEXT("/Game/Cricket26/Characters/Players/SM_C26_Player_Fielder_03.SM_C26_Player_Fielder_03"),
-            TEXT("/Game/Cricket26/Characters/Players/SM_C26_Player_Fielder_04.SM_C26_Player_Fielder_04"),
-            TEXT("/Game/Cricket26/Characters/Players/SM_C26_Player_Fielder_05.SM_C26_Player_Fielder_05"),
-            TEXT("/Game/Cricket26/Characters/Players/SM_C26_Player_Fielder_06.SM_C26_Player_Fielder_06"),
-        };
-        static const TCHAR* FielderMats[] = {
-            TEXT("/Game/Cricket26/Materials/Players/MI_Player_Fielder_01.MI_Player_Fielder_01"),
-            TEXT("/Game/Cricket26/Materials/Players/MI_Player_Fielder_02.MI_Player_Fielder_02"),
-            TEXT("/Game/Cricket26/Materials/Players/MI_Player_Fielder_03.MI_Player_Fielder_03"),
-            TEXT("/Game/Cricket26/Materials/Players/MI_Player_Fielder_04.MI_Player_Fielder_04"),
-            TEXT("/Game/Cricket26/Materials/Players/MI_Player_Fielder_05.MI_Player_Fielder_05"),
-            TEXT("/Game/Cricket26/Materials/Players/MI_Player_Fielder_06.MI_Player_Fielder_06"),
-        };
-        const int Idx = FMath::Abs(SquadNumber) % 6;
-        Consider(FielderMeshes[Idx], FielderMats[Idx]);
+        if(USkeletalMesh* HeroBody=LoadObject<USkeletalMesh>(nullptr,HeroBodyPath))
+        {
+            Mesh->SetSkinnedAssetAndUpdate(HeroBody);
+            // Keep the mesh's own authored materials (per-role MI_Player_* applied at
+            // import); the Shirt/Trousers/Skin override loop above targets SK_Cricketer_Match
+            // slot names and must not flatten the hero bake to a single tint.
+            RebuildReference();
+        }
+        else UE_LOG(LogC26,Error,TEXT("C26_VISUAL missing hero body %s; keeping team kit"),HeroBodyPath);
     }
     if(MeshPath)
     {

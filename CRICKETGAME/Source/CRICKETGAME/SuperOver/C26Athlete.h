@@ -119,8 +119,8 @@ private:
     UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> Skin;
     UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> ShadeMaterial;
     int Bone(const FString& Name) const;
-    void RebuildChildren(int Index);
-    void Aim(const FString& Name,const FString& Child,const FVector& Target);
+    void RebuildReference();
+    void RebuildChildren(int Index);    void Aim(const FString& Name,const FString& Child,const FVector& Target);
     void Twist(const FString& Name,float Yaw,float Pitch=0.f,float Roll=0.f);
     void Limb(const FString& Upper,const FString& Lower,const FString& End,const FVector& Target,const FVector& Bend);
     void MoveBone(const FString& Name,const FVector& Offset);
