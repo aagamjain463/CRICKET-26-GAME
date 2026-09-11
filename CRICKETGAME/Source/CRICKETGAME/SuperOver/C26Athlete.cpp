@@ -137,17 +137,13 @@ void AC26Athlete::RebuildReference()
         FString Name=R.GetBoneName(I).ToString();Name.RemoveFromStart(TEXT("mixamorig:"));Name.RemoveFromStart(TEXT("mixamorig_"));
         Bones.Add(Name,I);
     }
-    // The legacy Mixamo rig imports at roughly 378 cm while the venue is real-world scale;
-    // the authored hero meshes export at real height (~150-200 cm). Shrink about the ground
-    // origin only when the reference hips arrive at import scale, so every authored IK
-    // target, piece of equipment and contact point lines up on either mesh.
-    float HipCheck=100.f;
-    for(int I=0;I<R.GetNum();++I)
-    {
-        FString Name=R.GetBoneName(I).ToString();Name.RemoveFromStart(TEXT("mixamorig:"));Name.RemoveFromStart(TEXT("mixamorig_"));
-        if(Name==TEXT("Hips")){HipCheck=Reference[I].GetLocation().Z;break;}
-    }
-    const float GroundScale=HipCheck>140.f?0.48f:1.f;
+    // The legacy Mixamo rigs import at roughly 340-380 cm (bounds-verified in-editor)
+    // while the venue is real-world scale; the authored hero meshes export at real height
+    // (173-183 cm, bounds-verified). Shrink about the ground origin only when the bound
+    // mesh arrives at import scale, so every authored IK target, piece of equipment and
+    // contact point lines up on either mesh.
+    const float BoundHeight=S->GetBounds().BoxExtent.Z*2.f;
+    const float GroundScale=BoundHeight>250.f?0.48f:1.f;
     // Scale the skinning transforms as well as joint positions. Translating the joints alone
     // compresses the limbs while leaving vertex offsets (head, hair, shoulders) at import size.
     // Equipment is already authored in real centimetres and must not inherit that import scale.
