@@ -4,12 +4,14 @@
 #include "C26Types.h"
 #include "C26Simulation.h"
 #include "C26Commentary.h"
+#include "C26CommentaryTypes.h"
 #include "C26MatchGameMode.generated.h"
 class AC26Athlete;
 class AC26Stadium;
 class AC26CameraDirector;
 class AC26Effects;
 class UC26Audio;
+class UC26CommentaryDirector;
 class UC26Settings;
 class UStaticMeshComponent;
 DECLARE_MULTICAST_DELEGATE(FOnC26MatchChanged);
@@ -27,6 +29,7 @@ public:
     UPROPERTY(BlueprintReadOnly) EC26Phase Phase=EC26Phase::Menu;
     UPROPERTY() TObjectPtr<UC26Settings> Preferences;
     UPROPERTY() TObjectPtr<UC26Audio> Audio;
+    UPROPERTY() TObjectPtr<UC26CommentaryDirector> CommentaryDirector;
     UPROPERTY() TObjectPtr<AC26CameraDirector> Director;
     UPROPERTY() TObjectPtr<AC26Stadium> Venue;
     UPROPERTY() TObjectPtr<AC26Effects> Effects;
@@ -68,6 +71,174 @@ public:
     void DebugOutcome(FString Type);
     float TimingCountdown() const;
     float BowlingMeter() const;
+
+    // ---- Major Gameplay Control Overhaul: Gesture Batting & Bowling ----
+    EC26BattingState BattingState = EC26BattingState::Idle;
+    EC26BowlingState BowlingState = EC26BowlingState::Idle;
+    FC26BouncePrediction BouncePrediction;
+    UPROPERTY(EditAnywhere, Category="Cricket Tuning") FC26GestureTuning GestureTuning;
+
+    // ---- batting gesture: one pointer, one attempt -------------------------
+    /** Pointer/finger that owns the current gesture. -1 = none. Every other pointer is ignored. */
+    int32 GesturePointerId = -1;
+    /** Delivery the live gesture belongs to; a stale gesture can never commit a shot on the next ball. */
+    uint32 GestureDeliveryId = 0;
+    bool bBattingGestureActive = false;
+    bool bGestureArmed = false;
+    FVector2D BattingGestureStart = FVector2D::ZeroVector;
+    FVector2D BattingGestureCurrent = FVector2D::ZeroVector;
+    /** Unclamped finger travel, design units. */
+    FVector2D BattingPullRaw = FVector2D::ZeroVector;
+    double GestureStartRealTime = 0.0;
+    double GestureReleaseRealTime = 0.0;
+    float BattingGestureHoldTime = 0.f;
+    /** Raw pull length in design units, before dead zone and clamp. */
+    float BattingPullRawMagnitude = 0.f;
+    /** Dead-zone corrected, clamped 0..1. */
+    float BattingPullFrac = 0.f;
+    /** BattingPullFrac through the aggression curve, 0..1. */
+    float BattingAggression = 0.f;
+    /** Screen-space pull angle in degrees, 0 = straight up the screen. */
+    float BattingPullScreenAngle = 0.f;
+    /** Batter-relative aim angle: + = off side, - = leg side, already mirrored for left-handers. */
+    float BattingGestureAngle = 0.f;
+    float BattingGesturePower = 0.72f;
+    float BattingSuitability = 1.f;
+    float BattingStrideAuto = 0.f;
+    bool bFootworkManual = false;
+    /** Live shot the current gesture would play, named by the shared classifier. */
+    FString BattingShotCandidate;
+
+    // ---- release timing: one delta, shared by gameplay and the meter --------
+    float BattingReleaseDeltaMs = 0.f;
+    EC26ReleaseTiming BattingReleaseTiming = EC26ReleaseTiming::NoShot;
+    EC26Timing BattingTimingLabel = EC26Timing::Miss;
+    float BattingTimingQuality = 0.f;
+    /** Seconds of timing error handed to FC26Simulation::Hit; survives a run-up release. */
+    float PendingShotError = 0.f;
+    bool bPendingShotFromGesture = false;
+    float BattingFeedbackUntil = -1.f;
+    float BattingCommitAge = -1.f;
+    bool bLeftHandedBatter = false;
+    /** Last reason a gesture was thrown away, for the debug overlay. */
+    FString GestureCancelReason;
+    int32 GestureCommitCount = 0;
+
+    // ---- bowling: the player authors the plan, the model executes it -------
+    /** Everything the player chooses before the run-up. Persists between balls. */
+    UPROPERTY(EditAnywhere, Category="Cricket Tuning") FC26BowlingPlan BowlingPlan;
+    /** The current bowler's range and ability; intent is free, execution is not. */
+    UPROPERTY(EditAnywhere, Category="Cricket Tuning") FC26BowlerProfile BowlerProfile;
+    UPROPERTY(EditAnywhere, Category="Cricket Tuning") FC26BowlingTuning BowlingTuning;
+    /** Difficulty-scaled release bar for this delivery, snapped to the animation. */
+    FC26ReleaseBar ActiveBar;
+    /** Deliveries this bowler may attempt right now, rebuilt each ball. */
+    TArray<EC26Delivery> DeliveryLibrary;
+
+    FVector BowlingIntendedPitch = FVector(0.f, 460.f, 0.f);
+    FVector BowlingActualPitch = FVector(0.f, 460.f, 0.f);
+    float BowlingReleaseErrorMs = 0.f;
+    float BowlingExecutionQuality = 1.0f;
+
+    /** Where on the bar the player let go, 0..1. -1 until they do. */
+    float ReleaseMeterValue = -1.f;
+    EC26ReleaseBand ReleaseBand = EC26ReleaseBand::TooEarly;
+    float ReleaseBandQuality = 0.f;
+    bool bBowlingNoBall = false;
+    /** Measured speed of the ball that was actually bowled, km/h. */
+    float LastActualKph = 0.f;
+    float LastPlannedKph = 0.f;
+    /** Previous delivery's real pitch point, for the tactical ghost marker. */
+    FVector LastActualPitch = FVector::ZeroVector;
+    bool bHasLastPitch = false;
+    /** Where the last ball actually left the hand, and the crease offset it was
+        released with. The trajectory preview is built from this rather than a
+        guess, so the drawn path and the bowled ball start from the same point. */
+    FVector LastBowlingOrigin = FVector(-20.f, -995.f, 196.f);
+    bool bHasBowlingOrigin = false;
+    float LastCreaseOffset = 0.f;
+
+    // Planning pointers: each control is owned by the finger that grabbed it.
+    int32 TargetPointerId = -1, MovementPointerId = -1, PacePointerId = -1, ReleasePointerId = -1;
+    FVector2D MovementDragStart = FVector2D::ZeroVector;
+    FVector2D MovementDragCurrent = FVector2D::ZeroVector;
+    bool bMovementDragging = false;
+
+    /** -C26Debug or the C26Controls exec: development batting-input overlay. */
+    bool bDebugControls = false;
+
+    // ---- batting gesture state machine -------------------------------------
+    /** True when the batting gesture zone will accept a press right now. */
+    bool IsBattingInputLive() const;
+    // Bowling control regions, design space. Kept here so the HUD draws exactly
+    // what the input layer hit-tests - the two can never drift apart.
+    static constexpr float DialCentreX = 1352.f, DialCentreY = 640.f, DialRadius = 78.f;
+    static constexpr float PaceTrackX = 1184.f, PaceTrackW = 336.f, PaceTrackY = 742.f;
+    bool IsOnMovementDial(FVector2D D) const
+    { return (D - FVector2D(DialCentreX, DialCentreY)).Size() <= DialRadius + 26.f; }
+    bool IsOnPaceSlider(FVector2D D) const
+    { return D.X >= PaceTrackX - 26.f && D.X <= PaceTrackX + PaceTrackW + 26.f && D.Y >= PaceTrackY - 30.f && D.Y <= PaceTrackY + 30.f; }
+
+    /** Design-space test for the floating-origin batting region. */
+    bool IsInBattingGestureZone(FVector2D DesignPos) const;
+    bool BeginBattingGesture(int32 PointerId, FVector2D DesignPos);
+    void UpdateBattingGesture(int32 PointerId, FVector2D DesignPos);
+    void ReleaseBattingGesture(int32 PointerId, FVector2D DesignPos);
+    void CancelBattingGesture(const TCHAR* Why);
+    /** Recomputes direction/magnitude/candidate from the current finger position. */
+    void EvaluateBattingGesture();
+    /** Seconds until the ideal release instant. Valid during run-up AND flight. */
+    float SecondsToIdealRelease() const;
+    FString GetReleaseTimingName() const;
+
+    // ---- bowling controls (all pointer-owned, touch and mouse identical) ----
+    /** Rebuilds DeliveryLibrary and the bowler profile for the current bowler. */
+    void RefreshBowlerProfile();
+    void CycleDelivery(int Direction);
+    void SelectDelivery(EC26Delivery Type);
+    void ApplyBowlingPreset(FName Preset);
+    bool BeginMovementDrag(int32 PointerId, FVector2D DesignPos);
+    void UpdateMovementDrag(int32 PointerId, FVector2D DesignPos);
+    void EndMovementDrag(int32 PointerId);
+    bool BeginPaceDrag(int32 PointerId, FVector2D DesignPos);
+    void UpdatePaceDrag(int32 PointerId, FVector2D DesignPos);
+    void EndPaceDrag(int32 PointerId);
+    void CancelBowlingDrags();
+    /** Composes the plan at a clean release: the preview and the ball agree. */
+    FC26DeliveryPlan PreviewDelivery() const;
+    /** Sampled flight of PreviewDelivery, for the on-pitch trajectory line. */
+    void BuildTrajectoryPreview();
+    TArray<FVector> TrajectoryPreview;
+    int32 TrajectoryPreviewBounce = -1;
+    uint32 TrajectoryPreviewHash = 0;
+    float PlannedKph() const;
+    void PaceRangeKph(float& OutMin, float& OutMax) const;
+    bool BatterIsLeftHanded() const;
+    FString GetDeliveryName() const;
+    FString GetMovementText() const;
+    FString GetReleaseBandName() const;
+    /** Lateral shift of the release point for the current crease position, cm.
+        Zero over the wicket; a signed offset around it. Both the trajectory
+        preview and the live release go through this, so they cannot disagree. */
+    float CreaseOffsetCm() const;
+    /** Where the ball will leave the hand: the end of the run-up, shifted by the
+        crease position. Shared by the preview and the live release. */
+    FVector ReleaseOriginCm() const;
+
+    /** Run-up: publish the marker from the bowler's LOCKED intent, before any ball exists. */
+    void BeginBouncePreview();
+    /** Release: hand the marker the measured trajectory so it can correct smoothly. */
+    void CalculateBouncePrediction();
+    void UpdateBouncePrediction(float Dt);
+    bool IsBounceIndicatorVisible() const;
+    FVector GetBounceIndicatorLocation() const;
+    float GetBounceIndicatorAlpha() const;
+    FString GetBounceIndicatorText() const;
+    FString GetBattingStateName() const;
+    FString GetBowlingStateName() const;
+    FString GetDeliveryLengthName() const;
+    FString GetDeliveryLineName() const;
+
     // ---- front-end flow (presentation only; gameplay truth untouched) ----
     // MenuScreen: 0 Home,1 Play,2 Teams,3 Matchup,4 Toss,5 Squad,6 Career,
     // 7 Leaderboards,8 Multiplayer,9 Training,10 World,11 Settings,12 Help,13 Store.
@@ -115,7 +286,7 @@ private:
     float FieldCreep=0.f;
     /** Fielders walk in as the bowler runs in and turn to follow the ball once it is struck.
         Without it nine of the eleven players stand perfectly still through every delivery, which
-        is the single loudest tell that a cricket scene is a prototype. */
+        breaks every camera angle that looks past the wicket. */
     void UpdateFieldPresence(float Dt);
     void ChangePhase(EC26Phase NewPhase);
     void PrepareDelivery();
@@ -128,10 +299,11 @@ private:
     void AfterPresentation();
     void BuildMatchActors();
     void UpdateBallVisual();
-    void BreakWicket(float Y);
+    void BreakWicket(float WicketY);
     void ResetStumps();
     void Haptic(float Strength);
     FC26CommentaryContext MakeCommentaryContext() const;
+    FC26CommentaryEvent MakeCommentaryEvent(ECommentaryEventType Type, int32 Runs=0, bool bBoundary=false, bool bSix=false, bool bWicket=false, uint8 Dismissal=0) const;
     /** Dust and turf response for one ball's worth of contact events. */
     void Spark(const FVector& At,bool Struck);
     /** Momentary time pinch on a well-struck ball, and the real-time stamp it ends at. */
@@ -149,8 +321,57 @@ private:
     void UpdateGoldenGate(float Dt);
     bool GoldenGate=false,GateCollected=false,GateThrown=false,GateNoScreens=false,GateSuite=false;
     bool GateSawFour=false,GateSawSix=false,GateSawWicket=false;
+    bool GateGestureArmed=false,GateGestureLogged=false,GateMarkerRunUpChecked=false,GateGesturePressed=false;
     int GateMatches=0;
     void UpdateProductionGate(float Dt);
+    // ---- C26BatLab: scripted batting playtest through the real input path ----
+    void UpdateBatLab(float Dt);
+    // ---- C26BowlLab: scripted bowling playtest through the real input path ----
+    // The lab IS the bowler: it presses the carousel, drags the pitch target,
+    // turns the movement dial, moves the pace slider and releases on the bar,
+    // all through AC26PlayerController's real pointer routing. Nothing here
+    // reaches into BowlingPlan to "help" it; the plan is read back afterwards.
+    void UpdateBowlLab(float Dt);
+    bool BowlLab=false,BowlLabShots=false,BowlLabQuietFail=false;
+    bool BowlLabPressed=false,BowlLabReleased=false,BowlLabSecondFinger=false,BowlLabResultLogged=false;
+    int BowlLabCase=0,BowlLabPhase=0,BowlLabFailures=0,BowlLabPlayed=0;
+    double BowlLabStarted=0;
+    FString BowlLabDirectory;
+    TSet<FString> BowlLabShotKeys;
+    /** Which side the lab is currently bowling for; the two named bowlers are
+        opposite arms, so switching arms means starting a fresh innings. */
+    int BowlLabTeam=-1;
+    /** Release point the ball actually left the hand from, captured at release. */
+    FVector BowlLabOrigin=FVector::ZeroVector;
+    /** Release origin of the previous delivery, for the around-the-wicket check. */
+    FVector BowlLabPrevOrigin=FVector::ZeroVector;
+    FVector BowlLabPrevPitch=FVector::ZeroVector;
+    bool BowlLabHasPrev=false;
+    int BowlLabLedgerBefore=0;
+    int BowlLabExtrasBefore=0,BowlLabLegalBefore=0;
+    /** Rules epoch the current case was bowled in, so a restart between cases
+        cannot make the scorecard deltas look like a regression. */
+    uint32 BowlLabEpoch=0;
+    /** Meter value (0..1) this case releases at; the lab waits for it to arrive. */
+    float BowlLabReleaseAt=0.f;
+    /** The plan the lab actually asked for, so intent can be compared to result. */
+    float BowlLabWantLine=0.f,BowlLabWantLength=0.f,BowlLabWantPace=0.f,BowlLabWantMag=0.f;
+    EC26Delivery BowlLabWantType=EC26Delivery::Pace;
+    /** Per-delivery capture, filled at the release frame and read on the way out. */
+    float BowlLabMeter=0.f,BowlLabQuality=0.f,BowlLabKph=0.f,BowlLabSwing=0.f,BowlLabDeviation=0.f,BowlLabOnset=0.f;
+    FVector BowlLabPitch=FVector::ZeroVector,BowlLabIntent=FVector::ZeroVector;
+    EC26ReleaseBand BowlLabBand=EC26ReleaseBand::TooEarly;
+    EC26Delivery BowlLabType=EC26Delivery::Pace;
+    bool BowlLabNoBall=false;
+    bool BowlLabHadLastPitch=false;
+    FVector BowlLabLastPitch=FVector::ZeroVector;
+    void Check2(bool Passed,const TCHAR* Message);
+    bool BatLab=false,LabShots=false,LabPressed=false,LabReleased=false,LabSecondFinger=false,LabQuietFail=false,LabSawBounce=false,LabResultLogged=false;
+    int LabCase=0,LabPhase=0,LabFailures=0,LabPlayed=0;
+    double LabStarted=0;
+    float LabAim=0,LabMag=0,LabAgg=0,LabDelta=0,LabPower=0,LabMidAim=0,LabPressAim=0;
+    FString LabCandidate,LabTiming,LabGestureLog,LabDirectory;
+    TSet<FString> LabShotKeys;
     int GateStage=0,GateFailures=0;
     uint32 GateEpoch=0;
     double GateStarted=0;

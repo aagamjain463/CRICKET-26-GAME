@@ -7,6 +7,7 @@
 class UProceduralMeshComponent;
 class UStaticMeshComponent;
 class UTextRenderComponent;
+class UAnimSequence;
 
 UCLASS()
 class CRICKETGAME_API UC26PoseMesh : public UPoseableMeshComponent
@@ -14,6 +15,10 @@ class CRICKETGAME_API UC26PoseMesh : public UPoseableMeshComponent
     GENERATED_BODY()
 public:
     void ApplyComponentPose(const TArray<FTransform>& Pose);
+    /** Push an already parent-relative pose straight at the skin. The athlete's smoothing filter
+        works in local space -- component-space interpolation changes bone lengths mid-blend -- so
+        it holds the displayed pose in that form and there is nothing left to convert. */
+    void ApplyLocalPose(const TArray<FTransform>& Local);
 };
 
 UCLASS()
@@ -24,7 +29,7 @@ public:
     AC26Athlete();
     virtual void BeginPlay() override;
     UPROPERTY(VisibleAnywhere) TObjectPtr<UC26PoseMesh> Mesh;
-    /** Photorealistic hero scan mesh representing the authentic athlete model */
+    /** Legacy component retained for serialized levels; live players use the skinned mesh. */
     UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> HeroMesh;
     /** Authored hero kit from /Game/Cricket26/Equipment, built in ArtSource/Blender/Equipment.
         Every one of these was a procedural ring-loft generated in this file until Milestone 2:
@@ -87,6 +92,19 @@ public:
     bool bHeroVisual=false;
     /** Enforce exactly one visible body: hero scan or animated kit, never both, never none. */
     void ApplyVisualRole();
+    /** Point Mesh at this role's photoreal hero scan and give it that scan's own baked material.
+        Called from Configure, so an innings change re-runs it and no stale body survives. */
+    void ApplyHeroScan();
+    /** True when a candidate body's geometry actually occupies its own rig's bind pose. A mesh
+        that fails this cannot be animated -- its bones are outside its own geometry -- so binding
+        it produces a body that tears, freezes, or sinks through the ground however correct the
+        posing code is. Measured from the asset, not assumed. */
+    static bool MatchesBindPose(USkeletalMesh* Candidate);
+    /** The scan currently bound to Mesh, kept alive against GC and used to detect a no-op rebind. */
+    UPROPERTY() TObjectPtr<USkeletalMesh> ScanAsset;
+    /** True once ApplyHeroScan has bound a scan. Distinguishes the scanned body from the
+        fallback Mixamo kit mesh, which is what Mesh carries if the scans are unavailable. */
+    bool bScanVisual=false;
     /** Real-world height in centimetres the imported rig is scaled down to. */
     static constexpr float BodyHeight=185.f;
     /** Distance in centimetres beyond which an athlete stops being hero quality, then stops
@@ -95,6 +113,56 @@ public:
     static constexpr float MidRange=6000.f;
 private:
     TArray<FTransform> Reference,Pose;
+    /** The pose actually on screen, parent-relative, carried between frames. Every pose in this
+        class is authored as an instantaneous target -- a stance, a contact, a gather -- and until
+        this existed the skin was snapped onto whichever target the current action named, so every
+        action change was a one-frame jump and every LOD-skipped frame was a freeze. The displayed
+        pose now chases the target with a time constant instead, which is what turns a list of
+        authored positions into motion. */
+    TArray<FTransform> Shown;
+    /** Ground speed as the legs see it. The match code can change MoveSpeed instantly; a stride
+        length that changes instantly is a skate. */
+    float ShownSpeed=0.f;
+    /** How long the displayed pose is given to catch the authored target, in seconds. Actions
+        whose timing is load-bearing -- the bat arriving at the ball, the ball leaving the hand --
+        get a short one so the authored instant is still the authored instant. */
+    float PoseLag() const;
+    /** The pose the solver last asked for, parent-relative. Held separately from the displayed
+        pose so a frame that skips the solve still has something to move toward. */
+    TArray<FTransform> Goal;
+    void SmoothPose(float Dt,bool Solved);
+    /** Rotate the collarbone a fraction of the way toward a hand target before the arm solves.
+        A shoulder socket that never moves is why overhead reaches look like a doll's: the real
+        joint contributes most of the last 20 degrees of reach. */
+    void ShoulderReach(const FString& Side,const FVector& Target,float Amount);
+    /** Close the finger chains by rotating them into the palm. Bare hands left in the imported
+        open-hand bind pose are the most visible remaining tell on a fielder at hero detail. */
+    void CurlFingers(const FString& Side,float Amount);
+    UPROPERTY() TObjectPtr<UAnimSequence> RunClip;
+    UPROPERTY() TObjectPtr<UAnimSequence> IdleClip;
+    /** Authored one-shot cricket actions, keyed on this same 67-bone rig by
+        ArtSource/Blender/Animation/c26_anim_author.py and imported by Tools/ImportAnimations.py.
+        Both are bound to SK_Cricketer_KitBase_Skeleton -- the skeleton SK_Cricketer_Match skins to
+        -- so they drive this mesh directly with no retargeting step. See Docs/AUTHORED_ANIMATION.md. */
+    UPROPERTY() TObjectPtr<UAnimSequence> BattingClip;
+    UPROPERTY() TObjectPtr<UAnimSequence> BowlingClip;
+    UPROPERTY() TObjectPtr<UMaterialInterface> TexturedSkin;
+    void ApplyRecordedMotion(bool Running, bool Batting);
+    /** Sample a whole-body authored action over Pose. This is the same bind-by-name retarget
+        ApplyRecordedMotion uses, with two differences that matter for a one-shot action: the clip
+        is allowed to carry the body fore and aft (the batter's weight transfer, the bowler's bound
+        over the braced foot are the action), and only the bones the clip genuinely keys are taken
+        from it, so the procedural pass keeps everything the clip does not author. */
+    void ApplyAuthoredClip(UAnimSequence* Clip,const TSet<int32>& Driven,float Time,float Weight);
+    /** Which bones a clip actually moves, measured by sampling it. A clip that does not key a bone
+        hands back that bone's reference pose, and blending that in would silently erase whatever
+        the procedural pass authored there -- the fingers closed around the handle, the head aim.
+        Measured once and cached: the answer never changes, and testing per frame would flicker
+        every time a bone passed through its own rest pose. */
+    void GatherDrivenBones(UAnimSequence* Clip,TSet<int32>& Out);
+    TSet<int32> BattingDriven,BowlingDriven;
+    /** True once the driven-bone sets have been measured for this athlete. */
+    bool DrivenBonesCached=false;
     // The Mixamo rig is a T-pose facing mesh +Y with mesh +X out to the character's LEFT.
     // Rig() is the only conversion used for posing: it turns (forward, right, up) in real
     // centimetres into that mesh space, so every authored target below reads as cricket
@@ -117,6 +185,13 @@ private:
         flat M_Surface tone in a mid-brown keeps the face, neck and forearms readable at every
         camera distance. Eyes share the Body slot, so they take the same tone at this fidelity. */
     UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> Skin;
+    /** Head materials. The mesh has always had separate Bodymat, Eyesmat and Eyelashmat slots;
+        only Bodymat was ever dressed, which is why every face in the game was a blank brown
+        volume. Face carries the avatar's real 2048x2048 body atlas where it resolved, and falls
+        back to the flat Skin tone where it did not. */
+    UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> FaceMat;
+    UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> Eyes;
+    UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> Lash;
     UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> ShadeMaterial;
     int Bone(const FString& Name) const;
     void RebuildReference();

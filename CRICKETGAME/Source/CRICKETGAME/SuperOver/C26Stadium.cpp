@@ -114,7 +114,7 @@ AC26Stadium::AC26Stadium()
     // One shadow-casting bank plus an unshadowed cross fill. Explicit forward-shading priorities
     // stop the renderer warning about two directional lights competing for the single slot.
     KeyLight=CreateDefaultSubobject<UDirectionalLightComponent>(TEXT("FloodlightKey"));KeyLight->SetupAttachment(RootComponent);
-    KeyLight->SetRelativeRotation(FRotator(-58,-38,0));KeyLight->SetIntensity(2.35f);KeyLight->SetLightColor(FLinearColor(.88,.93,1));
+    KeyLight->SetRelativeRotation(FRotator(-36,-62,0));KeyLight->SetIntensity(5.6f);KeyLight->SetLightColor(FLinearColor(1,.97,.91));
     KeyLight->DynamicShadowDistanceMovableLight=9000;KeyLight->DynamicShadowCascades=3;KeyLight->ForwardShadingPriority=1;
     KeyLight->SetSpecularScale(.85f);
     CrossLight=CreateDefaultSubobject<UDirectionalLightComponent>(TEXT("FloodlightCross"));CrossLight->SetupAttachment(RootComponent);
@@ -122,10 +122,10 @@ AC26Stadium::AC26Stadium()
     // broadcast, but measured captures had the players (luma 53-69) darker than the turf (105-120):
     // a steep key rakes the horizontal ground and barely touches a vertical torso. Lowering this
     // fill toward the horizon puts light back on bodies without lifting the ground or the crowd.
-    CrossLight->SetRelativeRotation(FRotator(-33,132,0));CrossLight->SetIntensity(1.95f);CrossLight->SetLightColor(FLinearColor(.84,.90,1));
+    CrossLight->SetRelativeRotation(FRotator(-13,126,0));CrossLight->SetIntensity(3.30f);CrossLight->SetLightColor(FLinearColor(.91,.95,1));
     CrossLight->SetCastShadows(false);CrossLight->ForwardShadingPriority=0;
     FillLight=CreateDefaultSubobject<USkyLightComponent>(TEXT("StadiumFill"));FillLight->SetupAttachment(RootComponent);
-    FillLight->SetIntensity(.42f);FillLight->SetLightColor(FLinearColor(.40,.50,.66));FillLight->SetLowerHemisphereColor(FLinearColor(.020,.030,.042));
+    FillLight->SetIntensity(.95f);FillLight->SetLightColor(FLinearColor(.65,.70,.76));FillLight->SetLowerHemisphereColor(FLinearColor(.075,.082,.058));
     FillLight->bLowerHemisphereIsBlack=false;
     Haze=CreateDefaultSubobject<UExponentialHeightFogComponent>(TEXT("StadiumHaze"));Haze->SetupAttachment(RootComponent);
     Haze->SetFogDensity(.000042f);Haze->SetFogHeightFalloff(.09f);Haze->SetFogInscatteringColor(FLinearColor(.055,.086,.145));
@@ -133,7 +133,7 @@ AC26Stadium::AC26Stadium()
     Grade=CreateDefaultSubobject<UPostProcessComponent>(TEXT("BroadcastGrade"));Grade->SetupAttachment(RootComponent);Grade->bUnbound=true;
     auto& P=Grade->Settings;
     P.bOverride_AutoExposureMethod=true;P.AutoExposureMethod=EAutoExposureMethod::AEM_Manual;
-    P.bOverride_AutoExposureBias=true;P.AutoExposureBias=1.15f;
+    P.bOverride_AutoExposureBias=true;P.AutoExposureBias=-.45f;
     P.bOverride_AutoExposureApplyPhysicalCameraExposure=true;P.AutoExposureApplyPhysicalCameraExposure=false;
     // Broadcast grade: restrained bloom around the floodlights, no grain, no chromatic aberration,
     // clarity preserved for the ball. Motion blur stays off during play.
@@ -144,8 +144,8 @@ AC26Stadium::AC26Stadium()
     P.bOverride_SceneFringeIntensity=true;P.SceneFringeIntensity=0;
     P.bOverride_FilmGrainIntensity=true;P.FilmGrainIntensity=0;
     P.bOverride_VignetteIntensity=true;P.VignetteIntensity=.22f;
-    P.bOverride_ColorSaturation=true;P.ColorSaturation=FVector4(1.05,1.05,1.02,1);
-    P.bOverride_ColorContrast=true;P.ColorContrast=FVector4(1.06,1.06,1.08,1);
+    P.bOverride_ColorSaturation=true;P.ColorSaturation=FVector4(1.06,1.06,1.04,1);
+    P.bOverride_ColorContrast=true;P.ColorContrast=FVector4(1.07,1.07,1.08,1);
     P.bOverride_ColorGamma=true;P.ColorGamma=FVector4(1,1,1.01,1);
     P.bOverride_ToneCurveAmount=true;P.ToneCurveAmount=.92f;
     P.bOverride_AmbientOcclusionIntensity=true;P.AmbientOcclusionIntensity=.42f;
@@ -242,7 +242,13 @@ void AC26Stadium::ConfigureLighting()
     // Apply the authored setup after map deserialization: saved component overrides from the
     // prototype otherwise restore its 9-lux key and 1.25-strength blue sky over new C++ defaults.
     KeyLight->SetMobility(EComponentMobility::Movable);
-    KeyLight->SetRelativeRotation(FRotator(-46,-62,0));KeyLight->SetIntensity(4.0f);
+    // Measured from `premium_base`: the players were the DARKEST thing on screen (kit luma 16-50)
+    // while the turf sat at 130-155. On a broadcast the athletes are the brightest readable
+    // elements and the field is behind them, so this was the single biggest reason a live frame
+    // read as prototype rather than televised. The cause is geometric, not a colour: a 46-degree
+    // key rakes the horizontal ground and misses a vertical torso almost entirely. Bringing the
+    // key down toward the horizon puts light on bodies as well as on grass.
+    KeyLight->SetRelativeRotation(FRotator(-36,-62,0));KeyLight->SetIntensity(5.6f);
     KeyLight->SetLightColor(FLinearColor(1,.97,.91));KeyLight->SetSpecularScale(.5f);
     // A stadium lamp bank is a large area source, not a point. Widening the source angle gives the
     // penumbra a soft edge like a real floodlight shadow instead of a hard stencil cutout.
@@ -250,23 +256,29 @@ void AC26Stadium::ConfigureLighting()
     // Screen-space contact shadows pick up the small darkenings the cascades are too coarse to
     // resolve: under a boot, between bat and glove, where the ball meets the turf.
     KeyLight->ContactShadowLength=.045f;KeyLight->ContactShadowLengthInWS=false;
-    // Keep the constructor's shallow body-lighting bank. This function runs after deserialization
-    // and overwrites whatever the constructor set, so an intensity authored up there and not
-    // repeated down here is dead code -- which is exactly what happened to the fix that put light
-    // back on vertical torsos rather than only on horizontal ground.
-    CrossLight->SetRelativeRotation(FRotator(-24,126,0));CrossLight->SetIntensity(1.65f);
+    // The cross bank is the one that actually lights a standing cricketer. Near-horizontal, so it
+    // lands on shirts, faces and pads instead of on the top of the grass -- this is the bank that
+    // separates a player from the field he is standing on.
+    CrossLight->SetRelativeRotation(FRotator(-13,126,0));CrossLight->SetIntensity(3.30f);
     CrossLight->SetLightColor(FLinearColor(.91,.95,1));
-    // The sky fill is deliberately low. Lifting it flattens the key's shadows back out, and a night
-    // ground has almost no ambient of its own -- what fills the shadows is bounce off the turf.
-    FillLight->SetIntensity(.44f);FillLight->SetLightColor(FLinearColor(.65,.70,.76));
-    FillLight->SetLowerHemisphereColor(FLinearColor(.06,.065,.046));
+    // Sky fill lifts the shadow side so a player is readable from every camera angle rather than
+    // only when he happens to face the key. Raised well above the old .44: a night ground has
+    // almost no ambient of its own and the low value was leaving half of every torso black.
+    FillLight->SetIntensity(.95f);FillLight->SetLightColor(FLinearColor(.65,.70,.76));
+    FillLight->SetLowerHemisphereColor(FLinearColor(.075,.082,.058));
     Haze->SetFogDensity(.000012f);Haze->SetFogMaxOpacity(.18f);Haze->SetStartDistance(6200.f);
-    Grade->Settings.AutoExposureBias=-.35f;Grade->Settings.VignetteIntensity=0.f;
-    Grade->Settings.BloomIntensity=.19f;Grade->Settings.BloomThreshold=2.2f;
+    // Exposure. Calibrated against the reference broadcast, measured off its own frames: its
+    // outfield reads luma 112-115 and its pitch 138, so that is what this grade aims at. The sign
+    // of this parameter is now confirmed by capture, not assumed: -0.35 rendered the field at 68
+    // and +0.30 at 166, so positive is brighter and a full stop was far too much. -0.45 lands the
+    // turf at roughly 125 -- close to the reference without going dull.
+    Grade->Settings.AutoExposureBias=-.45f;Grade->Settings.VignetteIntensity=0.f;
+    Grade->Settings.BloomIntensity=.30f;Grade->Settings.BloomThreshold=1.55f;
     // Turf under floodlights is a saturated green, and the measured capture was reading closer to
-    // grey-green than grass. Saturation and a slightly cooler shadow toe restore the broadcast look.
-    Grade->Settings.ColorSaturation=FVector4(1.02,1.02,1.02,1);
-    Grade->Settings.ColorContrast=FVector4(1.02,1.02,1.02,1);
+    // grey-green than grass. Held near neutral rather than pushed: the reference green is a warm
+    // yellow-green (R/G 0.87, B/G 0.61), and over-saturating turns the outfield neon.
+    Grade->Settings.ColorSaturation=FVector4(1.03,1.03,1.02,1);
+    Grade->Settings.ColorContrast=FVector4(1.07,1.07,1.08,1);
     Grade->Settings.ColorGamma=FVector4(1,1,1,1);
     for(int I=0;I<Floods.Num();++I)
     {
@@ -321,9 +333,13 @@ void AC26Stadium::BuildVenue()
     auto* SeatsA=Batch(TEXT("SeatsPrimary"),SeatMesh,Colour(FLinearColor(.035,.12,.19),0,.80f));
     auto* SeatsB=Batch(TEXT("SeatsAccent"),SeatMesh,Colour(FLinearColor(.25,.27,.26),0,.80f));
     auto* Rope=Batch(TEXT("BoundaryRope"),Cylinder,Colour(FLinearColor(.5000,.5200,.5100),0,.68f));
-    LED=Colour(FLinearColor(.013,.17,.19),.42f,.55f);
+    // Boundary LED. On a real broadcast these are the brightest thing at ground level and the
+    // sponsor colour is what frames every shot of the field. The old values were so dark
+    // (.013 red) that the boards read as a gap between the turf and the stands rather than as
+    // an advertising ribbon.
+    LED=Colour(FLinearColor(.055,.470,.560),1.30f,.40f);
     auto* Boards=Batch(TEXT("BoundaryLED"),Cube,LED);
-    auto* BoardsAlt=Batch(TEXT("BoundaryLEDAlt"),Cube,Colour(FLinearColor(.0180,.0300,.0700),.55f,.30f));
+    auto* BoardsAlt=Batch(TEXT("BoundaryLEDAlt"),Cube,Colour(FLinearColor(.520,.075,.090),1.15f,.32f));
     LampMaterial=Tinted(Mat(TEXT("M_Light")),FLinearColor(1,.93,.79),4.8f);
     auto* Lamps=Batch(TEXT("FloodlightArrays"),Cube,LampMaterial);
     auto* Columns=Batch(TEXT("StadiumColumns"),Cylinder,Steel);
@@ -488,13 +504,20 @@ void AC26Stadium::BuildVenue()
     const float Pitch2=Density>=3?108.f:Density==2?142.f:Density==1?165.f:220.f;
     const int RowStep=Density>=2?1:2;
     FRandomStream Random(2626);
-    const FLinearColor Shirts[4]={FLinearColor(.025,.11,.19),FLinearColor(.31,.045,.028),FLinearColor(.42,.38,.28),FLinearColor(.065,.12,.095)};
+    // A crowd is the most colourful thing in a cricket ground, and at broadcast distance it is
+    // what tells a viewer the stands are full. The previous four tones were all near-black linear
+    // values (.025 red, .045 green), so 43,000 spectators rendered as a single dark mass and the
+    // whole bowl read as empty concrete. Lifted and spread across the wheel, so the tiers carry
+    // real colour and the eye reads faces rather than a wall.
+    const FLinearColor Shirts[6]={
+        FLinearColor(.085,.235,.470),FLinearColor(.560,.130,.095),FLinearColor(.520,.500,.440),
+        FLinearColor(.105,.320,.175),FLinearColor(.450,.290,.055),FLinearColor(.300,.170,.420)};
     auto* CrowdBase=LoadObject<UMaterialInterface>(nullptr,TEXT("/Game/Cricket26/Environment/Materials/M_Eclipse_Crowd.M_Eclipse_Crowd"));
     TArray<UHierarchicalInstancedStaticMeshComponent*> Bodies;
-    for(int G=0;G<4;++G)
+    for(int G=0;G<6;++G)
     {
         auto* M=Tinted(CrowdBase?CrowdBase:Surface,Shirts[G],0,.95f);CrowdMaterials.Add(M);
-        M->SetVectorParameterValue(TEXT("Accent"),Shirts[(G+1)%4]);
+        M->SetVectorParameterValue(TEXT("Accent"),Shirts[(G+1)%6]);
         Bodies.Add(Batch(*FString::Printf(TEXT("CrowdGroup%d"),G),Person,M));
     }
     auto PopulateTier=[&](float RX,float RY,float BaseZ,int Rows,float Depth,float Rise)
@@ -515,7 +538,7 @@ void AC26Stadium::BuildVenue()
                 const FVector Seat=Oval(RadX+Depth*.5f,RadY+Depth*.5f,A,Z);
                 if(Row%2==0)(int(A*24/(2*PI))%3?SeatsA:SeatsB)->AddInstance(FTransform(Face,Seat));
                 if(Random.FRand()<.065f)continue;
-                const int G=Random.RandRange(0,3);
+                const int G=Random.RandRange(0,5);
                 const float Size=Random.FRandRange(.85f,1.10f);
                 Bodies[G]->AddInstance(FTransform(FRotator(Random.FRandRange(-3.f,3.f),Face.Yaw+Random.FRandRange(-12.f,12.f),0),Seat,FVector(Size)));
             }
@@ -611,10 +634,11 @@ void AC26Stadium::BuildVenue()
 
     // ================= NIGHT SKY =================
     // Layered dome: warm city glow at the horizon fading to deep navy overhead, so the roof line
-    // and the pylons separate cleanly instead of dissolving into a flat black void.
+    // and the pylons separate cleanly instead of dissolving into a flat black void. Lifted from
+    // the original near-black ramp: the horizon band was reading as a hard cut against the roof.
     const FLinearColor SkyRamp[6]={
-        FLinearColor(.0130,.0225,.0400),FLinearColor(.0092,.0160,.0305),FLinearColor(.0058,.0102,.0212),
-        FLinearColor(.0034,.0060,.0140),FLinearColor(.0019,.0034,.0088),FLinearColor(.0011,.0020,.0056)};
+        FLinearColor(.0320,.0510,.0880),FLinearColor(.0225,.0365,.0660),FLinearColor(.0140,.0235,.0460),
+        FLinearColor(.0080,.0140,.0305),FLinearColor(.0042,.0078,.0180),FLinearColor(.0022,.0042,.0105)};
     for(int Layer=0;Layer<6;++Layer)
     {
         FC26Surface Dome;

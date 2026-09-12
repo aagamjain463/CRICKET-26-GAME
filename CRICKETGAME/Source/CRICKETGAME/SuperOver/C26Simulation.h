@@ -19,6 +19,7 @@ struct FC26Contact
     FVector ContactPoint=FVector::ZeroVector;
     FString Shot=TEXT("LEAVE");
     float Quality=0, Suitability=0, FaceAngle=0;
+    float TimingDeltaMs=0; // Exact millisecond timing offset relative to ideal contact
 };
 
 class FC26Simulation
@@ -29,6 +30,8 @@ public:
     FC26Tuning Tuning;
     float ContactTime=0;
     FVector ContactPosition;
+    float BounceTime=-1.f;
+    FVector BouncePosition=FVector::ZeroVector;
     bool CrossedContact=false, BounceEvent=false, StumpEvent=false, BoundaryEvent=false;
     TArray<FVector> BoundaryPolygon;
     FC26Simulation();
@@ -39,6 +42,7 @@ public:
     // One sequential integration shared by every candidate fielder, instead of N repeated predictions.
     void Forecast(TArray<FC26BallState>& Out,float Horizon=5.f,float Interval=.125f) const;
     FVector PredictLanding(float MaxSeconds=6.f) const;
+    bool GetBouncePrediction(FVector& OutPos, float& OutTime) const;
     FC26Contact Hit(const FC26ShotIntent& Intent,float TimingError,int Difficulty,FRandomStream& Random);
     bool CrossesRope(const FVector& From,const FVector& To) const;
 private:
@@ -57,7 +61,7 @@ class FC26AI
 public:
     FRandomStream Random;
     FC26AIHistory History;
-    void Reset(int Seed){Random.Initialize(Seed);History.Reset();}
+    void Reset(int Seed){Random.Initialize(Seed);History.Reset();}\
     FC26DeliveryPlan Bowl(const C26::Match& Rules,int Difficulty);
     FC26ShotIntent Bat(const FC26DeliveryPlan& VisibleDelivery,const C26::Match& Rules,int Difficulty);
     float TimingError(int Difficulty);
