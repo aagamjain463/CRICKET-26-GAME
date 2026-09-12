@@ -159,6 +159,7 @@ private:
     UPROPERTY() TObjectPtr<UAnimSequence> BattingBackFootDefenceClip;
     UPROPERTY() TObjectPtr<UAnimSequence> BattingHookClip;
     UPROPERTY() TObjectPtr<UAnimSequence> BattingUpperCutClip;
+    UPROPERTY() TObjectPtr<UAnimSequence> BattingLateCutClip;
     UPROPERTY() TObjectPtr<UAnimSequence> BattingLoftedDriveClip;
     UPROPERTY() TObjectPtr<UAnimSequence> BattingGlanceClip;
     UPROPERTY() TObjectPtr<UAnimSequence> BowlingOffSpinClip;

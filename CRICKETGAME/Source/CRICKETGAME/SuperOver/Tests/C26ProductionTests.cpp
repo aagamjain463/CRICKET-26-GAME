@@ -105,7 +105,8 @@ bool FC26AuthoredClipsTest::RunTest(const FString&)
         {TEXT("A_C26_BattingDrive"),true,false},{TEXT("A_C26_BattingPull"),true,false},
         {TEXT("A_C26_BattingCut"),true,false},{TEXT("A_C26_BattingSweep"),true,false},
         {TEXT("A_C26_BattingDefence"),true,false},{TEXT("A_C26_BattingBackFootDefence"),true,false},
-        {TEXT("A_C26_BattingUpperCut"),true,false},{TEXT("A_C26_BattingHook"),true,false},
+        {TEXT("A_C26_BattingUpperCut"),true,false},{TEXT("A_C26_BattingLateCut"),true,false},
+        {TEXT("A_C26_BattingHook"),true,false},
         {TEXT("A_C26_BattingLoftedDrive"),true,false},{TEXT("A_C26_BattingGlance"),true,false},
         {TEXT("A_C26_UmpireSignalWide"),false,true},{TEXT("A_C26_UmpireSignalSix"),false,true},
         {TEXT("A_C26_UmpireSignalOut"),false,true},{TEXT("A_C26_UmpireSignalFour"),false,true},
@@ -221,6 +222,10 @@ bool FC26AuthoredClipsTest::RunTest(const FString&)
                 // High off-side contact behind the body line, steered over the slips.
                 TestTrue(*FString::Printf(TEXT("%s: upper cut high and behind the line"),*Tag),
                          FVector::DotProduct(H-P,OffSide)>10.f&&H.Z>P.Z+85.f&&Front<20.f);
+            if(Shot==TEXT("BattingLateCut"))
+                // Behind the hip line (the square cut meets it +16 in front), steered fine.
+                TestTrue(*FString::Printf(TEXT("%s: late cut taken behind the line"),*Tag),
+                         FVector::DotProduct(H-P,OffSide)>45.f&&Front<10.f);
             if(Shot==TEXT("BattingHook"))
                 // Head-height contact is what makes a hook (the pull sits at chest
                 // height): gate it above the pull's +30 band.

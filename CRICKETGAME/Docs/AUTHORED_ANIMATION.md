@@ -135,7 +135,7 @@ per-frame ground pin) and refuses to emit anything that fails verification.
 
 ## Verification actually performed (offline, on the CORRECTED clips)
 
-138 checks across the 17-clip library (`python3 Tools/correct_authored_anim.py`), all PASS:
+147 checks across the 18-clip library (`python3 Tools/correct_authored_anim.py`), all PASS:
 
 - Every clip: chest faces the bowler at the stance AND the defining frame (the gate a
   whole-body yaw bug cannot hide from -- one existed; see below); stance ankles at
@@ -165,6 +165,9 @@ per-frame ground pin) and refuses to emit anything that fails verification.
 - BattingBackFootDefence: contact blocked **17.1 cm in front** of the hips (the
   forward defence presses 56 cm out), bat **37.0 cm above** the hips, absorb frame
   dead still.
+- BattingLateCut: contact **69.3 cm off side** and **-4.2 cm in front** -- BEHIND the
+  hip line (the square cut meets the ball +16 in front) -- with the slice finishing
+  **73.7 cm off side** toward third man.
 - BattingUpperCut: contact **66.9 cm off side** at **104.1 cm above** the hips and
   **-1.9 cm in front** -- behind the body line -- with the follow-through steering
   **67.3 cm off side and 131.0 cm above** (over the slips).
@@ -177,7 +180,7 @@ per-frame ground pin) and refuses to emit anything that fails verification.
   back across to the right, and finish **+132.2 / -133.0 cm** out at **42 cm above**
   the hips -- the boundary sweep, waist height.
 
-The same facts are re-asserted IN ENGINE by `Cricket26.Anim.AuthoredClips` (all 17 clips)
+The same facts are re-asserted IN ENGINE by `Cricket26.Anim.AuthoredClips` (all 18 clips)
 (`Tests/C26ProductionTests.cpp`) for all 8 clips, sampling the imported
 AnimSequences through `GetBoneTransform` after the FBX importer's own conversion.
 
@@ -205,8 +208,9 @@ bit-exactly, and chest yaw gates were added to every clip's checks.
 2. **Library gaps.** Batting covers drive, lofted drive, pull, hook, square cut,
    upper cut, sweep, glance, forward defence and back-foot defence; bowling covers
    pace, off-spin and leg-spin; the four umpire signals (wide / six / out / four)
-   are authored. The late cut still shares the square cut's clip (the visual
-   difference is a matter of degrees). Deliberately NOT clip-authored:
+   are authored, plus the late cut. The clip table is now 1:1 with
+   C26Controls::ShotFamily(): every stroke the scorecard can name has either its
+   own clip or a deliberate stand-in. Deliberately NOT clip-authored:
    fielder pickup/catch/dive/throw and the keeper's take, because those actions
    solve toward the LIVE ball position and a fixed clip would aim at nothing --
    they stay procedural by design. Not yet authored: the upper cut / late cut

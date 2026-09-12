@@ -13,6 +13,16 @@
 #include "UObject/ConstructorHelpers.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
+#include "Stats/Stats.h"
+// Perf instrumentation for the mobile budget: `stat Cricket26` on device shows
+// the per-frame cost of the pose solve, the authored-clip sampling inside it,
+// and the procedural garment rebuild. All three were the systems this overhaul
+// touched, so they are the three that have to be measurable before anyone
+// optimises them.
+DECLARE_STATS_GROUP(TEXT("Cricket26 Athletes"), STATGROUP_C26Athlete, STATCAT_Advanced);
+DECLARE_CYCLE_STAT(TEXT("Pose solve (Animate)"), STAT_C26_Animate, STATGROUP_C26Athlete);
+DECLARE_CYCLE_STAT(TEXT("Authored clip sample"), STAT_C26_AuthoredClip, STATGROUP_C26Athlete);
+DECLARE_CYCLE_STAT(TEXT("Garment rebuild (Uniform)"), STAT_C26_Uniform, STATGROUP_C26Athlete);
 
 namespace
 {
@@ -1044,6 +1054,7 @@ void AC26Athlete::PlaceKit(const FVector& Grip,const FVector& Dir,bool Batting,b
 }
 void AC26Athlete::UpdateUniform()
 {
+    SCOPE_CYCLE_COUNTER(STAT_C26_Uniform);
     if(bHeroVisual && HeroMesh && HeroMesh->GetStaticMesh())
     {
         Uniform->SetVisibility(false);
@@ -1344,6 +1355,7 @@ void AC26Athlete::LoadShotLibrary()
     Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingDefence.A_C26_BattingDefence"),BattingDefenceClip);
     Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingBackFootDefence.A_C26_BattingBackFootDefence"),BattingBackFootDefenceClip);
     Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingUpperCut.A_C26_BattingUpperCut"),BattingUpperCutClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingLateCut.A_C26_BattingLateCut"),BattingLateCutClip);
     Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingHook.A_C26_BattingHook"),BattingHookClip);
     Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingLoftedDrive.A_C26_BattingLoftedDrive"),BattingLoftedDriveClip);
     Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingGlance.A_C26_BattingGlance"),BattingGlanceClip);
@@ -1386,6 +1398,8 @@ UAnimSequence* AC26Athlete::SelectBattingClip()
         return BallHeight<45.f&&StrideIntent>=0.f  // anything higher is flicked
             ?(BattingSweepClip?BattingSweepClip:BattingClip)
             :(BattingPullClip?BattingPullClip:BattingClip);
+    if(ShotAngle>78.f)  // taken behind the hip line, steered fine
+        return BattingLateCutClip?BattingLateCutClip:(BattingCutClip?BattingCutClip:BattingClip);
     if(ShotAngle>=40.f&&StrideIntent<0.f)
         return BattingCutClip?BattingCutClip:BattingClip;
     return BattingClip;
@@ -1429,6 +1443,7 @@ TSet<int32>& AC26Athlete::DrivenFor(UAnimSequence* Clip)
 
 void AC26Athlete::ApplyAuthoredClip(UAnimSequence* Clip,const TSet<int32>& Driven,float Time,float Weight)
 {
+    SCOPE_CYCLE_COUNTER(STAT_C26_AuthoredClip);
     if(!Clip||Weight<=0.f||Driven.IsEmpty()||!Clip->GetSkeleton()||!Mesh||!Mesh->GetSkinnedAsset())return;
     const auto& Source=Clip->GetSkeleton()->GetReferenceSkeleton();
     const auto& Target=Mesh->GetSkinnedAsset()->GetRefSkeleton();
@@ -1478,6 +1493,7 @@ void AC26Athlete::ApplyAuthoredClip(UAnimSequence* Clip,const TSet<int32>& Drive
 }
 void AC26Athlete::Animate(float Dt)
 {
+    SCOPE_CYCLE_COUNTER(STAT_C26_Animate);
     if(bHeroVisual && HeroMesh && HeroMesh->GetStaticMesh())
     {
         HeroMesh->SetVisibility(true);

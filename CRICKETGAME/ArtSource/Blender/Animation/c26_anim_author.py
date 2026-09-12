@@ -608,6 +608,34 @@ def batting_defence_keys():
     return keys
 
 
+def batting_latecut_keys():
+    """Right-handed LATE CUT: the square cut taken even later -- the ball is
+    allowed right past the body and sliced from BEHIND the hip line, open-faced,
+    steering it fine toward third man. The square cut meets the ball beside the
+    hip (+16 cm front); this one meets it behind the line (-5)."""
+    keys = []
+    K = _batting_key_builder()
+    keys.append(_stance_key(K))
+    # Rock back; the hands wait -- late means late.
+    keys.append(K(7, 40, -2, -22, -12, -30, (0.14, 0.02, 1.10), (0.10, 0.20, 0.09),
+                  (-0.14, 0.02, 0.09), -0.12, -0.03))
+    # Compact backlift over the off shoulder.
+    keys.append(K(13, 28, 4, -26, -10, -26, (0.20, -0.06, 1.28), (0.11, 0.14, 0.09),
+                  (-0.15, -0.02, 0.09), -0.13, -0.05))
+    # The chest is already open toward point; the hands barely travel forward.
+    keys.append(K(18, 20, -6, -14, -8, -18, (0.22, -0.02, 1.16), (0.12, 0.16, 0.09),
+                  (-0.14, 0.00, 0.09), -0.12, -0.04))
+    # CONTACT: well off side and BEHIND the body line, open face.
+    keys.append(K(23, 12, -4, -10, -2, -8, (0.32, -0.06, 1.08), (0.13, 0.18, 0.09),
+                  (-0.14, 0.00, 0.09), -0.12, -0.03))
+    # FOLLOW: the slice continues out and behind, toward third man.
+    keys.append(K(29, 8, -6, -14, 2, -6, (0.38, -0.14, 0.98), (0.13, 0.20, 0.09),
+                  (-0.13, 0.04, 0.09), -0.115, -0.02))
+    keys.append(K(36, 26, -8, 4, -4, -10, (0.12, 0.12, 1.00), (0.12, 0.22, 0.09),
+                  (-0.14, 0.05, 0.09), -0.118, 0.0))
+    return keys
+
+
 def batting_hook_keys():
     """Right-handed HOOK: the pull's tall sibling, for the ball that gets up to
     head height. Weight hard on the back foot, body leaning slightly AWAY from
@@ -1032,6 +1060,7 @@ def main():
         ('A_C26_BattingDefence', batting_defence_keys(), 1, 36),
         ('A_C26_BattingBackFootDefence', batting_backfoot_defence_keys(), 1, 36),
         ('A_C26_BattingUpperCut', batting_uppercut_keys(), 1, 36),
+        ('A_C26_BattingLateCut', batting_latecut_keys(), 1, 36),
         ('A_C26_BattingHook', batting_hook_keys(), 1, 36),
         ('A_C26_BattingLoftedDrive', batting_lofted_drive_keys(), 1, 36),
         ('A_C26_BattingGlance', batting_glance_keys(), 1, 36),

@@ -436,6 +436,7 @@ def main():
         'Solved/A_C26_BattingDefence.fbx', 'Solved/A_C26_BattingHook.fbx',
         'Solved/A_C26_BattingLoftedDrive.fbx', 'Solved/A_C26_BattingGlance.fbx',
         'Solved/A_C26_BattingBackFootDefence.fbx', 'Solved/A_C26_BattingUpperCut.fbx',
+        'Solved/A_C26_BattingLateCut.fbx',
         'Solved/A_C26_UmpireSignalWide.fbx', 'Solved/A_C26_UmpireSignalSix.fbx',
         'Solved/A_C26_UmpireSignalOut.fbx', 'Solved/A_C26_UmpireSignalFour.fbx',
         'Solved/A_C26_BowlingPace.fbx',
@@ -622,6 +623,18 @@ def main():
             checks.append(('follow: steered up and over the slips', 29,
                            lambda m, w, t: (hands_offside(m) > 30.0 and hands_height(m) - hips_height(m) > 80.0,
                                             '%.1f cm off side, %.1f cm above hips' % (hands_offside(m), hands_height(m) - hips_height(m)))))
+        if 'BattingLateCut' in f:
+            # Later than the square cut: the ball is taken BEHIND the hip line
+            # (the square cut meets it +16 cm in front) and steered fine.
+            checks.append(('contact: taken behind the hip line', CONTACT_FRAME,
+                           lambda m, w, t: (hands_forward(m) < 10.0,
+                                            'hands %.1f cm in front of hips' % hands_forward(m))))
+            checks.append(('contact: well wide on the off side', CONTACT_FRAME,
+                           lambda m, w, t: (hands_offside(m) > 45.0,
+                                            'hands %.1f cm off side of hips' % hands_offside(m))))
+            checks.append(('follow: steered fine toward third man', 29,
+                           lambda m, w, t: (hands_offside(m) > 60.0,
+                                            'hands %.1f cm off side of hips' % hands_offside(m))))
         if 'BattingGlance' in f:
             # The quietest shot: low contact off the hip, and a deflection rather
             # than a swing -- the hands cross to fine leg and stay low.
