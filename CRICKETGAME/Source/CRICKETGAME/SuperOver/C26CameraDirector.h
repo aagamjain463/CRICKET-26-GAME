@@ -69,7 +69,7 @@ public:
     void SetFieldingTarget(const FVector& Position,bool HasTarget,bool RunnersActive=false);
     void MarkContact(float Quality,bool Aerial,const FVector& Where);
     void MarkRelease(){ReleasePending=true;}
-    void MarkOutcome(FName Event,const FVector& Focus);
+    void MarkOutcome(FName Event,const FVector& Focus,FName Detail=NAME_None);
     void Record(float Dt,const FVector& Ball,const TArray<TObjectPtr<AC26Athlete>>& Actors);
     bool BeginReplay(const TArray<TObjectPtr<AC26Athlete>>& Actors,const FVector& Ball);
     bool PlayReplay(float Dt,FVector& Ball,const TArray<TObjectPtr<AC26Athlete>>& Actors);
@@ -105,6 +105,7 @@ private:
     float ReleaseStamp=-1.f;
     FVector SmoothedAim=FVector::ZeroVector,Fielder=FVector::ZeroVector,EventFocus=FVector::ZeroVector,ContactPoint=FVector::ZeroVector;
     FName EventName;
+    FName EventDetail;
     EC26Phase LastPhase=EC26Phase::Result;
     FC26ReplayFrame CaptureState(const FVector& Ball,const TArray<TObjectPtr<AC26Athlete>>& Actors) const;
     void ApplyFrame(const FC26ReplayFrame& A,const FC26ReplayFrame& B,float T,const TArray<TObjectPtr<AC26Athlete>>& Actors);

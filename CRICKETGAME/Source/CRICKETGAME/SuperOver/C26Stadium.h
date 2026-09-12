@@ -66,6 +66,8 @@ public:
     static float ExposureBiasForProfile(EC26EnvironmentProfile Profile);
     static FLinearColor PitchTintForCondition(EC26PitchCondition Condition);
     void UpdateAtmosphere(float Time);
+    /** Update stadium Jumbotron displays with live match context (score bug, event wipes). */
+    void UpdateJumbotron(const FString& Line1, const FString& Line2, const FLinearColor& Color = FLinearColor(0.81f, 0.93f, 0.90f));
     UPROPERTY(VisibleAnywhere) TObjectPtr<UProceduralMeshComponent> Bowl;
     UPROPERTY(VisibleAnywhere) TObjectPtr<UProceduralMeshComponent> Architecture;
     UPROPERTY(VisibleAnywhere) TObjectPtr<UProceduralMeshComponent> Sky;
@@ -84,6 +86,7 @@ private:
     UPROPERTY() TArray<TObjectPtr<UHierarchicalInstancedStaticMeshComponent>> Batches;
     UPROPERTY() TArray<TObjectPtr<UMaterialInstanceDynamic>> CrowdMaterials;
     UPROPERTY() TArray<TObjectPtr<UTextRenderComponent>> Signs;
+    UPROPERTY() TArray<TObjectPtr<UTextRenderComponent>> JumbotronSigns;
     UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> LED;
     UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> LampMaterial;
     UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> ShaftMaterial;

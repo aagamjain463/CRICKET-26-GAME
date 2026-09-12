@@ -495,6 +495,8 @@ void AC26Stadium::BuildVenue()
     LED=Colour(FLinearColor(.055,.470,.560),1.30f,.40f);
     auto* Boards=Batch(TEXT("BoundaryLED"),Cube,LED);
     auto* BoardsAlt=Batch(TEXT("BoundaryLEDAlt"),Cube,Colour(FLinearColor(.520,.075,.090),1.15f,.32f));
+    auto* BoardsGold=Batch(TEXT("BoundaryLEDGold"),Cube,Colour(FLinearColor(.680,.520,.120),1.25f,.35f));
+    auto* Pegs=Batch(TEXT("BoundaryPegs"),Cylinder,Steel);
     LampMaterial=Tinted(Mat(TEXT("M_Light")),FLinearColor(1,.93,.79),4.8f);
     auto* Lamps=Batch(TEXT("FloodlightArrays"),Cube,LampMaterial);
     auto* Columns=Batch(TEXT("StadiumColumns"),Cylinder,Steel);
@@ -534,12 +536,14 @@ void AC26Stadium::BuildVenue()
     {
         const FVector A=C26Field::RopePoint(I*2*PI/128),B=C26Field::RopePoint((I+1)*2*PI/128);
         Beam(Rope,A,B,9);
+        if(I%4==0) Add(Pegs, A+FVector(0,0,5), FVector(5,5,16), FRotator(0,0,0));
         const float Ang=2*PI*I/128;
         const bool Sight=FMath::Abs(FMath::Cos(Ang))<.20f;
         if(!Sight)
         {
             const FVector P=Oval(BoardRX,BoardRY,Ang,48);
-            Add(I%8<3?BoardsAlt:Boards,P,FVector(330,18,86),FRotator(0,FMath::RadiansToDegrees(Ang)+90,0));
+            UHierarchicalInstancedStaticMeshComponent* ChosenBoard = (I%12<4)?Boards:((I%12<8)?BoardsAlt:BoardsGold);
+            Add(ChosenBoard,P,FVector(330,18,86),FRotator(0,FMath::RadiansToDegrees(Ang)+90,0));
         }
         if(I%4==0)
         {
@@ -561,6 +565,16 @@ void AC26Stadium::BuildVenue()
         Add(Rails,FVector(0,End*7810,28),FVector(1500,64,56));
         for(int Post:{-1,1})Beam(Columns,FVector(Post*710,End*7810,0),FVector(Post*710,End*7810,710),14);
     }
+
+    auto MakeSign=[&](const FString& Body,const FVector& At,const FRotator& Facing,float Size,FColor Glyph) -> UTextRenderComponent*
+    {
+        auto* Text=NewObject<UTextRenderComponent>(this,NAME_None,RF_Transient);Text->SetupAttachment(RootComponent);
+        Text->RegisterComponent();AddInstanceComponent(Text);Signs.Add(Text);
+        Text->SetText(FText::FromString(Body));Text->SetWorldSize(Size);Text->SetHorizontalAlignment(EHTA_Center);
+        Text->SetVerticalAlignment(EVRTA_TextCenter);Text->SetTextRenderColor(Glyph);
+        Text->SetRelativeLocation(At);Text->SetRelativeRotation(Facing);Text->SetCastShadow(false);
+        return Text;
+    };
 
     // ================= LOWER BOWL =================
     FC26Surface Con,Stl,Fac,Glass;
@@ -588,7 +602,7 @@ void AC26Stadium::BuildVenue()
         Con.Sweep(UpperRX+R,UpperRY+R,Z,UpperRX+R+UpperDepth,UpperRY+R+UpperDepth,Z,true);
         Stl.Sweep(UpperRX+R+UpperDepth,UpperRY+R+UpperDepth,Z,UpperRX+R+UpperDepth,UpperRY+R+UpperDepth,Z+UpperRise,false);
     }
-    const float UpperBackRX=UpperRX+UpperRows*UpperDepth,UpperBackRY=UpperRY+UpperRows*UpperDepth;
+    const float UpperBackRX=UpperRX+UpperRows*UpperDepth,UpperBackRY=UpperRows*UpperDepth;
     const float UpperBackZ=UpperZ+UpperRows*UpperRise;
     Fac.Sweep(UpperBackRX,UpperBackRY,UpperBackZ,UpperBackRX+260,UpperBackRY+260,UpperBackZ+520,false);
 
@@ -627,9 +641,12 @@ void AC26Stadium::BuildVenue()
         Add(Rails,Oval(LowerBackRX+50,LowerBackRY+50,A,LowerBackZ+205),FVector(34,34,290));
     }
 
-    // Aisles share the same 24-bay angular grid as the openings and seat exclusions.
+    // Aisles and Vomitories: Real architectural portals with concourse depth, safety handrails and warm interior lighting.
     auto* Aisles=Batch(TEXT("ConcreteAisleSteps"),Cube,Colour(FLinearColor(.24,.235,.208),0,.95f));
-    auto* Openings=Batch(TEXT("VomitoryRecesses"),Cube,Screen);
+    auto* ConcourseGlow=Batch(TEXT("ConcourseInteriorGlow"),Cube,Colour(FLinearColor(.38,.28,.16),0.95f,.75f));
+    auto* PortalWalls=Batch(TEXT("VomitoryPortalWalls"),Cube,Concrete);
+    auto* PortalTrim=Batch(TEXT("VomitoryLintelTrim"),Cube,Steel);
+
     for(int Tier=0;Tier<2;++Tier)for(int Bay=0;Bay<24;++Bay)
     {
         const float A=2*PI*(Bay+.0625f)/24;
@@ -651,9 +668,19 @@ void AC26Stadium::BuildVenue()
         Beam(Rails,Front+R.RotateVector(FVector(0,80,0)),Back+R.RotateVector(FVector(0,80,0)),5);
         if(!Tier)
         {
-            Add(Openings,Oval(RX+9*Depth,RY+9*Depth,A,Z0+6*Rise),FVector(35,235,245),R);
+            const FVector PortalCenter = Oval(RX+9*Depth,RY+9*Depth,A,Z0+6*Rise);
+            // Warm illuminated concourse back wall (eliminates dark black void)
+            Add(ConcourseGlow, PortalCenter + R.RotateVector(FVector(25, 0, 0)), FVector(18, 230, 240), R);
+            // Side concrete walls
+            Add(PortalWalls, PortalCenter + R.RotateVector(FVector(0, -118, 0)), FVector(360, 20, 245), R);
+            Add(PortalWalls, PortalCenter + R.RotateVector(FVector(0, 118, 0)), FVector(360, 20, 245), R);
+            // Overhead lintel
+            Add(PortalTrim, PortalCenter + R.RotateVector(FVector(-80, 0, 125)), FVector(160, 256, 18), R);
+            // Railings & stairs
             for(int Side:{-1,1})Add(Rails,Oval(RX+7*Depth,RY+7*Depth,A,Z0+6*Rise)+R.RotateVector(FVector(0,Side*118,0)),FVector(400,18,245),R);
             Add(Aisles,Oval(RX+7*Depth,RY+7*Depth,A,Z0+9*Rise+18),FVector(460,256,35),R);
+            // Luminous Gate Sign above tunnel
+            MakeSign(FString::Printf(TEXT("GATE %02d"), Bay + 1), PortalCenter + R.RotateVector(FVector(-85, 0, 150)), FRotator(0, FMath::RadiansToDegrees(A) + 180, 0), 28, FColor(240, 230, 200));
         }
     }
 
@@ -663,10 +690,7 @@ void AC26Stadium::BuildVenue()
     const int RowStep=Density>=2?1:2;
     FRandomStream Random(2626);
     // A crowd is the most colourful thing in a cricket ground, and at broadcast distance it is
-    // what tells a viewer the stands are full. The previous four tones were all near-black linear
-    // values (.025 red, .045 green), so 43,000 spectators rendered as a single dark mass and the
-    // whole bowl read as empty concrete. Lifted and spread across the wheel, so the tiers carry
-    // real colour and the eye reads faces rather than a wall.
+    // what tells a viewer the stands are full.
     const FLinearColor Shirts[6]={
         FLinearColor(.085,.235,.470),FLinearColor(.560,.130,.095),FLinearColor(.520,.500,.440),
         FLinearColor(.105,.320,.175),FLinearColor(.450,.290,.055),FLinearColor(.300,.170,.420)};
@@ -688,17 +712,34 @@ void AC26Stadium::BuildVenue()
             for(int J=0;J<Count;++J)
             {
                 const float A=2*PI*(J+Random.FRandRange(-.17f,.17f))/Count;
-                const float Bay=FMath::Frac(A/(2*PI)*24);
-                if(Bay<.135f||Bay>.985f)continue;
+                const float BayFrac=FMath::Frac(A/(2*PI)*24);
+                if(BayFrac<.135f||BayFrac>.985f)continue;
+                const int32 BayIdx=FMath::FloorToInt(FMath::Frac(A/(2*PI))*24)%24;
                 // Pavilion replaces a small portion of the lower seating at square leg.
                 if(RX==WallRX&&FMath::Abs(FMath::UnwindRadians(A))<.14f&&Row>6)continue;
                 const FRotator Face(0,FMath::RadiansToDegrees(A)+90.f,0);
                 const FVector Seat=Oval(RadX+Depth*.5f,RadY+Depth*.5f,A,Z);
                 if(Row%2==0)(int(A*24/(2*PI))%3?SeatsA:SeatsB)->AddInstance(FTransform(Face,Seat));
                 if(Random.FRand()<.065f)continue;
-                const int G=Random.RandRange(0,5);
-                const float Size=Random.FRandRange(.85f,1.10f);
-                Bodies[G]->AddInstance(FTransform(FRotator(Random.FRandRange(-3.f,3.f),Face.Yaw+Random.FRandRange(-12.f,12.f),0),Seat,FVector(Size)));
+                // Clustered demographic selection:
+                int G = 0;
+                if (BayIdx == 0 || BayIdx == 1 || BayIdx == 2 || BayIdx == 22 || BayIdx == 23)
+                {
+                    // Home supporter bay: heavily weighted to Championship Navy & Gold
+                    G = (Random.FRand() < 0.65f) ? 0 : (Random.FRand() < 0.5f ? 2 : 4);
+                }
+                else if (BayIdx == 10 || BayIdx == 11 || BayIdx == 12 || BayIdx == 13 || BayIdx == 14)
+                {
+                    // Away supporter bay: heavily weighted to Cricket Crimson & White
+                    G = (Random.FRand() < 0.60f) ? 1 : (Random.FRand() < 0.5f ? 2 : 5);
+                }
+                else
+                {
+                    // Neutral / family bays: organic general mix
+                    G = Random.RandRange(0, 5);
+                }
+                const float Size=Random.FRandRange(.88f,1.08f);
+                Bodies[G]->AddInstance(FTransform(FRotator(Random.FRandRange(-2.5f,2.5f),Face.Yaw+Random.FRandRange(-10.f,10.f),0),Seat,FVector(Size)));
             }
         }
     };
@@ -724,14 +765,6 @@ void AC26Stadium::BuildVenue()
     }
 
     // ================= SIGNAGE AND SCREENS =================
-    auto MakeSign=[&](const FString& Body,const FVector& At,const FRotator& Facing,float Size,FColor Glyph)
-    {
-        auto* Text=NewObject<UTextRenderComponent>(this,NAME_None,RF_Transient);Text->SetupAttachment(RootComponent);
-        Text->RegisterComponent();AddInstanceComponent(Text);Signs.Add(Text);
-        Text->SetText(FText::FromString(Body));Text->SetWorldSize(Size);Text->SetHorizontalAlignment(EHTA_Center);
-        Text->SetVerticalAlignment(EVRTA_TextCenter);Text->SetTextRenderColor(Glyph);
-        Text->SetRelativeLocation(At);Text->SetRelativeRotation(Facing);Text->SetCastShadow(false);
-    };
     // Square-leg pavilion: recessed glazing, projecting balconies and a slatted media crown.
     auto* PavilionStone=Batch(TEXT("PavilionStone"),Cube,Colour(FLinearColor(.30,.285,.245),0,.88f));
     auto* PavilionGlass=Batch(TEXT("PavilionGlass"),Cube,Glazing);
@@ -752,7 +785,7 @@ void AC26Stadium::BuildVenue()
     MakeSign(TEXT("ECLIPSE PAVILION"),FVector(7800,0,1700),FRotator(0,180,0),110,FColor(231,222,195));
 
     // Player access at the pavilion end, kept outside the sight-screen corridor.
-    Add(Openings,FVector(1270,-7970,150),FVector(310,360,300));
+    Add(PortalWalls,FVector(1270,-7970,150),FVector(310,360,300));
     Add(PavilionStone,FVector(1270,-7780,315),FVector(400,60,55));
     for(int Side:{-1,1})Add(PavilionStone,FVector(1270+Side*190,-7780,145),FVector(45,60,290));
     MakeSign(TEXT("PLAYERS"),FVector(1270,-7740,310),FRotator(0,90,0),49,FColor(214,226,221));
@@ -832,14 +865,15 @@ void AC26Stadium::BuildVenue()
             FRotator(0,FMath::RadiansToDegrees(A)+180,0),76.f,FColor(196,210,207));
     }
     // A live video wall is one of the few things in a night ground that is brighter than the field.
-    // At a glow of .30 over a near-black tint these read as holes cut out of the stand.
+    JumbotronSigns.Reset();
     auto* Panels=Batch(TEXT("BroadcastScreens"),Cube,Colour(FLinearColor(.026,.070,.092),2.10f,.25f));
     for(int I:{-1,1})
     {
         const FVector At(I*1780.f,I*(UpperRY+750.f),UpperZ+1470.f);
         Add(Panels,At,FVector(1920,60,850));
         Add(Rails,At+FVector(0,0,-454),FVector(2020,90,70));
-        MakeSign(TEXT("CRICKET 26\nECLIPSE OVAL"),At+FVector(0,I*-38.f,0),FRotator(0,I>0?-90.f:90.f,0),155.f,FColor(206,236,229));
+        auto* ScreenSign = MakeSign(TEXT("CRICKET 26\nECLIPSE OVAL"),At+FVector(0,I*-38.f,0),FRotator(0,I>0?-90.f:90.f,0),155.f,FColor(206,236,229));
+        if (ScreenSign) JumbotronSigns.Add(ScreenSign);
     }
 
     // ================= NIGHT SKY =================
@@ -919,3 +953,18 @@ void AC26Stadium::UpdateAtmosphere(float Time)
     for(auto& M:CrowdMaterials)if(M)M->SetScalarParameterValue(TEXT("Excitement"),CrowdReaction);
     // Lamp exposure and crowd albedo remain stable during score events.
 }
+
+void AC26Stadium::UpdateJumbotron(const FString& Line1, const FString& Line2, const FLinearColor& Color)
+{
+    const FString Combined = Line2.IsEmpty() ? Line1 : FString::Printf(TEXT("%s\n%s"), *Line1, *Line2);
+    const FColor RenderColor = Color.ToFColor(true);
+    for (auto& Sign : JumbotronSigns)
+    {
+        if (Sign)
+        {
+            Sign->SetText(FText::FromString(Combined));
+            Sign->SetTextRenderColor(RenderColor);
+        }
+    }
+}
+

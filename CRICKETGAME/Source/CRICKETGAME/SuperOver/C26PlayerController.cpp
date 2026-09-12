@@ -70,7 +70,8 @@ void AC26PlayerController::BeginGesture(int Index,FVector2D P)
     if(M->Paused||M->SettingsOpen||M->ControlsOpen){G.Consumed=true;return;}
     if(M->Phase==EC26Phase::Interval){G.Consumed=true;M->Skip();return;}
 
-    if(M->bFieldPlanningMode)
+    // Fielding controls belong to the bowling side only.
+    if(M->bFieldPlanningMode && !M->PlayerBatting())
     {
         const FVector2D DesignPos = H->ToDesign(P);
         int32 ClickedFielder = -1;
@@ -126,7 +127,8 @@ void AC26PlayerController::BeginGesture(int Index,FVector2D P)
         }
     }
 
-    if(M->Phase == EC26Phase::InPlay && M->ActiveFielder >= 0)
+    // Manual fielding stick belongs to the bowling side only.
+    if(M->Phase == EC26Phase::InPlay && M->ActiveFielder >= 0 && !M->PlayerBatting())
     {
         const FVector2D Delta = (P - G.Start);
         if(Delta.Size() > 15.f)
@@ -199,7 +201,8 @@ void AC26PlayerController::MoveGesture(int Index,FVector2D P)
     auto& G=Gestures[Index];if(!G.Active||G.Consumed)return;G.Last=P;
     if(M->Paused||M->SettingsOpen||M->ControlsOpen)return;
 
-    if(M->bFieldPlanningMode)
+    // Fielding controls belong to the bowling side only.
+    if(M->bFieldPlanningMode && !M->PlayerBatting())
     {
         if(G.FieldDrag && M->SelectedFielderIdx >= 2)
         {
@@ -277,7 +280,7 @@ void AC26PlayerController::EndGesture(int Index,FVector2D P)
     if(BattingPointer==Index)BattingPointer=-1;
     if(G.FieldDrag)
     {
-        if(M->bFieldPlanningMode && M->SelectedFielderIdx >= 2)
+        if(M->bFieldPlanningMode && !M->PlayerBatting() && M->SelectedFielderIdx >= 2)
         {
             FVector Origin, Dir;
             if(DeprojectScreenPositionToWorld(P.X, P.Y, Origin, Dir) && FMath::Abs(Dir.Z) > 0.001f)
@@ -354,8 +357,13 @@ void AC26PlayerController::Action()
     if(M->Phase==EC26Phase::Menu||M->Phase==EC26Phase::Result)M->StartMatch();
     else if(M->Phase==EC26Phase::InPlay)
     {
-        if(M->bCatchOpportunityActive) { M->AttemptManualCatch(); return; }
-        if(M->bDivePromptActive) { M->TriggerManualDive(); return; }
+        // Manual fielding (catch / dive / throw) belongs to the bowling side only.
+        if(!M->PlayerBatting())
+        {
+            if(M->bCatchOpportunityActive) { M->AttemptManualCatch(); return; }
+            if(M->bDivePromptActive) { M->TriggerManualDive(); return; }
+            if(M->bFieldingDecisionPaused) { M->ExecuteFielderThrow(); return; }
+        }
     }
     else if(M->Phase==EC26Phase::Ready)M->StartDelivery();
     else if(M->Phase==EC26Phase::RunUp&&!M->PlayerBatting())M->BowlRelease();
@@ -397,19 +405,29 @@ void AC26PlayerController::C26Controls()
 
 void AC26PlayerController::DiveKey()
 {
-    if(auto* M=Cast<AC26MatchGameMode>(GetWorld()->GetAuthGameMode())) M->TriggerManualDive();
+    if(auto* M=Cast<AC26MatchGameMode>(GetWorld()->GetAuthGameMode())) { if(!M->PlayerBatting()) M->TriggerManualDive(); }
 }
 void AC26PlayerController::FieldKey()
 {
-    if(auto* M=Cast<AC26MatchGameMode>(GetWorld()->GetAuthGameMode())) M->ToggleFieldPlanning();
+    if(auto* M=Cast<AC26MatchGameMode>(GetWorld()->GetAuthGameMode())) { if(!M->PlayerBatting()) M->ToggleFieldPlanning(); }
 }
 void AC26PlayerController::ThrowBowlerKey()
 {
-    if(auto* M=Cast<AC26MatchGameMode>(GetWorld()->GetAuthGameMode())) M->SetThrowTarget(EC26ThrowTarget::BowlersEnd);
+    if(auto* M=Cast<AC26MatchGameMode>(GetWorld()->GetAuthGameMode()))
+    {
+        if(M->PlayerBatting()) return;
+        M->SetThrowTarget(EC26ThrowTarget::BowlersEnd);
+        if(M->bFieldingDecisionPaused) M->Toast(TEXT("TARGET: BOWLER'S END  (PRESS SPACE TO THROW)"));
+    }
 }
 void AC26PlayerController::ThrowKeeperKey()
 {
-    if(auto* M=Cast<AC26MatchGameMode>(GetWorld()->GetAuthGameMode())) M->SetThrowTarget(EC26ThrowTarget::KeepersEnd);
+    if(auto* M=Cast<AC26MatchGameMode>(GetWorld()->GetAuthGameMode()))
+    {
+        if(M->PlayerBatting()) return;
+        M->SetThrowTarget(EC26ThrowTarget::KeepersEnd);
+        if(M->bFieldingDecisionPaused) M->Toast(TEXT("TARGET: KEEPER'S END  (PRESS SPACE TO THROW)"));
+    }
 }
 
 void AC26PlayerController::TogglePresentationDebug()

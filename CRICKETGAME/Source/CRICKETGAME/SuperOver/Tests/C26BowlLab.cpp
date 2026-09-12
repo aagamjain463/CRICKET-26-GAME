@@ -142,9 +142,9 @@ namespace C26BowlLab
     // carousel, because the plan readout and the quick presets that used to fill
     // the column between them were removed. Centre of (56, 466, 156x34).
     static constexpr float AroundX = 134.f, AroundY = 483.f;
-    static constexpr float StartX = 1380.f, StartY = 840.f;
-    static constexpr float DialX = 1352.f, DialY = 640.f, DialR = 78.f;
-    static constexpr float PaceX = 1184.f, PaceW = 336.f, PaceY = 742.f;
+    static constexpr float StartX = 1390.f, StartY = 780.f;
+    static constexpr float DialX = AC26MatchGameMode::DialCentreX, DialY = AC26MatchGameMode::DialCentreY, DialR = AC26MatchGameMode::DialRadius;
+    static constexpr float PaceX = AC26MatchGameMode::PaceTrackX, PaceW = AC26MatchGameMode::PaceTrackW, PaceY = AC26MatchGameMode::PaceTrackY;
     /** Neutral press point: on the pitch, clear of every planning control. */
     static const FVector2D ReleaseTap(800.f, 300.f);
 }

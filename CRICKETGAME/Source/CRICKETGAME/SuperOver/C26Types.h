@@ -440,7 +440,7 @@ inline bool C26ValidTransition(EC26Phase From,EC26Phase To)
     case EC26Phase::InPlay:return To==EC26Phase::Reaction;
     case EC26Phase::Reaction:return To==EC26Phase::Replay||To==EC26Phase::Presentation||To==EC26Phase::Ready||To==EC26Phase::Interval||To==EC26Phase::Result;
     case EC26Phase::Replay:return To==EC26Phase::Presentation||To==EC26Phase::Ready||To==EC26Phase::Interval||To==EC26Phase::Result;
-    case EC26Phase::Presentation:return To==EC26Phase::Ready||To==EC26Phase::Interval||To==EC26Phase::Result||To==EC26Phase::Presentation;
+    case EC26Phase::Presentation:return To==EC26Phase::Ready||To==EC26Phase::Interval||To==EC26Phase::Result||To==EC26Phase::Presentation||To==EC26Phase::Reaction||To==EC26Phase::Replay;
     case EC26Phase::Interval:return To==EC26Phase::Ready||To==EC26Phase::Presentation;
     case EC26Phase::Result:return To==EC26Phase::Presentation;
     default:return false;

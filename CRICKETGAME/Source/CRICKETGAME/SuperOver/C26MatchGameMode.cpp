@@ -283,7 +283,13 @@ void AC26MatchGameMode::BuildMatchActors()
     // does the same; anything bigger starts reading as tennis.
     if(BallHeroMesh) BallMesh->SetWorldScale3D(FVector(1.6f));
     else BallMesh->SetWorldScale3D(FVector(Tuning.BallRadius*2/100.f*1.6f));
-    auto* BallMaterial=UMaterialInstanceDynamic::Create(White,this);BallMaterial->SetVectorParameterValue(TEXT("Tint"),FLinearColor(.88,.88,.81));BallMaterial->SetScalarParameterValue(TEXT("Glow"),0.f);BallMaterial->SetScalarParameterValue(TEXT("Roughness"),.38f);BallMesh->SetMaterial(0,BallMaterial);
+    auto* GearMat=LoadObject<UMaterialInterface>(nullptr,TEXT("/Game/Cricket26/Materials/M_C26_Gear.M_C26_Gear"));
+    auto* BallMaterial=UMaterialInstanceDynamic::Create(GearMat?GearMat:White,this);
+    BallMaterial->SetVectorParameterValue(TEXT("Tint"),FLinearColor(.92f,.92f,.88f));
+    BallMaterial->SetScalarParameterValue(TEXT("Glow"),0.f);
+    BallMaterial->SetScalarParameterValue(TEXT("Roughness"),.32f);
+    BallMaterial->SetScalarParameterValue(TEXT("Specular"),.45f);
+    BallMesh->SetMaterial(0,BallMaterial);
     for(int End=0;End<2;++End)for(int I=0;I<5;++I)
     {
         auto* S=NewObject<UStaticMeshComponent>(Props);S->SetupAttachment(Props->GetRootComponent());
@@ -350,6 +356,7 @@ void AC26MatchGameMode::BreakWicket(float Y)
     Stumps[E+3]->SetWorldLocation(FVector(-14,Y+21,67));Stumps[E+3]->SetWorldRotation(FRotator(24,38,40));
     Stumps[E+4]->SetWorldLocation(FVector(18,Y+35,48));Stumps[E+4]->SetWorldRotation(FRotator(55,-28,20));
     Stumps[E+1]->SetWorldRotation(FRotator(-8,0,0));Audio->CueAt(TEXT("stump_hit"),FVector(0,Y,45.f),.9f);Haptic(.6f);
+    if(Effects)Effects->StumpBurst(FVector(0.f,Y,C26Field::StumpHeight*.5f));
 }
 void AC26MatchGameMode::ChangePhase(EC26Phase NewPhase)
 {
@@ -408,6 +415,12 @@ void AC26MatchGameMode::Toast(const FString& S){ToastText=S;ToastUntil=Clock+2.2
 void AC26MatchGameMode::PrepareDelivery()
 {
     Simulation.Reset();Simulation.Tuning=Tuning;Director->Reset();ResetStumps();
+    if(Venue)
+    {
+        const auto& S=Rules.Now();
+        Venue->UpdateJumbotron(FString::Printf(TEXT("%s  %d-%d"),*TeamShort(Rules.Current==0?FirstBattingTeam:1-FirstBattingTeam),S.Runs,S.Wickets),
+            FString::Printf(TEXT("OVERS %d.%d"),S.LegalBalls/6,S.LegalBalls%6),FLinearColor(0.81f,0.93f,0.90f));
+    }
     // Fielding controls belong to the bowling side only: the batting side
     // must never wake up inside the tactical planner with a live selection.
     if (PlayerBatting())
@@ -1190,7 +1203,7 @@ void AC26MatchGameMode::Resolve()
         :Official.Wicket==C26::Dismissal::RunOut?FVector(0,ThrowTo.Y,45)
         :Official.Wicket==C26::Dismissal::Caught&&Athletes.IsValidIndex(ActiveFielder)&&ActiveFielder>=0?Athletes[ActiveFielder]->GetActorLocation()+FVector(0,0,120)
         :Simulation.Ball.Position;
-    Director->MarkOutcome(FName(*Callout),Focus);
+    Director->MarkOutcome(FName(*Callout),Focus,FName(*Detail));
     // Single authoritative commentary call per delivery: wicket XOR result.
     // Crowd reactions are owned by the CrowdDirector inside these notifies.
     {
@@ -1443,21 +1456,28 @@ bool AC26MatchGameMode::GetActiveGraphic(FString& Title, FString& Sub, FLinearCo
 }
 void AC26MatchGameMode::UpdateBroadcastGraphics(const C26::DeliveryOutcome& Outcome)
 {
-    static const FLinearColor Gold(1.f, .76f, .14f, 1.f), Crimson(.92f, .14f, .20f, 1.f),
-        Turf(.08f, .82f, .44f, 1.f), Silver(.74f, .80f, .88f, 1.f);
+    static const FLinearColor GfxGold(1.f, .76f, .14f, 1.f), GfxCrimson(.92f, .14f, .20f, 1.f),
+        GfxTurf(.08f, .82f, .44f, 1.f), GfxSilver(.74f, .80f, .88f, 1.f);
     const int32 StrikerIdx = FMath::Clamp(Rules.Now().Striker, 0, 2);
     const int32 StrikerRuns = Rules.Now().BatterRuns[StrikerIdx];
     const int32 StrikerBalls = Rules.Now().BatterBalls[StrikerIdx];
     if (Outcome.Wicket != C26::Dismissal::None)
     {
-        PushGraphic(TEXT("WICKET"), FString::Printf(TEXT("%s  •  %s"), *BowlerName(), *Detail), Crimson, 2.8f);
+        PushGraphic(TEXT("WICKET"), FString::Printf(TEXT("%s  •  %s"), *BowlerName(), *Detail), GfxCrimson, 2.8f);
+        if (Venue) Venue->UpdateJumbotron(TEXT("WICKET"), FString::Printf(TEXT("%s  •  %s"), *BowlerName(), *Detail), GfxCrimson);
         return;
     }
     // Milestones are pushed from TriggerPresentationForOutcome where the fifty/century edge fires.
     if (Outcome.Rope == C26::Boundary::Six)
-        PushGraphic(TEXT("SIX"), FString::Printf(TEXT("%s  •  %d (%d)"), *BatterName(), StrikerRuns, StrikerBalls), Gold, 2.6f);
+    {
+        PushGraphic(TEXT("SIX"), FString::Printf(TEXT("%s  •  %d (%d)"), *BatterName(), StrikerRuns, StrikerBalls), GfxGold, 2.6f);
+        if (Venue) Venue->UpdateJumbotron(TEXT("MAXIMUM 6"), FString::Printf(TEXT("%s  •  %d (%d)"), *BatterName(), StrikerRuns, StrikerBalls), GfxGold);
+    }
     else if (Outcome.Rope == C26::Boundary::Four)
-        PushGraphic(TEXT("FOUR"), FString::Printf(TEXT("%s  •  %d (%d)"), *BatterName(), StrikerRuns, StrikerBalls), Turf, 2.4f);
+    {
+        PushGraphic(TEXT("FOUR"), FString::Printf(TEXT("%s  •  %d (%d)"), *BatterName(), StrikerRuns, StrikerBalls), GfxTurf, 2.4f);
+        if (Venue) Venue->UpdateJumbotron(TEXT("BOUNDARY 4"), FString::Printf(TEXT("%s  •  %d (%d)"), *BatterName(), StrikerRuns, StrikerBalls), GfxTurf);
+    }
     else if (Rules.Now().Closed)
     {
         const auto& S = Rules.Now();
@@ -1465,7 +1485,13 @@ void AC26MatchGameMode::UpdateBroadcastGraphics(const C26::DeliveryOutcome& Outc
             Rules.Current == 1
                 ? FString::Printf(TEXT("NEED %d FROM %d BALLS"), Rules.RunsRequired(), Rules.BallsRemaining())
                 : FString::Printf(TEXT("RUN RATE %.2f"), S.LegalBalls > 0 ? (float)S.Runs / (float)S.LegalBalls * 6.f : 0.f),
-            Silver, 3.0f);
+            GfxSilver, 3.0f);
+        if (Venue) Venue->UpdateJumbotron(FString::Printf(TEXT("OVER  %d-%d"), S.Runs, S.Wickets), Rules.Current == 1 ? FString::Printf(TEXT("NEED %d RUNS"), Rules.RunsRequired()) : FString::Printf(TEXT("CRR %.2f"), S.LegalBalls > 0 ? (float)S.Runs / (float)S.LegalBalls * 6.f : 0.f), GfxSilver);
+    }
+    else if (Venue)
+    {
+        const auto& S = Rules.Now();
+        Venue->UpdateJumbotron(FString::Printf(TEXT("%s  %d-%d"), *TeamShort(Rules.Current == 0 ? FirstBattingTeam : 1 - FirstBattingTeam), S.Runs, S.Wickets), FString::Printf(TEXT("OVERS %d.%d"), S.LegalBalls / 6, S.LegalBalls % 6), GfxSilver);
     }
 }
 void AC26MatchGameMode::Skip()
@@ -1725,13 +1751,18 @@ void AC26MatchGameMode::Tick(float Dt)
     if(StumpClock>=0&&Phase!=EC26Phase::Replay)
     {
         StumpClock=FMath::Min(1.f,StumpClock+Dt);const int E=BrokenWicketY>0?5:0;
+        const float DirY=BrokenWicketY>0?1.f:-1.f;
         for(int B=0;B<2;++B)
         {
             const float T=StumpClock,Side=B==0?-1.f:1.f;
             const float Z=FMath::Max(2.f,72.f+165.f*T-.5f*Tuning.Gravity*T*T);
-            Stumps[E+3+B]->SetWorldLocation(FVector(Side*(5.f+60.f*T),BrokenWicketY+145.f*T,Z));
+            Stumps[E+3+B]->SetWorldLocation(FVector(Side*(5.f+65.f*T),BrokenWicketY+DirY*155.f*T,Z));
             Stumps[E+3+B]->SetWorldRotation(FRotator(T*410.f,Side*T*320.f,90.f+T*560.f));
         }
+        const float MiddlePitch=-FMath::Clamp(StumpClock*85.f,0.f,75.f)*DirY;
+        const float MiddleDisplacement=StumpClock*35.f*DirY;
+        Stumps[E+1]->SetWorldRotation(FRotator(MiddlePitch,0.f,0.f));
+        Stumps[E+1]->SetWorldLocation(FVector(0.f,BrokenWicketY+MiddleDisplacement,C26Field::SurfaceZ));
     }
     if(Phase==EC26Phase::Reaction&&PhaseTime<.8f)Director->Record(Dt,Simulation.Ball.Position,Athletes);
     // Whisper-thin wake behind genuine pace; the effect throttles itself below 26 m/s.
