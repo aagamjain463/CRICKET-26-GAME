@@ -48,6 +48,11 @@ public:
     // ---- spatial hero transients (broadcast field-mic treatment) ----
     void CueAt(FName Name, const FVector& At, float Volume = 1.f);
 
+    // ---- commentary director bridge ----
+    void PlayCommentarySound(USoundBase* Sound, const FString& SubtitleText, float Duration);
+    bool IsCommentaryPlaying() const;
+    void StopCommentary();
+
     // ---- commentary event API (called exactly once per match event) ----
     void NotifyMatchStart();
     void NotifyPreBall(const FC26CommentaryContext& Ctx);

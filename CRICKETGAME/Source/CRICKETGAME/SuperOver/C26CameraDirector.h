@@ -55,6 +55,12 @@ public:
     UPROPERTY(EditAnywhere,Category="Broadcast|Gameplay") FC26BroadcastRig BowlingRig;
     UPROPERTY(EditAnywhere,Category="Broadcast|Gameplay") FC26BroadcastRig ReleaseRig;
     UPROPERTY() TArray<TObjectPtr<UStaticMeshComponent>> ReplayProps;
+
+    /** Live athlete references for intimate front-and-back gameplay framing. */
+    UPROPERTY() TObjectPtr<AC26Athlete> BowlerActor;
+    UPROPERTY() TObjectPtr<AC26Athlete> StrikerActor;
+    void SetAthletes(AC26Athlete* InBowler, AC26Athlete* InStriker) { BowlerActor = InBowler; StrikerActor = InStriker; }
+
     void Reset();
     void Direct(EC26Phase Phase,float PhaseTime,bool PlayerBatting,const FVector& Ball,const FVector& Velocity,bool Aerial,float Dt=1.f/60.f);
     /** Live fielding context. The shot cameras bias toward a committed interceptor and cut to a
@@ -72,6 +78,14 @@ public:
     float ReplaySpeed() const{return PlaybackRate;}
     bool IsReplaying=false;
     float ReplayClock=0,PlaybackRate=1;
+
+    /** Replay outro state and progress for smooth broadcast completion without abrupt termination */
+    UPROPERTY(BlueprintReadOnly) bool IsReplayOutro = false;
+    UPROPERTY(BlueprintReadOnly) float ReplayOutroAlpha = 0.f;
+    float ReplayOutroTime = 0.f;
+    float ReplayOutroDuration = 0.85f;
+    float ReplayProgress() const { return ReplayEnd > 0 ? FMath::Clamp(ReplayClock / ReplayEnd, 0.f, 1.f) : 0.f; }
+
 private:
     TArray<FC26ReplayFrame> Frames;
     FC26ReplayFrame Live;

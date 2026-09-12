@@ -2,6 +2,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/SaveGame.h"
 #include "C26Settings.generated.h"
+
 UCLASS()
 class CRICKETGAME_API UC26Settings : public USaveGame
 {
@@ -20,6 +21,10 @@ public:
     UPROPERTY() bool Subtitles=true;
     UPROPERTY() bool ReducedMotion=false;
     UPROPERTY() float Sensitivity=1.f;
+    UPROPERTY() int32 ControlScheme=0; // 0 = GesturePro, 1 = Legacy
+    UPROPERTY() bool LeftHandedUI=false;
+    /** Striker bats left-handed: mirrors the batting gesture so off side stays off side. */
+    UPROPERTY() bool LeftHandedBatter=false;
     void Save();
     void Apply();
     static UC26Settings* Load();

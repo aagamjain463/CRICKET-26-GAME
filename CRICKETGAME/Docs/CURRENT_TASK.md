@@ -1,10 +1,39 @@
 # Current task
 
+## Just completed — bowling control loop (2026-09-12)
+
+The bowling loop is rebuilt and proven: type → exact pitch target → movement
+direction → amount → pace → run-up → release bar → actual ball. Reference:
+`Docs/BOWLING_CONTROL_SYSTEM.md`.
+
+- `Tools/BowlLab.sh` — **`C26_BOWL_PASS deliveries=39 failures=0`**, 2993 assertions,
+  every delivery driven through the real pointer path.
+- `Tools/BatLab.sh` — **`C26_LAB_PASS deliveries=27 failures=0`**.
+- Automation — **9/9 PASS**.
+
+Two real defects were fixed on the way: the tree did not compile
+(`C26HUD.cpp::DrawBowlingTarget` read members of a deleted charge model), and reverse
+swing never actually swung because its onset was resolved as seconds rather than as a
+fraction of the flight.
+
+## Open before anything else
+
+**`Tools/GoldenGate.sh` has six failures**, and the "Green" claim in the section below
+is stale because of it. All six are camera composition — `human-scale batter occupies
+readable gameplay frame` and `bowler clear of top HUD`, repeated in each of the three
+stages. They measure where `Athletes[]` project to screen
+(`C26GoldenGate.cpp:79-81`), so they are a framing problem rather than a gameplay one,
+and they postdate the last recorded passing gate (`Artifacts/gate_final.log`,
+2026-09-09). Fix the framing camera before treating the gate as green again.
+
+---
+
 Milestone 2 — Next-Gen Cricketers, branch `work/match-world-reborn`.
 
 ## State
 
-Green. `Tools/GoldenGate.sh m2_final` passes (`C26_GATE_PASS failures=0`,
+**Stale — see "Open before anything else" above.** As of the last Milestone 2 run:
+`Tools/GoldenGate.sh m2_final` passed (`C26_GATE_PASS failures=0`,
 release 0.000 cm, contact 1.200 cm at Z=-57.9 measured against **724 authored
 blade triangles**), automation 3/3 PASS (`Cricket26.Rules.SuperOver`,
 `Cricket26.Simulation.GoldenDelivery`, `Cricket26.Simulation.Trajectories`).
