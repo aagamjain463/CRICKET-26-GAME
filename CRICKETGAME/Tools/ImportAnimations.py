@@ -12,10 +12,16 @@ A_C26_BowlingPace.fbx. Pipeline (all offline, no Blender needed):
      bakes every frame into ArtSource/Exports/Animations/Solved/ (the v2 rig frame,
      byte-compatible with a Blender bake+export).
   3. Tools/correct_authored_anim.py retargets those onto the shipped skeleton and
-     writes Corrected/, with an 11-point geometric verification (feet planted, crouch,
-     hands on the handle, contact IN FRONT of the body, backlift behind it, bowling
-     release above the head, bowler travelling down the pitch). It exits non-zero if
-     any check fails, so never import unverified curves.
+     writes Corrected/, with a per-clip geometric verification (chest facing, feet
+     planted, crouch, hands on the handle, contact IN FRONT of the body, backlift
+     behind it, pull high + leg-side follow, cut late + off-side, sweep deep-crouch,
+     defence compact, bowling release above the head, bowler travelling down the
+     pitch). It exits non-zero if any check fails, so never import unverified curves.
+
+The library: drive / pull / cut / sweep / defence for batting, pace / off-spin /
+leg-spin for bowling. AC26Athlete::SelectBattingClip / SelectBowlingClip choose
+per shot intent and delivery type; missing clips fall back down the chain to the
+procedural action, never a T-pose.
 
 These are ANIMATION-ONLY FBX (armature, no mesh). They are bound to the skeleton that
 SK_Cricketer_Match already uses, so the clips play on the existing mesh with no retargeting.
@@ -29,7 +35,11 @@ DEST = '/Game/Cricket26/Animations'
 MESH = '/Game/Cricket26/Characters/SK_Cricketer_Match'
 SRC_DIR = u.Paths.project_dir() + 'ArtSource/Exports/Animations/Corrected/'
 
-CLIPS = ['A_C26_BattingDrive', 'A_C26_BowlingPace']
+CLIPS = [
+    'A_C26_BattingDrive', 'A_C26_BattingPull', 'A_C26_BattingCut',
+    'A_C26_BattingSweep', 'A_C26_BattingDefence',
+    'A_C26_BowlingPace', 'A_C26_BowlingOffSpin', 'A_C26_BowlingLegSpin',
+]
 
 
 def import_one(name, skeleton):

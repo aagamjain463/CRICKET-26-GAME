@@ -1,6 +1,8 @@
 # PREMIUM CHARACTER SYSTEM — CRICKET 26
 
-Status: 2026-09-13. This is the honest state of the character/motion overhaul: what was broken
+Status: 2026-09-13 (updated later the same day: shot library + bowling variations
+added, second corrector bug found and fixed). This is the honest state of the
+character/motion overhaul: what was broken
 and why (root-cause report), what is fixed and verified (and how), what is wired but awaiting the
 Mac build/playtest, and what is explicitly not done. Nothing here is claimed on the strength of
 "it compiles" — every claim below names where it is verified.
@@ -115,7 +117,7 @@ c26_anim_author.py            keyframes + IK solve + repair_facing  (single sour
   orientation copy per bone, hips delta at the measured rig ratio (2.23739), per-frame ground
   pin, root rename to `Armature.001`, v1 Lcl defaults. It **exits non-zero if any check fails**.
 
-### Verification (offline, all PASS)
+### Verification (offline, 66 checks across 8 clips, all PASS)
 
 | Clip | Check | Result |
 |---|---|---|
@@ -129,6 +131,39 @@ c26_anim_author.py            keyframes + IK solve + repair_facing  (single sour
 | | mark: ball in both hands | 2.7 cm span |
 | | release arm above head | 398 vs 327 cm |
 | | travel down the pitch | 71.5 cm |
+
+### The shot library (added in the second pass)
+
+Six new clips authored in `c26_anim_author.py`, solved and verified through the same
+pipeline. All share their family's frame layout (batting: 36 frames, contact at 23;
+bowling: 46 frames, release at 31), so one pair of time-warp constants pins them all
+to the match's own timing. Selection is `AC26Athlete::SelectBattingClip()` /
+`SelectBowlingClip()`, driven by the simulation's own shot intent and delivery type,
+never by a visual guess:
+
+| Clip | Selected when | Measured signature (corrected, asset cm) |
+|---|---|---|
+| BattingDrive | straight/off/on drives (default) | contact +76.8 in front, backlift -31.9 behind |
+| BattingPull | leg side, weight back (short ball) | +83.2 front, 73.1 above hips, follow 48.5 leg side |
+| BattingCut | off side, weight back (short/wide) | 57.9 off side, 15.9 front (late, beside the body) |
+| BattingSweep | leg side, weight forward (full ball) | hips 124 (deep crouch), hands 18.1 above hips, 60.9 in front |
+| BattingDefence | `Defending` intent | +56 front, bat 17.5 above hips, absorb frame static |
+| BowlingPace | seam/swing family | release 400 vs head 329, 74.6 down the pitch |
+| BowlingOffSpin | OffBreak/ArmBall/TopSpinner/Doosra | release 360 (deliberately lower), 65.7 down pitch |
+| BowlingLegSpin | LegBreak/Googly/Flipper | release 399, 74.6 down pitch |
+
+Fallback chain: library clip -> family base clip -> procedural action. A missing
+asset logs once and degrades; nothing T-poses.
+
+**Second corrector bug (found by authoring the cut):** the hips retarget branch took
+its world-rotation reference from the anim FBX's Model defaults, which the original
+Blender exporter froze as a stale POSE, not a rest. Every corrected clip was rotated
+by that pose's hips twist — the drive carried a **-52.4 degree chest yaw** (batter
+facing midwicket), invisible to the then foot-relative checks. The reference is now
+the true v2 T-pose (= the v1 rest world rotation; positions `(v1 - armatureNodeT) /
+ratio`), the corrected poses now match the solved ones bit-exactly under the rig
+ratio, and chest-yaw gates were added to every clip's offline checks and to the
+in-engine test. The drive/pull/cut poses above are post-fix measurements.
 
 ### In-engine gate
 
@@ -161,16 +196,17 @@ importer has done its own conversion. If it fails with an asset error, run
 1. **Mac verification of this session's changes.** The corrected FBX pass 11/11 offline checks,
    but the UE import + build + in-match playtest of the *corrected* clips has not run yet
    (sandbox has no UE). The exact sequence is in §6.
-2. **Shot library breadth.** Only the drive and pace-bowling clips are authored. Pull, hook,
-   sweep, leg glance, cuts, defence, off-spin/leg-spin actions, keeper dive/stump, umpire
-   signals, fielder pickup/throw/catch/dive are not authored. The offline pipeline makes each
-   one a key-list addition to `c26_anim_author.py` — no Blender round-trip needed.
+2. **Shot library breadth.** Drive, pull, cut, sweep, defence and pace/off-spin/leg-spin
+   bowling are authored and verified. Not yet: hook, leg glance, lofted drives (the drive
+   clip covers them structurally), keeper dive/stump, umpire signals, fielder
+   pickup/throw/catch/dive. Each is a key-list addition to `c26_anim_author.py` — no
+   Blender round-trip needed.
 3. **Garment mesh quality.** Torso prototype-grade meshes remain the biggest visual gap for
    "premium" (open item since before this session; never overwrite `SK_Cricketer_KitBase`).
 4. **Equipment LOD meshes** (tiers exist, mesh swaps not).
 5. **Mobile perf profiling** not started.
-6. **Bowling gather** (pre-release 0.31 s) is still procedural; the clip covers the action from
-   the run-up mark, and the gather blends procedurally at the entry ramp.
+6. **Bowling gather** (pre-release 0.31 s) is still procedural; the clips cover the action
+   from the run-up mark, and the gather blends procedurally at the entry ramp.
 
 ---
 
@@ -226,4 +262,5 @@ safe to iterate on it without a rebuild.
 | `Source/.../C26Athlete.cpp` | both `ApplyAuthoredClip` branches re-enabled with history |
 | `Source/.../Tests/C26ProductionTests.cpp` | NEW `Cricket26.Anim.AuthoredClips` in-engine gate |
 | `Docs/AUTHORED_ANIMATION.md` | facing correction documented; pipeline + verification sections; stale TODOs rewritten |
+| `Source/.../C26Athlete.h/.cpp` | shot library clips + lazy loader, `SelectBattingClip`/`SelectBowlingClip`, per-clip driven-bone cache; branches rewritten around them |
 | `Docs/PREMIUM_CHARACTER_SYSTEM.md` | this report |

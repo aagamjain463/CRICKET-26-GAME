@@ -298,12 +298,21 @@ def correct_file(src, dst, target_rig):
             b1 = target_rig.id[nm]
             p2 = rig.parent[b2]
             if p2 == root2:
-                # Hips: world rotation delta + world translation delta at the
-                # rigs' own world-scale ratio, so crouch, bound and weight
-                # transfer read at the same magnitude the legs realize them.
-                dq = qmul(qconj(W2rest[b2].q), W2[b2].q)
+                # Hips: world delta from the TRUE v2 T-pose, applied to the v1 rest.
+                # v2 is the v1 rig uniformly scaled (x1/ratio) and re-based by the
+                # armature node, so the T-pose WORLD ROTATIONS are identical to the
+                # v1 rest and the T-pose world positions are (v1 - ArmT)/ratio. The
+                # FBX Model defaults MUST NOT be the reference: the original
+                # exporter froze a stale POSE into them, which rotated every
+                # corrected clip by that pose's hips twist (measured: the whole
+                # drive came out with a -52.4 deg chest yaw, batter facing
+                # midwicket, invisible to foot-relative checks).
+                ARM_T = rig.rest[root2].t
+                qT2 = W1rest[b1].q
+                pT2 = vscale(vsub(W1rest[b1].t, ARM_T), 1.0 / ratio)
+                dq = qmul(qconj(qT2), W2[b2].q)
                 qW1[b1] = qmul(dq, W1rest[b1].q)
-                dp = vsub(W2[b2].t, W2rest[b2].t)
+                dp = vsub(W2[b2].t, pT2)
                 pW1[b1] = vadd(W1rest[b1].t, vscale(dp, ratio))
             else:
                 p1 = target_rig.id[rig.name[p2]]
@@ -418,10 +427,58 @@ def main():
     args = sys.argv[1:]
     verify_only = '--verify-only' in args
     args = [a for a in args if not a.startswith('--')]
-    files = args or ['A_C26_BattingDrive.fbx', 'A_C26_BowlingPace.fbx']
+    # Defaults are the SOLVED clips (Tools/rebuild_authored_clips.py output);
+    # the sibling files without the Solved/ prefix are the original pre-repair
+    # exports and are kept only as pipeline templates.
+    files = args or [
+        'Solved/A_C26_BattingDrive.fbx', 'Solved/A_C26_BattingPull.fbx',
+        'Solved/A_C26_BattingCut.fbx', 'Solved/A_C26_BattingSweep.fbx',
+        'Solved/A_C26_BattingDefence.fbx', 'Solved/A_C26_BowlingPace.fbx',
+        'Solved/A_C26_BowlingOffSpin.fbx', 'Solved/A_C26_BowlingLegSpin.fbx',
+    ]
 
     def resolve(f):
-        return f if os.sep in f else os.path.join(srcdir, f)
+        return f if os.path.isabs(f) else os.path.join(srcdir, f)
+
+    # ---- shared measurement helpers ------------------------------------------
+    # The body frame is measured from the SHOULDERS (cross(LS-RS, up)), not the
+    # toes: shots like the cut pivot the front foot open, which rotates a
+    # toe-relative frame up to 65 degrees and makes "in front of the body"
+    # meaningless. A whole-body yaw bug hides from foot-relative checks; it
+    # cannot hide from this one.
+    def body_forward(m):
+        LS, RS = m['mixamorig:LeftShoulder'].t, m['mixamorig:RightShoulder'].t
+        d = (LS[0]-RS[0], LS[1]-RS[1], LS[2]-RS[2])
+        fwd = (-d[2], d[0])          # cross(d, up) in (x, z)
+        n = math.hypot(*fwd) or 1.0
+        return (fwd[0] / n, fwd[1] / n)
+
+    def body_right(m):
+        """The right-hander's OFF side direction."""
+        fx, fz = body_forward(m)
+        return (-fz, fx)
+
+    def hands_mid(m):
+        return vscale(vadd(m['mixamorig:LeftHand'].t, m['mixamorig:RightHand'].t), 0.5)
+
+    def hands_forward(m):
+        fwd = body_forward(m)
+        d = (hands_mid(m)[0] - m['mixamorig:Hips'].t[0],
+             hands_mid(m)[2] - m['mixamorig:Hips'].t[2])
+        return d[0]*fwd[0] + d[1]*fwd[1]
+
+    def hands_offside(m):
+        """Positive = toward the right-hander's OFF side (his right)."""
+        right = body_right(m)
+        d = (hands_mid(m)[0] - m['mixamorig:Hips'].t[0],
+             hands_mid(m)[2] - m['mixamorig:Hips'].t[2])
+        return d[0]*right[0] + d[1]*right[1]
+
+    def hands_height(m):
+        return hands_mid(m)[1]
+
+    def hips_height(m):
+        return m['mixamorig:Hips'].t[1]
 
     for f in files:
         src = resolve(f)
@@ -430,51 +487,98 @@ def main():
             nkeys, ncurves = correct_file(src, dst, target)
             print('corrected %s: %d keys, %d curves -> %s' % (f, nkeys, ncurves, dst))
         checks = [
+            ('stance: chest faces the bowler', STANCE_FRAME,
+             lambda m, w, t: (abs(math.degrees(math.atan2(*body_forward(m)))) < 20.0,
+                              'chest yaw %+.1f deg' % math.degrees(math.atan2(*body_forward(m))))),
+            ('defining frame: chest faces the bowler', CONTACT_FRAME if 'Batting' in f else RELEASE_FRAME,
+             lambda m, w, t: (abs(math.degrees(math.atan2(*body_forward(m)))) < 35.0,
+                              'chest yaw %+.1f deg' % math.degrees(math.atan2(*body_forward(m))))),
             ('stance: lowest ankle at ground', STANCE_FRAME,
              lambda m, w, t: (abs(min(m['mixamorig:LeftFoot'].t[1], m['mixamorig:RightFoot'].t[1]) - 24.7) < 8.0,
                               'ankle Y %.1f / %.1f' % (m['mixamorig:LeftFoot'].t[1], m['mixamorig:RightFoot'].t[1]))),
             ('stance: hips at athletic height', STANCE_FRAME,
              lambda m, w, t: (150.0 < m['mixamorig:Hips'].t[1] < 215.0, 'hips Y %.1f' % m['mixamorig:Hips'].t[1])),
-            ('hands together on handle', STANCE_FRAME,
+            ('stance: hands together', STANCE_FRAME,
              lambda m, w, t: (hand_span(m) < 20.0, 'span %.1f cm' % hand_span(m))),
         ]
-        if 'BattingDrive' in f:
-            def hands_forward(m):
-                fwd = (m['mixamorig:LeftToeBase'].t[2] - m['mixamorig:LeftFoot'].t[2],
-                       m['mixamorig:LeftToeBase'].t[0] - m['mixamorig:LeftFoot'].t[0])
-                n = math.hypot(*fwd) or 1.0
-                fwd = (fwd[0] / n, fwd[1] / n)
-                hands = vscale(vadd(m['mixamorig:LeftHand'].t, m['mixamorig:RightHand'].t), 0.5)
-                hips = m['mixamorig:Hips'].t
-                d = (hands[2] - hips[2], hands[0] - hips[0])
-                return d[0]*fwd[0] + d[1]*fwd[1]
+        if 'Batting' in f:
             checks.append(('contact: hands together', CONTACT_FRAME,
                            lambda m, w, t: (hand_span(m) < 20.0, 'span %.1f cm' % hand_span(m))))
+        if 'BattingDrive' in f:
             checks.append(('contact: hands in front of body', CONTACT_FRAME,
                            lambda m, w, t: (hands_forward(m) > 10.0,
                                             'hands %.1f cm in front of hips' % hands_forward(m))))
             checks.append(('backlift: hands behind body', 13,
                            lambda m, w, t: (hands_forward(m) < -10.0,
                                             'hands %.1f cm behind hips' % hands_forward(m))))
-        if 'BowlingPace' in f:
+        if 'BattingPull' in f:
+            checks.append(('contact: hands in front of body', CONTACT_FRAME,
+                           lambda m, w, t: (hands_forward(m) > 5.0,
+                                            'hands %.1f cm in front of hips' % hands_forward(m))))
+            checks.append(('contact: horizontal shot at chest height', CONTACT_FRAME,
+                           lambda m, w, t: (hands_height(m) - hips_height(m) > 30.0,
+                                            'hands %.1f cm above hips' % (hands_height(m) - hips_height(m)))))
+            checks.append(('follow: swung to the leg side', 29,
+                           lambda m, w, t: (hands_offside(m) < -10.0,
+                                            'hands %.1f cm leg side of hips' % -hands_offside(m))))
+        if 'BattingCut' in f:
+            checks.append(('contact: slashed to the off side', CONTACT_FRAME,
+                           lambda m, w, t: (hands_offside(m) > 10.0,
+                                            'hands %.1f cm off side of hips' % hands_offside(m))))
+            # A cut is played LATE: the ball is allowed past the body line, so the
+            # hands stay roughly level with the hips (not driven out in front as
+            # in a drive) while the off-side offset carries the slash.
+            checks.append(('contact: played late, beside the body', CONTACT_FRAME,
+                           lambda m, w, t: (hands_forward(m) < 30.0,
+                                            'hands %.1f cm in front of hips' % hands_forward(m))))
+        if 'BattingSweep' in f:
+            checks.append(('contact: deep crouch', CONTACT_FRAME,
+                           lambda m, w, t: (hips_height(m) < 150.0, 'hips Y %.1f' % hips_height(m))))
+            checks.append(('contact: hands low over the ball', CONTACT_FRAME,
+                           lambda m, w, t: (hands_height(m) - hips_height(m) < 40.0,
+                                            'hands %.1f cm above hips' % (hands_height(m) - hips_height(m)))))
+            checks.append(('contact: swept in front of the pad', CONTACT_FRAME,
+                           lambda m, w, t: (hands_forward(m) > 5.0,
+                                            'hands %.1f cm in front of hips' % hands_forward(m))))
+        if 'BattingDefence' in f:
+            checks.append(('contact: hands in front of body', CONTACT_FRAME,
+                           lambda m, w, t: (hands_forward(m) > 10.0,
+                                            'hands %.1f cm in front of hips' % hands_forward(m))))
+            checks.append(('contact: bat low under the eyes', CONTACT_FRAME,
+                           lambda m, w, t: (hands_height(m) - hips_height(m) < 50.0,
+                                            'hands %.1f cm above hips' % (hands_height(m) - hips_height(m)))))
+            checks.append(('absorb: no follow-through swing', 29,
+                           lambda m, w, t: (hands_height(m) - hips_height(m) < 55.0,
+                                            'hands %.1f cm above hips' % (hands_height(m) - hips_height(m)))))
+        if 'Bowling' in f:
             def release_check(m, w, t):
                 head = m['mixamorig:Head'].t[1]
-                lh = m['mixamorig:LeftHand'].t[1]
-                rh = m['mixamorig:RightHand'].t[1]
-                hi = max(lh, rh)
-                return hi > head + 40.0, 'head %.0f, hands %.0f/%.0f' % (head, lh, rh)
+                hi = max(m['mixamorig:LeftHand'].t[1], m['mixamorig:RightHand'].t[1])
+                return hi > head + 40.0, 'head %.0f, higher hand %.0f' % (head, hi)
+            if 'OffSpin' in f:
+                # Finger spin releases AT head height, not above it: the gate is
+                # "clearly overarm", not "as tall as a quick".
+                def release_check(m, w, t):
+                    head = m['mixamorig:Head'].t[1]
+                    hi = max(m['mixamorig:LeftHand'].t[1], m['mixamorig:RightHand'].t[1])
+                    return hi > head + 20.0, 'head %.0f, higher hand %.0f' % (head, hi)
+            checks.append(('release: arm over the shoulder', RELEASE_FRAME, release_check))
             def run_direction(m, w, t):
-                # hips must travel the direction the toes point (toward the batter)
-                fwd = (m['mixamorig:LeftToeBase'].t[2] - m['mixamorig:LeftFoot'].t[2],
-                       m['mixamorig:LeftToeBase'].t[0] - m['mixamorig:LeftFoot'].t[0])
-                n = math.hypot(*fwd) or 1.0
-                fwd = (fwd[0] / n, fwd[1] / n)
-                d = (m['mixamorig:Hips'].t[2], m['mixamorig:Hips'].t[0])
+                fwd = body_forward(m)
+                d = (m['mixamorig:Hips'].t[0], m['mixamorig:Hips'].t[2])
                 forward = d[0]*fwd[0] + d[1]*fwd[1]
-                return forward > 20.0, 'hips %.1f cm down the pitch from stance' % forward
-            checks.append(('release: bowling arm above head', RELEASE_FRAME, release_check))
+                return forward > 40.0, 'hips %.1f cm down the pitch from stance' % forward
             checks.append(('follow-through: travelled down pitch', 38, run_direction))
-        if not verify_file(dst if not verify_only else src, target, checks):
+        if 'BowlingPace' in f or 'BowlingLegSpin' in f:
+            checks.append(('release: full extension (tall action)', RELEASE_FRAME,
+                           lambda m, w, t: (max(m['mixamorig:LeftHand'].t[1], m['mixamorig:RightHand'].t[1]) > 380.0,
+                                            'higher hand %.0f cm' % max(m['mixamorig:LeftHand'].t[1], m['mixamorig:RightHand'].t[1]))))
+        # --verify-only re-checks files without rewriting them: an explicitly
+        # passed Corrected/ path is used as-is; anything else (incl. the Solved/
+        # defaults) is mapped to its Corrected/ counterpart, because the checks
+        # assert v1-asset-unit magnitudes.
+        verify_target = src if 'Corrected' in src else dst
+        if not verify_file(dst if not verify_only else verify_target, target, checks):
             raise SystemExit('VERIFICATION FAILED for ' + f)
     print('C26_CORRECT_DONE')
 

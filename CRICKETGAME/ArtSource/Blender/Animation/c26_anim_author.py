@@ -473,6 +473,260 @@ def bowling_keys():
     return keys
 
 
+# ---------------------------------------------------------------------------------
+# THE SHOT LIBRARY. Every batting clip shares the drive's frame layout (36 frames,
+# contact at 23) and every bowling clip shares the pace layout (46 frames, release
+# at 31), because AC26Athlete pins the defining frame to the match's own timing via
+# one pair of constants (C26BattingContactFrame / C26BowlingReleaseFrame).
+#
+# Selection, in AC26Athlete::SelectBattingClip / SelectBowlingClip:
+#   Defence (Defending) | Pull (leg side, weight back) | Sweep (leg side, weight
+#   forward/low) | Cut (off side, weight back) | Drive (everything else, incl. the
+#   cover/on drives, which are the same swing aimed differently).
+#   Bowling: OffBreak family -> off-spin action, LegBreak family -> leg-spin action,
+#   everything else -> pace.
+#
+# All keys are in the ORIGINAL AUTHORING FRAME (forward +Y, right +X, left -X);
+# repair_facing() transplants them onto the rig's true -Y facing at solve time.
+# ---------------------------------------------------------------------------------
+
+def _stance_key(K, turn=52, lean=-6, chest=-14, neck=-10, head=-26,
+                grip=(0.08, 0.12, 0.88), lf=(0.10, 0.26, 0.09), rf=(-0.14, 0.06, 0.09),
+                hips_z=-0.115):
+    """The shared starting stance; every shot starts from the same shape so the
+    entry blend from the ready pose is identical across the library."""
+    return K(1, turn, lean, chest, neck, head, grip, lf, rf, hips_z)
+
+
+def batting_pull_keys():
+    """Right-handed PULL: short ball, weight rocked onto the back foot, horizontal
+    swing through chest height, chest opening fully toward midwicket by contact."""
+    keys = []
+    K = _batting_key_builder()
+    keys.append(_stance_key(K))
+    # Rock back: weight onto the back foot, hands lift.
+    keys.append(K(7, 58, -3, -18, -10, -28, (0.14, -0.02, 1.10), (0.10, 0.22, 0.09),
+                  (-0.16, 0.00, 0.09), -0.12, -0.04))
+    # Backlift high and slightly leg-side, coiled.
+    keys.append(K(13, 68, 2, -22, -8, -24, (0.02, -0.16, 1.34), (0.11, 0.16, 0.09),
+                  (-0.16, -0.02, 0.09), -0.125, -0.05))
+    # Swivel begins: hips rotating open, hands coming down.
+    keys.append(K(18, 60, -10, -8, -6, -16, (-0.02, 0.06, 1.18), (0.12, 0.20, 0.09),
+                  (-0.15, 0.04, 0.09), -0.12, -0.02))
+    # CONTACT: chest height, in front of the body, just leg-side of the line.
+    keys.append(K(23, 95, -8, 12, -2, -6, (-0.04, 0.34, 1.16), (0.12, 0.24, 0.09),
+                  (-0.16, 0.02, 0.09), -0.10, -0.03))
+    # Follow-through: the bat swings around to the leg side and up.
+    keys.append(K(29, 100, -6, 16, 2, 0, (-0.22, 0.18, 1.30), (0.12, 0.26, 0.09),
+                  (-0.15, 0.06, 0.09), -0.105, -0.02))
+    # Recover.
+    keys.append(K(36, 30, -8, 6, -4, -10, (-0.02, 0.20, 1.05), (0.12, 0.24, 0.09),
+                  (-0.14, 0.06, 0.09), -0.115, 0.02))
+    return keys
+
+
+def batting_cut_keys():
+    """Right-handed CUT: short and wide, weight back, chest opened toward point, a
+    late slash played with the ball beside the body, bat finishing out toward the
+    off side."""
+    keys = []
+    K = _batting_key_builder()
+    keys.append(_stance_key(K))
+    keys.append(K(7, 40, -2, -22, -12, -30, (0.14, 0.02, 1.12), (0.10, 0.20, 0.09),
+                  (-0.14, 0.02, 0.09), -0.12, -0.03))
+    # Backlift high over the off shoulder; the chest has opened toward point.
+    keys.append(K(13, 30, 4, -28, -10, -26, (0.20, -0.08, 1.34), (0.11, 0.14, 0.09),
+                  (-0.15, -0.02, 0.09), -0.13, -0.05))
+    keys.append(K(18, 22, -8, -14, -8, -18, (0.18, 0.04, 1.22), (0.12, 0.16, 0.09),
+                  (-0.14, 0.02, 0.09), -0.12, -0.04))
+    # CONTACT: late -- beside the hips, out toward off, high. The bottom hand is
+    # near full extension (0.44 m of a 0.474 m reach), which is what a cut is.
+    keys.append(K(23, 15, -6, -10, -2, -8, (0.26, 0.02, 1.18), (0.13, 0.18, 0.09),
+                  (-0.14, 0.00, 0.09), -0.12, -0.04))
+    # The slash finishes out toward point.
+    keys.append(K(29, 10, -8, -16, 2, -4, (0.26, -0.02, 1.00), (0.13, 0.20, 0.09),
+                  (-0.13, 0.04, 0.09), -0.115, -0.02))
+    keys.append(K(36, 28, -8, 6, -4, -10, (0.10, 0.14, 1.00), (0.12, 0.22, 0.09),
+                  (-0.14, 0.05, 0.09), -0.118, 0.0))
+    return keys
+
+
+def batting_sweep_keys():
+    """Right-handed SWEEP: full ball on the legs, deep crouch onto a wide front-leg
+    stride, the whole torso folding over the front knee, hands sweeping through LOW
+    toward the leg side. The back leg folds under (deep knee bend) -- a crouched
+    sweep rather than a true knee-on-turf kneel, which position targets cannot
+    author directly."""
+    keys = []
+    K = _batting_key_builder()
+    keys.append(_stance_key(K))
+    # Pre-move: a small sink, hands barely move.
+    keys.append(K(7, 56, -4, -16, -10, -26, (0.10, 0.04, 0.96), (0.10, 0.24, 0.09),
+                  (-0.14, 0.04, 0.09), -0.16, 0.0))
+    # Backlift as the body starts to descend.
+    keys.append(K(13, 62, 0, -18, -8, -24, (0.12, -0.10, 1.18), (0.10, 0.22, 0.09),
+                  (-0.14, 0.02, 0.09), -0.24, -0.02))
+    # The descent: hips drop hard, front foot strides out across to the leg-side
+    # line where the ball will pitch.
+    keys.append(K(18, 58, -2, -10, -6, -18, (0.06, 0.10, 0.95), (-0.06, 0.34, 0.09),
+                  (-0.16, 0.00, 0.09), -0.32, 0.02))
+    # CONTACT: low, in front of the pad, torso folded over the front knee.
+    keys.append(K(23, 62, -24, 14, -2, -10, (-0.02, 0.34, 0.58), (-0.08, 0.36, 0.09),
+                  (-0.16, 0.02, 0.09), -0.40, 0.04))
+    # Hands swing through low toward square leg.
+    keys.append(K(29, 70, -16, 20, 2, -4, (-0.24, 0.28, 0.85), (-0.08, 0.38, 0.09),
+                  (-0.15, 0.06, 0.09), -0.34, 0.04))
+    # Rise back out of the crouch.
+    keys.append(K(36, 46, -8, 4, -4, -12, (0.04, 0.20, 0.95), (0.06, 0.28, 0.09),
+                  (-0.14, 0.06, 0.09), -0.18, 0.02))
+    return keys
+
+
+def batting_defence_keys():
+    """Forward DEFENCE: a small press forward, bat vertical under the eyes, soft
+    hands, head over the ball. The whole clip is deliberately boring -- no arc, the
+    follow-through holds the bat out in front rather than swinging it."""
+    keys = []
+    K = _batting_key_builder()
+    keys.append(_stance_key(K))
+    keys.append(K(7, 52, -6, -12, -10, -26, (0.08, 0.12, 0.90), (0.10, 0.26, 0.09),
+                  (-0.14, 0.06, 0.09), -0.115, 0.0))
+    # A tiny tap of the bat back -- nothing like a backlift.
+    keys.append(K(13, 50, -4, -10, -8, -22, (0.06, 0.02, 1.00), (0.10, 0.26, 0.09),
+                  (-0.14, 0.05, 0.09), -0.118, 0.0))
+    # Press onto the front foot.
+    keys.append(K(18, 40, -12, -2, -6, -14, (0.06, 0.22, 0.92), (0.12, 0.36, 0.09),
+                  (-0.13, 0.06, 0.09), -0.122, 0.04))
+    # CONTACT: hands out in front, low, bat vertical, head over the ball.
+    keys.append(K(23, 34, -14, 0, -4, -12, (0.06, 0.30, 0.88), (0.13, 0.40, 0.09),
+                  (-0.12, 0.08, 0.09), -0.125, 0.05))
+    # Absorb: the hands stay where they are; there is no swing to finish.
+    keys.append(K(29, 30, -10, 2, 0, -8, (0.05, 0.28, 0.86), (0.13, 0.40, 0.09),
+                  (-0.12, 0.08, 0.09), -0.122, 0.04))
+    keys.append(K(36, 44, -7, 0, -6, -16, (0.07, 0.20, 0.90), (0.12, 0.34, 0.09),
+                  (-0.13, 0.07, 0.09), -0.118, 0.02))
+    return keys
+
+
+def _batting_key_builder():
+    """The batting K, identical to batting_keys()' local K."""
+    def K(frame, turn, lean, chest, neck, head, grip, lfoot, rfoot, hips_z, hips_y=0.0,
+          hand_gap=0.04):
+        spec = spine(turn, lean, chest, neck, head)
+        g = Vector(grip)
+        lh = g + V(0, 0, hand_gap)
+        rh = g - V(0, 0, hand_gap)
+        ik = {
+            'left_hand': lh,
+            'right_hand': rh,
+            'left_foot': Vector(lfoot),
+            'right_foot': Vector(rfoot),
+        }
+        return (frame, spec, V(0.0, hips_y, hips_z), ik)
+    return K
+
+
+def bowling_offspin_keys():
+    """Off-spin: a shorter, rounder action than pace. The arm circle rides lower and
+    more across the body (pole shaping it side-on rather than over the top), the
+    bound is smaller, and the release is deliberately lower than pace's -- an
+    off-break comes out of the front of the hand at shoulder-to-head height."""
+    keys = []
+    K = _bowling_key_builder()
+    # Mark: ball in both hands at chest height.
+    keys.append(K(1, 8, 4, 0, 0, 0, (-0.36, 0.14, -0.06), (-0.02, 0.14, -0.06),
+                  (0.10, 0.10, 0.10), (-0.10, 0.08, 0.10), -0.06, 0.0,
+                  (-1.0, -0.30, -0.20)))
+    # Gather: a shallow sink; spinners gather short.
+    keys.append(K(8, 12, 10, -4, 2, -4, (-0.36, 0.16, -0.30), (-0.02, 0.16, -0.30),
+                  (0.10, 0.22, 0.10), (-0.10, 0.28, 0.10), -0.15, 0.0,
+                  (-1.0, -0.30, -0.30)))
+    # Bound: small; the bowling arm starts back but LOW -- a round-arm circle.
+    keys.append(K(14, 14, 6, -2, 2, -4, (-0.06, -0.16, -0.22), (0.05, 0.18, 0.08),
+                  (0.11, 0.26, 0.20), (-0.09, 0.36, 0.18), -0.05, 0.06,
+                  (-1.0, -0.35, 0.05)))
+    # Back foot down; the arm comes up but stays angled across, not vertical.
+    keys.append(K(20, 16, 4, 0, 4, -2, (-0.10, -0.20, 0.24), (0.07, 0.26, 0.28),
+                  (0.12, 0.48, 0.13), (-0.06, 0.40, 0.12), -0.09, 0.18,
+                  (-1.0, -0.25, 0.20)))
+    # Front foot braces; arm cocked at the top, slightly across.
+    keys.append(K(26, 16, -2, 2, 6, 2, (-0.05, 0.02, 0.34), (0.06, 0.30, 0.32),
+                  (0.11, 0.62, 0.12), (-0.05, 0.40, 0.12), -0.07, 0.24,
+                  (-1.0, -0.05, 0.30)))
+    # RELEASE: full extension but LOW and across -- head height, not above it by
+    # much. This is the visual signature of finger spin.
+    keys.append(K(31, 14, -12, 4, 6, 4, (-0.06, 0.06, 0.30), (0.02, 0.10, -0.10),
+                  (0.10, 0.64, 0.12), (-0.05, 0.38, 0.12), -0.04, 0.28,
+                  (-1.0, 0.10, 0.18)))
+    # Follow-through: the arm folds down past the hip.
+    keys.append(K(38, 12, -14, 2, 6, 6, (0.12, 0.20, -0.32), (-0.04, -0.10, -0.28),
+                  (0.09, 0.62, 0.12), (-0.07, 0.36, 0.12), -0.10, 0.30,
+                  (-1.0, 0.45, -0.20)))
+    keys.append(K(46, 8, 6, 0, 2, 2, (-0.02, 0.18, -0.16), (-0.02, 0.14, -0.10),
+                  (0.09, 0.42, 0.11), (-0.09, 0.32, 0.11), -0.07, 0.20,
+                  (-1.0, -0.15, -0.10)))
+    return keys
+
+
+def bowling_legspin_keys():
+    """Leg-spin: the whippy wrist-spin action. A deeper coil at the gather, a
+    springier bound, the bowling arm loaded HIGH behind the head, and a release as
+    high as a quick's -- the flip side of the off-spinner's low one. The extra
+    follow-through lean (the wrist snapping down over the braced leg) is the
+    signature of a leg-break bowler."""
+    keys = []
+    K = _bowling_key_builder()
+    keys.append(K(1, 8, 4, 0, 0, 0, (-0.36, 0.14, -0.06), (-0.02, 0.14, -0.06),
+                  (0.10, 0.10, 0.10), (-0.10, 0.08, 0.10), -0.06, 0.0,
+                  (-1.0, -0.30, -0.20)))
+    # Gather: a deep coil, chest closed.
+    keys.append(K(8, 18, 14, -6, 2, -4, (-0.36, 0.16, -0.34), (-0.02, 0.16, -0.34),
+                  (0.10, 0.26, 0.10), (-0.10, 0.30, 0.10), -0.20, 0.0,
+                  (-1.0, -0.35, -0.30)))
+    # Bound: bigger than the seamer's; the bowling arm drops LOW behind, loading
+    # the whip; the guide arm points high at the batter.
+    keys.append(K(14, 16, 8, -2, 2, -4, (-0.10, -0.22, -0.28), (0.06, 0.24, 0.14),
+                  (0.11, 0.32, 0.26), (-0.09, 0.42, 0.22), -0.04, 0.12,
+                  (-1.0, -0.30, -0.10)))
+    # Back foot down; the arm swings up from behind.
+    keys.append(K(20, 16, 6, 0, 4, -2, (-0.14, -0.26, 0.26), (0.08, 0.30, 0.30),
+                  (0.12, 0.52, 0.14), (-0.06, 0.44, 0.12), -0.10, 0.26,
+                  (-1.0, -0.25, 0.28)))
+    # Front foot braces; the arm is cocked HIGH behind the head, wrist loaded.
+    keys.append(K(26, 16, -4, 2, 6, 2, (-0.10, -0.18, 0.42), (0.06, 0.30, 0.34),
+                  (0.11, 0.64, 0.12), (-0.05, 0.42, 0.12), -0.08, 0.30,
+                  (-1.0, -0.10, 0.35)))
+    # RELEASE: fully extended, very high, just ahead of the shoulder line.
+    keys.append(K(31, 14, -18, 4, 6, 4, (-0.02, 0.10, 0.46), (0.02, 0.10, -0.10),
+                  (0.10, 0.66, 0.12), (-0.05, 0.40, 0.12), -0.03, 0.33,
+                  (-1.0, 0.15, 0.20)))
+    # The whip: the arm rips down across the body, torso committed far over the
+    # braced leg (lean -18, the most of any action).
+    keys.append(K(38, 12, -18, 2, 6, 6, (0.14, 0.24, -0.38), (-0.04, -0.10, -0.30),
+                  (0.09, 0.64, 0.12), (-0.07, 0.38, 0.12), -0.11, 0.34,
+                  (-1.0, 0.45, -0.25)))
+    keys.append(K(46, 8, 6, 0, 2, 2, (-0.02, 0.20, -0.20), (-0.02, 0.16, -0.10),
+                  (0.09, 0.44, 0.11), (-0.09, 0.34, 0.11), -0.08, 0.20,
+                  (-1.0, -0.20, -0.10)))
+    return keys
+
+
+def _bowling_key_builder():
+    """The bowling K, identical to bowling_keys()' local K."""
+    def K(frame, turn, lean, chest, neck, head, rh_rel, lh_rel, lfoot, rfoot, hips_z,
+          hips_y=0.0, rpole=(-1.0, -0.35, 0.0)):
+        spec = spine(turn, lean, chest, neck, head)
+        ik = {
+            'right_hand_rel': Vector(rh_rel),
+            'left_hand_rel': Vector(lh_rel),
+            'left_foot': Vector(lfoot),
+            'right_foot': Vector(rfoot),
+            'right_hand_pole': Vector(rpole),
+        }
+        return (frame, spec, V(0.0, hips_y, hips_z), ik)
+    return K
+
+
 def main():
     argv = sys.argv
     out_dir = '/tmp/c26anim'
@@ -491,7 +745,13 @@ def main():
 
     jobs = [
         ('A_C26_BattingDrive', batting_keys(), 1, 36),
+        ('A_C26_BattingPull', batting_pull_keys(), 1, 36),
+        ('A_C26_BattingCut', batting_cut_keys(), 1, 36),
+        ('A_C26_BattingSweep', batting_sweep_keys(), 1, 36),
+        ('A_C26_BattingDefence', batting_defence_keys(), 1, 36),
         ('A_C26_BowlingPace', bowling_keys(), 1, 46),
+        ('A_C26_BowlingOffSpin', bowling_offspin_keys(), 1, 46),
+        ('A_C26_BowlingLegSpin', bowling_legspin_keys(), 1, 46),
     ]
     made = []
     for name, keys, f0, f1 in jobs:

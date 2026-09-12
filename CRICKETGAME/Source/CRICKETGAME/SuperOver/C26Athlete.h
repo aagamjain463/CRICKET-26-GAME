@@ -146,6 +146,18 @@ private:
         -- so they drive this mesh directly with no retargeting step. See Docs/AUTHORED_ANIMATION.md. */
     UPROPERTY() TObjectPtr<UAnimSequence> BattingClip;
     UPROPERTY() TObjectPtr<UAnimSequence> BowlingClip;
+    /** The shot library. Every batting clip shares the drive's frame layout (36 frames,
+        contact at 23) and every bowling clip the pace layout (46 frames, release at 31),
+        so the same time-warp constants pin them all to the match's own timing. These are
+        loaded lazily on first use (not via ConstructorHelpers) so a checkout that has not
+        run Tools/ImportAnimations.py yet still boots; a null clip falls back to its
+        family's base clip, then to the procedural action. */
+    UPROPERTY() TObjectPtr<UAnimSequence> BattingPullClip;
+    UPROPERTY() TObjectPtr<UAnimSequence> BattingCutClip;
+    UPROPERTY() TObjectPtr<UAnimSequence> BattingSweepClip;
+    UPROPERTY() TObjectPtr<UAnimSequence> BattingDefenceClip;
+    UPROPERTY() TObjectPtr<UAnimSequence> BowlingOffSpinClip;
+    UPROPERTY() TObjectPtr<UAnimSequence> BowlingLegSpinClip;
     UPROPERTY() TObjectPtr<UMaterialInterface> TexturedSkin;
     void ApplyRecordedMotion(bool Running, bool Batting);
     /** Sample a whole-body authored action over Pose. This is the same bind-by-name retarget
@@ -160,9 +172,22 @@ private:
         Measured once and cached: the answer never changes, and testing per frame would flicker
         every time a bone passed through its own rest pose. */
     void GatherDrivenBones(UAnimSequence* Clip,TSet<int32>& Out);
-    TSet<int32> BattingDriven,BowlingDriven;
-    /** True once the driven-bone sets have been measured for this athlete. */
-    bool DrivenBonesCached=false;
+    /** Driven-bone sets per clip pointer, so the shot library shares one cache. */
+    UPROPERTY(Transient) TMap<TObjectPtr<UAnimSequence>,TSet<int32>> ClipDriven;
+    /** True once the shot library has had its one load attempt. */
+    bool ShotLibraryLoaded=false;
+    /** Pick the batting clip for the shot the simulation actually played: defence first,
+        then the shot angle (leg side vs off side) crossed with the stride intent (weight
+        back vs forward). Never null: falls back to the drive, then the caller's null check
+        falls back to the procedural stroke. */
+    UAnimSequence* SelectBattingClip();
+    /** Pick the bowling action for the delivery the match asked for: finger-spin types get
+        the low round-arm release, wrist-spin types the tall whippy one, seam/swing types
+        the pace action. */
+    UAnimSequence* SelectBowlingClip();
+    /** Lazy load of the six library clips (see the block above for why not the ctor). */
+    void LoadShotLibrary();
+    TSet<int32>& DrivenFor(UAnimSequence* Clip);
     // The Mixamo rig is a T-pose facing mesh +Y with mesh +X out to the character's LEFT.
     // Rig() is the only conversion used for posing: it turns (forward, right, up) in real
     // centimetres into that mesh space, so every authored target below reads as cricket

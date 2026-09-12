@@ -1327,6 +1327,64 @@ void AC26Athlete::GatherDrivenBones(UAnimSequence* Clip,TSet<int32>& Out)
         for(int32 I=0;I<Pose.Num();++I)
             if(Source.FindBoneIndex(Target.GetBoneName(I))>=0)Out.Add(I);
 }
+void AC26Athlete::LoadShotLibrary()
+{
+    if(ShotLibraryLoaded)return;
+    ShotLibraryLoaded=true;
+    // Lazy, not ConstructorHelpers: a missing asset must degrade to the base clip
+    // (and then to the procedural action), not stop the CDO from loading.
+    auto Load=[this](const TCHAR* Path,TObjectPtr<UAnimSequence>& Out)
+    {
+        if(!Out)Out=LoadObject<UAnimSequence>(nullptr,Path);
+        if(!Out)UE_LOG(LogTemp,Warning,TEXT("C26_SHOTLIB missing %s (run Tools/ImportAnimations.py)"),Path);
+    };
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingPull.A_C26_BattingPull"),BattingPullClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingCut.A_C26_BattingCut"),BattingCutClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingSweep.A_C26_BattingSweep"),BattingSweepClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingDefence.A_C26_BattingDefence"),BattingDefenceClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_BowlingOffSpin.A_C26_BowlingOffSpin"),BowlingOffSpinClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_BowlingLegSpin.A_C26_BowlingLegSpin"),BowlingLegSpinClip);
+}
+
+UAnimSequence* AC26Athlete::SelectBattingClip()
+{
+    LoadShotLibrary();
+    // The simulation's own shot intent, not a visual guess: Defending comes straight
+    // off the shot intent; ShotAngle is the shot's horizontal direction (0 = straight,
+    // negative = leg side, positive = off side) and StrideIntent says whether the
+    // weight went back (short ball) or forward (full ball).
+    if(Defending&&BattingDefenceClip)return BattingDefenceClip;
+    if(ShotAngle<=-40.f)
+        return StrideIntent<0.f?(BattingPullClip?BattingPullClip:BattingClip)
+                               :(BattingSweepClip?BattingSweepClip:BattingClip);
+    if(ShotAngle>=40.f&&StrideIntent<0.f)
+        return BattingCutClip?BattingCutClip:BattingClip;
+    return BattingClip;
+}
+
+UAnimSequence* AC26Athlete::SelectBowlingClip()
+{
+    LoadShotLibrary();
+    switch(DeliveryStyle)
+    {
+        case EC26Delivery::OffBreak:case EC26Delivery::ArmBall:
+        case EC26Delivery::TopSpinner:case EC26Delivery::Doosra:
+            return BowlingOffSpinClip?BowlingOffSpinClip:BowlingClip;
+        case EC26Delivery::LegBreak:case EC26Delivery::Googly:
+        case EC26Delivery::Flipper:
+            return BowlingLegSpinClip?BowlingLegSpinClip:BowlingClip;
+        default:return BowlingClip;
+    }
+}
+
+TSet<int32>& AC26Athlete::DrivenFor(UAnimSequence* Clip)
+{
+    if(TSet<int32>* Found=ClipDriven.Find(Clip))return *Found;
+    TSet<int32>& Out=ClipDriven.Add(Clip);
+    GatherDrivenBones(Clip,Out);
+    return Out;
+}
+
 void AC26Athlete::ApplyAuthoredClip(UAnimSequence* Clip,const TSet<int32>& Driven,float Time,float Weight)
 {
     if(!Clip||Weight<=0.f||Driven.IsEmpty()||!Clip->GetSkeleton()||!Mesh||!Mesh->GetSkinnedAsset())return;
@@ -1899,15 +1957,16 @@ void AC26Athlete::Animate(float Dt)
     // uniform scale would move the defining frame, which is the one thing authoring the clip was
     // for. Phase one runs from the start of the action to that frame, phase two from it to the end,
     // so the clip covers the whole action AND lands its contact exactly where the match expects it.
-    if(!DrivenBonesCached)
+    if(Batting&&!Running&&Action==EC26Action::Batting)
     {
-        GatherDrivenBones(BattingClip,BattingDriven);
-        GatherDrivenBones(BowlingClip,BowlingDriven);
-        DrivenBonesCached=true;
-    }
-    if(Batting&&!Running&&Action==EC26Action::Batting&&BattingClip)
-    {
-        const float ClipLength=BattingClip->GetPlayLength();
+        // The clip for the shot the simulation actually played (defence, pull, cut,
+        // sweep, drive); null only when even the drive is missing, in which case the
+        // procedural stroke keeps ownership below.
+        UAnimSequence* Shot=SelectBattingClip();
+        if(!Shot)Shot=BattingClip;
+        if(Shot)
+        {
+        const float ClipLength=Shot->GetPlayLength();
         const float ClipContact=C26BattingContactFrame/C26AuthoredFps;
         const float Contact=C26Field::BatContactPoseTime;
         // Same span the procedural pass finishes the stroke over, so the hand-back at the end has
@@ -1927,14 +1986,21 @@ void AC26Athlete::Animate(float Dt)
         // repair_facing) and expressed on this skeleton by Tools/rebuild_authored_clips.py +
         // Tools/correct_authored_anim.py, whose geometric verification passes (feet planted,
         // athletic crouch, hands together on the handle, hands 81 cm IN FRONT of the hips at
-        // contact, backlift behind the body). The clip owns the driven bones through the stroke
+        // contact, backlift behind the body; the library adds pull/cut/sweep/defence with the
+        // same guarantees). The clip owns the driven bones through the stroke
         // by design; the procedural solve remains the blend basis at each end and the fallback
         // if the clip ever fails to load.
-        ApplyAuthoredClip(BattingClip,BattingDriven,ClipTime,Weight);
+        ApplyAuthoredClip(Shot,DrivenFor(Shot),ClipTime,Weight);
+        }
     }
-    if(Role==EC26Role::Bowler&&Action==EC26Action::Bowling&&BowlingClip)
+    if(Role==EC26Role::Bowler&&Action==EC26Action::Bowling)
     {
-        const float ClipLength=BowlingClip->GetPlayLength();
+        // The action for the delivery the match asked for (pace / off-spin / leg-spin).
+        UAnimSequence* Delivery=SelectBowlingClip();
+        if(!Delivery)Delivery=BowlingClip;
+        if(Delivery)
+        {
+        const float ClipLength=Delivery->GetPlayLength();
         const float ClipRelease=C26BowlingReleaseFrame/C26AuthoredFps;
         const float Release=C26Field::ReleasePoseTime;
         // C26MatchGameMode starts this action ReleasePoseTime before the ball leaves the hand and
@@ -1948,7 +2014,8 @@ void AC26Athlete::Animate(float Dt)
         // corrected release frame has the bowling hand fully extended above the head and slightly
         // in front of the shoulder, the mark/gather keys hold the ball in both hands, and the hips
         // carry the bowler 71 cm down the pitch through the action.
-        ApplyAuthoredClip(BowlingClip,BowlingDriven,ClipTime,Weight);
+        ApplyAuthoredClip(Delivery,DrivenFor(Delivery),ClipTime,Weight);
+        }
     }
     AimHead();
     // One filter stands between every authored pose in this function and the screen. Nothing above

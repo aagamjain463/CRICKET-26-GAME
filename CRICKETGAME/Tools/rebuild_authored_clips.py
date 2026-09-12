@@ -291,14 +291,31 @@ def main():
     authoring = load_authoring_module()
     repair = authoring['repair_facing']
     os.makedirs(OUT_DIR, exist_ok=True)
+    # New clips have no source FBX of their own yet: each shares the frame layout
+    # (36 keys / contact at 23 for batting, 46 / release at 31 for bowling) and the
+    # exact ANIMATED bone set of its family's base clip, so the base clip's FBX is
+    # used as the structural template and every curve value is overwritten by the
+    # solve.
     jobs = [
-        ('A_C26_BattingDrive', authoring['batting_keys'](), 1, 36,
-         [('stance', 1), ('backlift', 13), ('contact', 23), ('follow', 29)]),
-        ('A_C26_BowlingPace', authoring['bowling_keys'](), 1, 46,
-         [('gather', 8), ('backfoot', 20), ('release', 31), ('follow', 38)]),
+        ('A_C26_BattingDrive', authoring['batting_keys'](), 'A_C26_BattingDrive',
+         1, 36, [('stance', 1), ('backlift', 13), ('contact', 23), ('follow', 29)]),
+        ('A_C26_BattingPull', authoring['batting_pull_keys'](), 'A_C26_BattingDrive',
+         1, 36, [('stance', 1), ('backlift', 13), ('contact', 23), ('follow', 29)]),
+        ('A_C26_BattingCut', authoring['batting_cut_keys'](), 'A_C26_BattingDrive',
+         1, 36, [('stance', 1), ('backlift', 13), ('contact', 23), ('follow', 29)]),
+        ('A_C26_BattingSweep', authoring['batting_sweep_keys'](), 'A_C26_BattingDrive',
+         1, 36, [('stance', 1), ('descend', 18), ('contact', 23), ('follow', 29)]),
+        ('A_C26_BattingDefence', authoring['batting_defence_keys'](), 'A_C26_BattingDrive',
+         1, 36, [('stance', 1), ('press', 18), ('contact', 23), ('absorb', 29)]),
+        ('A_C26_BowlingPace', authoring['bowling_keys'](), 'A_C26_BowlingPace',
+         1, 46, [('gather', 8), ('backfoot', 20), ('release', 31), ('follow', 38)]),
+        ('A_C26_BowlingOffSpin', authoring['bowling_offspin_keys'](), 'A_C26_BowlingPace',
+         1, 46, [('gather', 8), ('backfoot', 20), ('release', 31), ('follow', 38)]),
+        ('A_C26_BowlingLegSpin', authoring['bowling_legspin_keys'](), 'A_C26_BowlingPace',
+         1, 46, [('gather', 8), ('backfoot', 20), ('release', 31), ('follow', 38)]),
     ]
-    for name, keys, f0, f1, marks in jobs:
-        src = os.path.join(SRC_DIR, name + '.fbx')
+    for name, keys, template, f0, f1, marks in jobs:
+        src = os.path.join(SRC_DIR, template + '.fbx')
         dst = os.path.join(OUT_DIR, name + '.fbx')
         rig = RigData(src)
         solver = SolverRig(rig, authoring)

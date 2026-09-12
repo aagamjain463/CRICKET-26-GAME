@@ -93,22 +93,23 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FC26AuthoredClipsTest,"Cricket26.Anim.AuthoredC
 bool FC26AuthoredClipsTest::RunTest(const FString&)
 {
     // The authored clips drive the striker and the bowler in-match now (AC26Athlete::
-    // ApplyAuthoredClip), so their geometry is production behaviour, not decoration. This
-    // samples the IMPORTED assets -- after the FBX importer has done its own conversion --
-    // and re-asserts the same facts Tools/correct_authored_anim.py verifies offline on the
-    // curves. If it fails with an asset error, run Tools/ImportAnimations.py; if it fails
-    // a geometry check, the pipeline in Docs/AUTHORED_ANIMATION.md was bypassed.
+    // ApplyAuthoredClip via SelectBattingClip/SelectBowlingClip), so their geometry is
+    // production behaviour, not decoration. This samples the IMPORTED assets -- after
+    // the FBX importer has done its own conversion -- and re-asserts the same facts
+    // Tools/correct_authored_anim.py verifies offline on the curves. If it fails with
+    // an asset error, run Tools/ImportAnimations.py; if it fails a geometry check,
+    // the pipeline in Docs/AUTHORED_ANIMATION.md was bypassed.
     constexpr float Fps=24.f;
-    UAnimSequence* Batting=LoadObject<UAnimSequence>(nullptr,TEXT("/Game/Cricket26/Animations/A_C26_BattingDrive.A_C26_BattingDrive"));
-    UAnimSequence* Bowling=LoadObject<UAnimSequence>(nullptr,TEXT("/Game/Cricket26/Animations/A_C26_BowlingPace.A_C26_BowlingPace"));
-    if(!Batting||!Bowling)
-    {
-        AddError(TEXT("Authored clips missing from /Game/Cricket26/Animations -- run Tools/ImportAnimations.py (imports ArtSource/Exports/Animations/Corrected)"));
-        return false;
-    }
-    // Skeleton-space transform of one bone at a time: GetBoneTransform returns LOCALS
-    // seeded from the ref pose, so the chain is composed parent-first like the athlete does.
-    auto Bone=[&](UAnimSequence* Clip,float Time,std::initializer_list<FName> Chain)->FVector
+    struct FClipSpec{const TCHAR* Name;bool Batting;};
+    const FClipSpec Specs[]={
+        {TEXT("A_C26_BattingDrive"),true},{TEXT("A_C26_BattingPull"),true},
+        {TEXT("A_C26_BattingCut"),true},{TEXT("A_C26_BattingSweep"),true},
+        {TEXT("A_C26_BattingDefence"),true},{TEXT("A_C26_BowlingPace"),false},
+        {TEXT("A_C26_BowlingOffSpin"),false},{TEXT("A_C26_BowlingLegSpin"),false},
+    };
+    // Skeleton-space transform of one bone chain: GetBoneTransform returns LOCALS
+    // seeded from the ref pose, so the chain composes parent-first like the athlete does.
+    auto Bone=[](UAnimSequence* Clip,float Time,std::initializer_list<FName> Chain)->FVector
     {
         const FReferenceSkeleton& Ref=Clip->GetSkeleton()->GetReferenceSkeleton();
         const FAnimExtractContext Ctx(Time,false);
@@ -116,7 +117,7 @@ bool FC26AuthoredClipsTest::RunTest(const FString&)
         for(FName B:Chain)
         {
             const int32 Idx=Ref.FindBoneIndex(B);
-            if(Idx<0){AddError(FString::Printf(TEXT("bone %s missing on clip skeleton"),*B.ToString()));return FVector(ForceInit);}
+            if(Idx<0){return FVector(ForceInit);}
             FTransform Local=Ref.GetRefBonePose()[Idx];
             Clip->GetBoneTransform(Local,FSkeletonPoseBoneIndex(Idx),Ctx,false);
             Acc=Acc*Local;
@@ -126,33 +127,72 @@ bool FC26AuthoredClipsTest::RunTest(const FString&)
     const FName Hips(TEXT("Hips")),Spine(TEXT("Spine")),S1(TEXT("Spine1")),S2(TEXT("Spine2")),Neck(TEXT("Neck")),Head(TEXT("Head"));
     const FName LSh(TEXT("LeftShoulder")),LArm(TEXT("LeftArm")),LFore(TEXT("LeftForeArm")),LHand(TEXT("LeftHand"));
     const FName RSh(TEXT("RightShoulder")),RArm(TEXT("RightArm")),RFore(TEXT("RightForeArm")),RHand(TEXT("RightHand"));
-    const FName LUp(TEXT("LeftUpLeg")),LLeg(TEXT("LeftLeg")),LFoot(TEXT("LeftFoot")),LToe(TEXT("LeftToeBase"));
-    auto HandMid=[&](UAnimSequence* C,float T){return (Bone(C,T,{Hips,Spine,S1,S2,LSh,LArm,LFore,LHand})+Bone(C,T,{Hips,Spine,S1,S2,RSh,RArm,RFore,RHand}))/2.f;};
-    // Forward on the horizontal plane, measured from the posed foot like the offline verifier.
+    const FName LHips(TEXT("Hips"));
+    auto HandMid=[&](UAnimSequence* C,float T){return (Bone(C,T,{LHips,Spine,S1,S2,LSh,LArm,LFore,LHand})+Bone(C,T,{LHips,Spine,S1,S2,RSh,RArm,RFore,RHand}))/2.f;};
+    auto LeftHand=[&](UAnimSequence* C,float T){return Bone(C,T,{LHips,Spine,S1,S2,LSh,LArm,LFore,LHand});};
+    auto RightHand=[&](UAnimSequence* C,float T){return Bone(C,T,{LHips,Spine,S1,S2,RSh,RArm,RFore,RHand});};
+    // The body frame from the SHOULDER line, not the toes: shots like the cut pivot
+    // the front foot open, which rotates a toe-relative frame past 60 degrees.
     auto Forward=[&](UAnimSequence* C,float T)
     {
-        const FVector Toe=Bone(C,T,{Hips,LUp,LLeg,LFoot,LToe}),Foot=Bone(C,T,{Hips,LUp,LLeg,LFoot});
-        FVector F=Toe-Foot;F.Z=0;return F.GetSafeNormal();
+        const FVector LS=Bone(C,T,{LHips,Spine,S1,S2,LSh}),RS=Bone(C,T,{LHips,Spine,S1,S2,RSh});
+        const FVector D=LS-RS;
+        FVector F=FVector::CrossProduct(D,FVector::UpVector);
+        F.Z=0;
+        return F.GetSafeNormal();
     };
-    auto HandsForward=[&](UAnimSequence* C,float T)
+    const float Defining=FMath::Min(23.f/Fps,1.f);   // contact (batting) / release (bowling)
+    for(const FClipSpec& Spec:Specs)
     {
-        const FVector HipsP=Bone(C,T,{Hips});
-        return FVector::DotProduct(HandMid(C,T)-HipsP,Forward(C,T));
-    };
-    // BATTING: the drive goes through the line, not through the body.
-    const float Span=FVector::Distance(Bone(Batting,23.f/Fps,{Hips,Spine,S1,S2,LSh,LArm,LFore,LHand}),Bone(Batting,23.f/Fps,{Hips,Spine,S1,S2,RSh,RArm,RFore,RHand}));
-    TestTrue(TEXT("Batting contact: hands together on the handle"),Span<25.f);
-    TestTrue(TEXT("Batting contact: hands in FRONT of the body"),HandsForward(Batting,23.f/Fps)>10.f);
-    TestTrue(TEXT("Batting backlift: hands behind the body"),HandsForward(Batting,13.f/Fps)<-10.f);
-    TestTrue(TEXT("Batting stance: hands on the handle"),FMath::Abs(HandsForward(Batting,1.f/Fps))<40.f);
-    // BOWLING: overhead release, ball in both hands at the mark, travel down the pitch.
-    const FVector RH=Bone(Bowling,31.f/Fps,{Hips,Spine,S1,S2,RSh,RArm,RFore,RHand}),LH=Bone(Bowling,31.f/Fps,{Hips,Spine,S1,S2,LSh,LArm,LFore,LHand});
-    const FVector HeadP=Bone(Bowling,31.f/Fps,{Hips,Spine,S1,S2,Neck,Head});
-    TestTrue(TEXT("Bowling release: arm above the head"),FMath::Max(RH.Z,LH.Z)>HeadP.Z+40.f);
-    const float MarkSpan=FVector::Distance(Bone(Bowling,0.f,{Hips,Spine,S1,S2,LSh,LArm,LFore,LHand}),Bone(Bowling,0.f,{Hips,Spine,S1,S2,RSh,RArm,RFore,RHand}));
-    TestTrue(TEXT("Bowling mark: ball held in both hands"),MarkSpan<25.f);
-    const FVector Travel=Bone(Bowling,38.f/Fps,{Hips})-Bone(Bowling,0.f,{Hips});
-    TestTrue(TEXT("Bowling: travels down the pitch"),FVector::DotProduct(Travel,Forward(Bowling,0.f))>20.f);
+        UAnimSequence* Clip=LoadObject<UAnimSequence>(nullptr,FString::Printf(TEXT("/Game/Cricket26/Animations/%s.%s"),Spec.Name,Spec.Name));
+        if(!Clip)
+        {
+            AddError(FString::Printf(TEXT("Authored clip %s missing -- run Tools/ImportAnimations.py (imports ArtSource/Exports/Animations/Corrected)"),Spec.Name));
+            continue;
+        }
+        const FString Tag=Spec.Name;
+        // 1. Chest faces the bowler at the stance and the defining frame. This is the
+        //    gate that a whole-body yaw bug cannot hide from (one did, historically).
+        auto YawDeg=[&](float T){return FMath::RadiansToDegrees(FMath::Atan2(Forward(Clip,T).X,Forward(Clip,T).Y));};
+        TestTrue(*FString::Printf(TEXT("%s: stance chest faces the bowler"),*Tag),FMath::Abs(YawDeg(0.f))<20.f);
+        TestTrue(*FString::Printf(TEXT("%s: defining-frame chest faces the bowler"),*Tag),FMath::Abs(YawDeg(Defining))<35.f);
+        // 2. Hands on the handle / ball at the stance, and together at the defining frame.
+        TestTrue(*FString::Printf(TEXT("%s: hands together at stance"),*Tag),FVector::Distance(LeftHand(Clip,0.f),RightHand(Clip,0.f))<25.f);
+        TestTrue(*FString::Printf(TEXT("%s: hands together at defining frame"),*Tag),FVector::Distance(LeftHand(Clip,Defining),RightHand(Clip,Defining))<25.f);
+        if(Spec.Batting)
+        {
+            const FVector H=HandMid(Clip,Defining),P=Bone(Clip,Defining,{Hips}),F=Forward(Clip,Defining);
+            const float Front=FVector::DotProduct(H-P,F);
+            const FString Shot=Spec.Name+6;   // skip "A_C26_"
+            if(Shot==TEXT("BattingDrive")||Shot==TEXT("BattingDefence"))
+                TestTrue(*FString::Printf(TEXT("%s: contact hands in front of the body"),*Tag),Front>10.f);
+            // Mesh +X is the character's LEFT, so the right-hander's OFF side
+            // (his right) is up x forward, and the leg side is its negation.
+            const FVector OffSide=FVector::CrossProduct(FVector::UpVector,Forward(Clip,Defining));
+            if(Shot==TEXT("BattingPull"))
+            {
+                TestTrue(*FString::Printf(TEXT("%s: pull is a horizontal shot"),*Tag),Front>5.f&&H.Z>P.Z+30.f);
+                TestTrue(*FString::Printf(TEXT("%s: pull follows through to the leg side"),*Tag),
+                         FVector::DotProduct(HandMid(Clip,29.f/Fps)-P,OffSide)<-10.f);
+            }
+            if(Shot==TEXT("BattingCut"))
+                TestTrue(*FString::Printf(TEXT("%s: cut slashes to the off side"),*Tag),
+                         FVector::DotProduct(H-P,OffSide)>10.f);
+            if(Shot==TEXT("BattingSweep"))
+                TestTrue(*FString::Printf(TEXT("%s: sweep is a deep crouch"),*Tag),P.Z<150.f&&Front>5.f);
+        }
+        else
+        {
+            const FVector HeadP=Bone(Clip,Defining,{Hips,Spine,S1,S2,Neck,Head});
+            const float Hi=FMath::Max(LeftHand(Clip,Defining).Z,RightHand(Clip,Defining).Z);
+            const FString Style=Spec.Name+6;
+            // Finger spin releases AT head height; quicks and wrist spinners above it.
+            const float Gate=Style==TEXT("BowlingOffSpin")?20.f:40.f;
+            TestTrue(*FString::Printf(TEXT("%s: release arm over the shoulder"),*Tag),Hi>HeadP.Z+Gate);
+            const FVector Stance=Bone(Clip,0.f,{Hips}),Late=Bone(Clip,38.f/Fps,{Hips});
+            TestTrue(*FString::Printf(TEXT("%s: travels down the pitch"),*Tag),FVector::DotProduct(Late-Stance,Forward(Clip,0.f))>20.f);
+        }
+    }
     return true;
 }
 #endif

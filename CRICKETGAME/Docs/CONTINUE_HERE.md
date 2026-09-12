@@ -8,19 +8,27 @@ context.
 
 ## 0. UPDATE 2026-09-13 — authored clips FIXED and re-enabled (read PREMIUM_CHARACTER_SYSTEM.md)
 
-The authored-clips blocker is resolved. Root cause of the "stroke through the back": the
-authoring script assumed the rig faces armature +Y; it faces -Y. The repair
-(`repair_facing()` in `c26_anim_author.py` — conjugate spine twists by rotZ(180), rotate IK
-targets by (x,y,z)->(-x,-y,z), poles keep x/z negate y) is applied at solve time and by the
-new offline pipeline:
+The authored-clips blocker is resolved AND the shot library is in. Root cause of the
+"stroke through the back": the authoring script assumed the rig faces armature +Y; it
+faces -Y. The repair (`repair_facing()` in `c26_anim_author.py` — conjugate spine
+twists by rotZ(180), rotate IK targets by (x,y,z)->(-x,-y,z), poles keep x/z negate y)
+is applied at solve time and by the offline pipeline:
 
-    python3 Tools/rebuild_authored_clips.py        # solve+bake -> Animations/Solved/
-    python3 Tools/correct_authored_anim.py <solved files>   # -> Corrected/, 11/11 PASS
+    python3 Tools/rebuild_authored_clips.py        # solve+bake all 8 clips -> Solved/
+    python3 Tools/correct_authored_anim.py         # -> Corrected/, 66/66 checks PASS
 
-Both `ApplyAuthoredClip` branches in C26Athlete.cpp are re-enabled; a new in-engine gate
-`Cricket26.Anim.AuthoredClips` verifies the IMPORTED assets. **Not yet done: the UE import +
-build + playtest on this Mac** — exact sequence in `Docs/PREMIUM_CHARACTER_SYSTEM.md` §6.
-Everything else in this file below is older context (meta-human paths etc.) and still applies.
+Library (all verified): BattingDrive/Pull/Cut/Sweep/Defence + BowlingPace/OffSpin/
+LegSpin. C26Athlete selects per shot intent (Defending/ShotAngle/StrideIntent) and
+delivery type (DeliveryStyle), with fallback chain library -> base clip ->
+procedural. A SECOND corrector bug was found and fixed while authoring the cut: the
+hips retarget referenced the FBX Model defaults (a stale frozen POSE) instead of the
+true T-pose, rotating every corrected clip by ~52 deg of chest yaw — chest-yaw gates
+now exist in both the offline checks and the in-engine test
+(Cricket26.Anim.AuthoredClips covers all 8 clips).
+
+**Not yet done: the UE import + build + playtest on this Mac** — exact sequence in
+`Docs/PREMIUM_CHARACTER_SYSTEM.md` §6. Everything else in this file below is older
+context (meta-human paths etc.) and still applies.
 
 ---
 
