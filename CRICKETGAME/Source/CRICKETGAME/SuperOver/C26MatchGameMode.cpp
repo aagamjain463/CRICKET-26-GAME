@@ -815,7 +815,7 @@ void AC26MatchGameMode::Collect(int Fielder,bool Catch)
 void AC26MatchGameMode::UpdateFieldPresence(float Dt)
 {
     if(Athletes.Num()<12)return;
-    const FVector Striker=Athletes[11]->GetActorLocation();
+    const FVector StrikerLocation=Athletes[11]->GetActorLocation();
     const bool WalkingIn=Phase==EC26Phase::RunUp||Phase==EC26Phase::Delivery;
     if(WalkingIn)
     {
@@ -828,7 +828,7 @@ void AC26MatchGameMode::UpdateFieldPresence(float Dt)
         for(int I=2;I<11;++I)
         {
             auto* F=Athletes[I].Get();
-            FVector In=Striker-FieldPositions[I];In.Z=0;
+            FVector In=StrikerLocation-FieldPositions[I];In.Z=0;
             if(In.IsNearlyZero())continue;
             In=In.GetSafeNormal();
             FVector Want=FieldPositions[I]+In*FieldCreep;Want.Z=F->GetActorLocation().Z;

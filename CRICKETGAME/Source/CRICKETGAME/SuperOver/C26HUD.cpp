@@ -1830,17 +1830,17 @@ void AC26HUD::Score()
             continue;
         }
         FString V;
-        FLinearColor Fill, Ink;
-        if (W)            { V = TEXT("W"); Fill = Crimson; Ink = WhiteAthletic; }
-        else if (Six)     { V = TEXT("6"); Fill = Amber; Ink = DarkLabel; }
-        else if (Four)    { V = TEXT("4"); Fill = TurfGreen; Ink = WhiteAthletic; }
-        else if (Extra)   { V = O.WideRuns ? TEXT("Wd") : TEXT("Nb"); Fill = FLinearColor(.95f, .65f, .25f, 1.f); Ink = DarkLabel; }
-        else              { V = FString::FromInt(O.BatRuns + O.Byes + O.LegByes); Fill = WhiteAthletic; Ink = DarkLabel; }
+        FLinearColor Fill, LocalInk;
+        if (W)            { V = TEXT("W"); Fill = Crimson; LocalInk = WhiteAthletic; }
+        else if (Six)     { V = TEXT("6"); Fill = Amber; LocalInk = DarkLabel; }
+        else if (Four)    { V = TEXT("4"); Fill = TurfGreen; LocalInk = WhiteAthletic; }
+        else if (Extra)   { V = O.WideRuns ? TEXT("Wd") : TEXT("Nb"); Fill = FLinearColor(.95f, .65f, .25f, 1.f); LocalInk = DarkLabel; }
+        else              { V = FString::FromInt(O.BatRuns + O.Byes + O.LegByes); Fill = WhiteAthletic; LocalInk = DarkLabel; }
 
         Disc(CX, BallCY, BallR - 1.f, Fill);
         Circle(CX, BallCY, BallR, FLinearColor(Fill.R, Fill.G, Fill.B, .9f), 1.2f);
         const float FS = (V.Len() > 1) ? 10.f : 12.f;
-        TextMid(V, CX, BallCY - FS * .5f - 1.f, FS + 2.f, FS, Ink, true, 2);
+        TextMid(V, CX, BallCY - FS * .5f - 1.f, FS + 2.f, FS, LocalInk, true, 2);
     }
 
     // ---- FAR RIGHT: fielding club shield (full-width mode only) ----
