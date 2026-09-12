@@ -6,35 +6,44 @@ context.
 
 ---
 
-## 0. UPDATE 2026-09-13 — authored clips FIXED and re-enabled (read PREMIUM_CHARACTER_SYSTEM.md)
+## 0. UPDATE 2026-09-13 — authored clips FIXED; 18-clip library COMPLETE (read PREMIUM_CHARACTER_SYSTEM.md)
 
-The authored-clips blocker is resolved AND the shot library is in. Root cause of the
-"stroke through the back": the authoring script assumed the rig faces armature +Y; it
-faces -Y. The repair (`repair_facing()` in `c26_anim_author.py` — conjugate spine
-twists by rotZ(180), rotate IK targets by (x,y,z)->(-x,-y,z), poles keep x/z negate y)
-is applied at solve time and by the offline pipeline:
+Root cause of the original "stroke through the back": the authoring script assumed the
+rig faces armature +Y; it faces -Y. The repair (`repair_facing()` in
+`c26_anim_author.py` — conjugate spine twists by rotZ(180), rotate IK targets by
+(x,y,z)->(-x,-y,z), poles keep x/z negate y) is applied at solve time and by the
+offline pipeline:
 
-    python3 Tools/rebuild_authored_clips.py        # solve+bake all 8 clips -> Solved/
+    python3 Tools/rebuild_authored_clips.py        # solve+bake all 18 clips -> Solved/
     python3 Tools/correct_authored_anim.py         # -> Corrected/, 147/147 checks PASS
+    python3 Tools/correct_authored_anim.py --verify-only   # re-check without rewriting
 
-Library (all verified, 147 offline checks): BattingDrive/LoftedDrive/Pull/Hook/Cut/UpperCut/LateCut/
-Sweep/Glance/Defence+BackFootDefence + BowlingPace/OffSpin/LegSpin + UmpireSignalWide/Six/Out/Four.
-Pickup/catch/dive/throw and the keeper's take stay PROCEDURAL by design (they aim at
-the live ball); signal clips end on the pose and hold it (no exit ramp -- SmoothPose
-blends out when the umpire resets to Ready). C26Athlete selects per shot
+The library (all offline-verified): Batting Drive / LoftedDrive / Pull / Hook / Cut /
+UpperCut / LateCut / Sweep / Glance / Defence / BackFootDefence, Bowling Pace /
+OffSpin / LegSpin, Umpire Signal Wide / Six / Out / Four. The clip table is 1:1 with
+`C26Controls::ShotFamily()` — every stroke the scorecard can name has its own clip or
+a deliberate stand-in. Pickup/catch/dive/throw and the keeper's take stay PROCEDURAL
+by design (they aim at the live ball); signal clips end on the pose and hold it.
+`AC26Athlete::SelectBattingClip/SelectBowlingClip/SelectSignalClip` pick per shot
 intent (Defending/ShotAngle/StrideIntent/Loft + ball height at contact measured off
-ContactTarget, mirroring C26Controls::ShotFamily) and delivery type (DeliveryStyle),
-with fallback chain library -> base clip -> procedural. The clip table is 1:1 with C26Controls::ShotFamily() -- library COMPLETE. Perf
-instrumentation: stat Cricket26 (pose solve / clip sample / garment rebuild).
-Remaining open: Mac verify (sec 6), torso garment visual pass, kit LOD proxies. A SECOND corrector bug was found and fixed while authoring the cut: the
-hips retarget referenced the FBX Model defaults (a stale frozen POSE) instead of the
-true T-pose, rotating every corrected clip by ~52 deg of chest yaw — chest-yaw gates
-now exist in both the offline checks and the in-engine test
-(Cricket26.Anim.AuthoredClips covers all 18 clips).
+ContactTarget) and delivery type; ALL 18 clips load lazily via LoadShotLibrary (never
+ConstructorHelpers), fallback chain library -> base clip -> procedural.
 
-**Not yet done: the UE import + build + playtest on this Mac** — exact sequence in
-`Docs/PREMIUM_CHARACTER_SYSTEM.md` §6. Everything else in this file below is older
-context (meta-human paths etc.) and still applies.
+Two corrector bugs were found and fixed along the way: (1) the rig-facing assumption
+above; (2) the hips retarget referenced the FBX Model defaults (a stale frozen POSE)
+instead of the true T-pose, rotating every corrected clip by ~52 deg of chest yaw —
+chest-yaw gates now exist in both the offline checks and the in-engine test
+(`Cricket26.Anim.AuthoredClips` covers all 18 clips). Body-frame checks are
+chest-relative (shoulder cross), never toe-relative.
+
+Perf instrumentation: `stat Cricket26` (pose solve / authored clip sample / garment
+rebuild — STATGROUP_C26Athlete).
+
+**Not yet done — the only remaining gate: the UE import + build + automation +
+playtest on the Mac** — exact sequence in `Docs/PREMIUM_CHARACTER_SYSTEM.md` §6,
+including the new perf step. After that: torso garment visual pass (needs on-device
+iteration), kit LOD proxies (optimisation only). Everything below is older context
+(meta-human paths etc.) and still applies.
 
 ---
 
