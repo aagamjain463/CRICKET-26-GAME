@@ -117,7 +117,7 @@ c26_anim_author.py            keyframes + IK solve + repair_facing  (single sour
   orientation copy per bone, hips delta at the measured rig ratio (2.23739), per-frame ground
   pin, root rename to `Armature.001`, v1 Lcl defaults. It **exits non-zero if any check fails**.
 
-### Verification (offline, 138 checks across 17 clips, all PASS)
+### Verification (offline, 147 checks across 18 clips, all PASS)
 
 | Clip | Check | Result |
 |---|---|---|
@@ -150,6 +150,7 @@ never by a visual guess:
 | BattingDefence | `Defending`, contact <108 cm (full ball) | +56 front, bat 17.5 above hips, absorb frame static |
 | BattingBackFootDefence | `Defending`, contact >108 cm (short ball) | blocked 17.1 in front (beside the body), bat 37 above hips |
 | BattingUpperCut | short ball, off side, contact >148 cm | 66.9 off side at 104.1 above hips, -1.9 front (behind the line) |
+| BattingLateCut | angle > +78 deg (ball past the body) | 69.3 off side, -4.2 front (behind the hip line), finish 73.7 off |
 | BattingHook | short ball, leg side, contact >148 cm high | contact 93.0 above hips (head height), follow -68.3 leg side / +122.6 above |
 | BattingLoftedDrive | `Loft`, contact <108 cm, straight/off | contact 78.4 front / 42.3 above (a drive's own), finish 361.8 overhead |
 | BattingGlance | angle <= -75 deg, full ball | contact 7.3 above hips (low), deflect -53.8 to fine leg at 21.7 above |
@@ -211,23 +212,45 @@ importer has done its own conversion. If it fails with an asset error, run
 
 ---
 
+### LOD strategy (body + equipment preserved)
+
+`AC26Athlete::UpdateDetail/ApplyDetail` run three tiers by camera range (principals
+-- striker, bowler, keeper -- are hero wherever they stand): the grille drops past
+hero range (876 triangles for a grey smudge), gloves drop past mid, and the
+SILHOUETTE pieces -- bat, pads, shoes, headwear -- stay on at EVERY tier, because a
+fielder losing a leg at the rope is exactly the half-body failure mode this
+overhaul exists to remove. Uniform trim (collar, placket, hem, stripes) culls by
+tier; cast shadows cull at distant; the pose solve cadence itself slows per tier
+(0.022 s hero / 1.7x mid / 2.6x distant).
+
 ## 5. What is NOT done (honest list)
 
-1. **Mac verification of this session's changes.** The corrected FBX pass 11/11 offline checks,
-   but the UE import + build + in-match playtest of the *corrected* clips has not run yet
-   (sandbox has no UE). The exact sequence is in §6.
-2. **Shot library breadth.** Batting: drive, lofted drive, pull, hook, square cut,
-   upper cut, sweep, glance, forward + back-foot defence. Bowling: pace, off-spin,
-   leg-spin. Umpire: wide, six, out, four signals. Pickup/catch/dive/throw and the keeper's take are deliberately
-   procedural (they aim at the live ball). Not yet: upper cut / late cut split,
-   back-foot defence, keeper crouch idle. Each is a key-list addition to
-   `c26_anim_author.py` — no Blender round-trip needed.
-3. **Garment mesh quality.** Torso prototype-grade meshes remain the biggest visual gap for
-   "premium" (open item since before this session; never overwrite `SK_Cricketer_KitBase`).
-4. **Equipment LOD meshes** (tiers exist, mesh swaps not).
-5. **Mobile perf profiling** not started.
-6. **Bowling gather** (pre-release 0.31 s) is still procedural; the clips cover the action
-   from the run-up mark, and the gather blends procedurally at the entry ramp.
+1. **Mac verification.** All 18 clips pass 147 offline geometric checks, but the UE
+   import + build + automation + in-match playtest has not run (sandbox has no UE).
+   The exact sequence is in section 6. Until it passes, in-match behaviour is
+   UNCONFIRMED -- that is the standing rule for this project.
+2. **Shot library breadth -- CLOSED.** Batting: drive, lofted drive, pull, hook,
+   square cut, upper cut, late cut, sweep, glance, forward + back-foot defence.
+   Bowling: pace, off-spin, leg-spin. Umpire: wide, six, out, four signals. The
+   clip table is 1:1 with C26Controls::ShotFamily(); the keeper and the
+   pickup/catch/dive/throw actions stay procedural BY DESIGN (they aim at the
+   live ball).
+3. **Garment mesh quality.** The procedural kit covers trousers, sleeves, collar,
+   placket, hem and stripes; the torso still relies on the base mesh's shirt
+   material, which is the remaining "premium" gap. Deliberately NOT blind-coded
+   from the sandbox: a torso tube over the base mesh needs on-device visual
+   iteration (z-fighting/silhouette checks) or it ships regressions. Do this pass
+   on the Mac with the match running.
+4. **Equipment LOD meshes.** The tiering STRATEGY is in place and preserves body +
+   equipment (see the LOD paragraph in section 4). What remains open is authored
+   low-poly kit meshes for the distant tier -- a pure optimisation, not a
+   correctness gap: no role ever loses its silhouette pieces.
+5. **Mobile perf profiling.** Instrumentation is in: `stat Cricket26` on device
+   shows Pose solve (Animate), Authored clip sample and Garment rebuild counters
+   (STATGROUP_C26Athlete in C26Athlete.cpp). The on-device capture recipe is in
+   section 6 step 6. The measurement itself needs hardware.
+6. **Bowling gather** (pre-release 0.31 s) blends procedurally over the 0.06 s
+   entry ramp before the authored action takes over; cosmetic, low priority.
 
 ---
 
@@ -254,6 +277,11 @@ python3 Tools/correct_authored_anim.py --verify-only   # re-check without rewrit
 "/Users/Shared/Epic Games/UE_5.8/Engine/Binaries/Mac/UnrealEditor-Cmd.app/Contents/MacOS/UnrealEditor-Cmd" \
     "$PWD/CRICKETGAME.uproject" -ExecCmds="Automation RunTests Cricket26;Quit" -unattended -nopause
 
+# 6. On-device perf (mobile target): with the match running, in console --
+#    `stat Cricket26`   -> Pose solve / Authored clip sample / Garment rebuild ms
+#    `stat unit`        -> frame time budget split
+#    The three counters are the systems this overhaul touched; none should
+#    dominate the frame at gameplay distance.
 # 5. Playtest in an actual match: BatLab / BowlLab maps, then a full match:
 #    - striker's shots: drive backlift behind the body + contact in front of the front
 #      foot; pull horizontal at chest height; hook high; cut late and off side; sweep
@@ -278,7 +306,7 @@ safe to iterate on it without a rebuild.
 | `Tools/rebuild_authored_clips.py` | NEW — offline solve + bake, writes `Animations/Solved/` |
 | `Tools/correct_authored_anim.py` | path args, extra checks (backlift behind, bowler travel), dst basename fix |
 | `ArtSource/Exports/Animations/Solved/*.fbx` | NEW — re-solved clips (v2 frame) |
-| `ArtSource/Exports/Animations/Corrected/*.fbx` | REGENERATED — both clips, 11/11 checks |
+| `ArtSource/Exports/Animations/Corrected/*.fbx` | REGENERATED — all 18 clips, 147/147 checks |
 | `Tools/ImportAnimations.py` | imports from `Corrected/`, pipeline documented |
 | `Source/.../C26Athlete.cpp` | both `ApplyAuthoredClip` branches re-enabled with history |
 | `Source/.../Tests/C26ProductionTests.cpp` | NEW `Cricket26.Anim.AuthoredClips` in-engine gate |

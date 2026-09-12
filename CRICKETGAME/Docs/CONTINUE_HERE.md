@@ -15,21 +15,22 @@ twists by rotZ(180), rotate IK targets by (x,y,z)->(-x,-y,z), poles keep x/z neg
 is applied at solve time and by the offline pipeline:
 
     python3 Tools/rebuild_authored_clips.py        # solve+bake all 8 clips -> Solved/
-    python3 Tools/correct_authored_anim.py         # -> Corrected/, 138/138 checks PASS
+    python3 Tools/correct_authored_anim.py         # -> Corrected/, 147/147 checks PASS
 
-Library (all verified, 138 offline checks): BattingDrive/LoftedDrive/Pull/Hook/Cut/UpperCut/
+Library (all verified, 147 offline checks): BattingDrive/LoftedDrive/Pull/Hook/Cut/UpperCut/LateCut/
 Sweep/Glance/Defence+BackFootDefence + BowlingPace/OffSpin/LegSpin + UmpireSignalWide/Six/Out/Four.
 Pickup/catch/dive/throw and the keeper's take stay PROCEDURAL by design (they aim at
 the live ball); signal clips end on the pose and hold it (no exit ramp -- SmoothPose
 blends out when the umpire resets to Ready). C26Athlete selects per shot
 intent (Defending/ShotAngle/StrideIntent/Loft + ball height at contact measured off
 ContactTarget, mirroring C26Controls::ShotFamily) and delivery type (DeliveryStyle),
-with fallback chain library -> base clip -> procedural. Next library candidates: late cut split (cosmetic), celebration reactions. The keeper
-stays procedural (crouch -42/lean 24 + per-player sway already reads correctly). A SECOND corrector bug was found and fixed while authoring the cut: the
+with fallback chain library -> base clip -> procedural. The clip table is 1:1 with C26Controls::ShotFamily() -- library COMPLETE. Perf
+instrumentation: stat Cricket26 (pose solve / clip sample / garment rebuild).
+Remaining open: Mac verify (sec 6), torso garment visual pass, kit LOD proxies. A SECOND corrector bug was found and fixed while authoring the cut: the
 hips retarget referenced the FBX Model defaults (a stale frozen POSE) instead of the
 true T-pose, rotating every corrected clip by ~52 deg of chest yaw — chest-yaw gates
 now exist in both the offline checks and the in-engine test
-(Cricket26.Anim.AuthoredClips covers all 17 clips).
+(Cricket26.Anim.AuthoredClips covers all 18 clips).
 
 **Not yet done: the UE import + build + playtest on this Mac** — exact sequence in
 `Docs/PREMIUM_CHARACTER_SYSTEM.md` §6. Everything else in this file below is older
