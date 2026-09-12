@@ -357,6 +357,8 @@ void AC26MatchGameMode::StartMatch()
     Director->Reset();Audio->Reset();ResetStumps();Paused=SettingsOpen=ControlsOpen=false;
     bFiftyCelebrated[0] = bFiftyCelebrated[1] = bFiftyCelebrated[2] = false;
     bCenturyCelebrated[0] = bCenturyCelebrated[1] = bCenturyCelebrated[2] = false;
+    bInningsBreakPresented = false;
+    bMatchEndPresented = false;
     ConsecutiveBoundaries = 0;
     ConsecutiveDots = 0;
     Running=Returning=ReleaseLocked=ShotQueued=Resolved=false;ThrowClock=-1;RequestedRuns=CompletedRuns=0;RunProgress=0;Intent={};Footwork=0;
@@ -1162,8 +1164,9 @@ void AC26MatchGameMode::AfterPresentation()
 {
     if(Rules.Winner!=C26::Result::Playing)
     {
-        if(PresentationDirector && !PresentationDirector->IsPresentationActive())
+        if(PresentationDirector && !bMatchEndPresented && !PresentationDirector->IsPresentationActive())
         {
+            bMatchEndPresented = true;
             FC26PresentationRequest WinReq;
             WinReq.Event = EC26PresentationEvent::MatchWinningCelebration;
             WinReq.Participant1 = Athletes.IsValidIndex(11) ? Athletes[11] : nullptr;
@@ -1204,8 +1207,9 @@ void AC26MatchGameMode::AfterPresentation()
     }
     else if(Rules.Now().Closed)
     {
-        if(PresentationDirector && !PresentationDirector->IsPresentationActive())
+        if(PresentationDirector && !bInningsBreakPresented && !PresentationDirector->IsPresentationActive())
         {
+            bInningsBreakPresented = true;
             FC26PresentationRequest InningsReq;
             InningsReq.Event = EC26PresentationEvent::InningsBreakTransition;
             InningsReq.Participant1 = Athletes.IsValidIndex(11) ? Athletes[11] : nullptr;

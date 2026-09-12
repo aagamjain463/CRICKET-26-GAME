@@ -1712,7 +1712,7 @@ void AC26HUD::PlayerCard(float X, float Y, float W, float H, const FString& Name
 // Cricket-24 style docked to the canvas bottom edge:
 // LEFT: club badge + two batter rows with amber underlines (striker marked).
 // CENTER: score + overs on one baseline, run rate / chase need beneath.
-// RIGHT: bowler name + figures with amber underline, this-over balls below.
+// RIGHT: bowler name + figures, this-over balls below.
 // ============================================================================
 void AC26HUD::Score()
 {
@@ -1726,95 +1726,89 @@ void AC26HUD::Score()
     const int Overs = S.LegalBalls / 6;
     const int Balls = S.LegalBalls % 6;
 
-    // While the bowling START RUN-UP button is up (Ready, fielding) the bar
-    // stops 16px short of it instead of sliding underneath the button.
-    const bool bStartUp = Match->Phase == EC26Phase::Ready && !Match->PlayerBatting();
-    const float BarY = 844.f, BarH = 56.f;
-    const float BarR = bStartUp ? 1224.f : 1600.f;
-    const FLinearColor BarBg(.010f, .014f, .026f, .96f);
-    const FLinearColor Amber(1.f, .76f, .14f, 1.f);
+    // Sleek full-width bottom bar for both batting and bowling
+    const float BarY = 842.f, BarH = 58.f;
+    const float BarR = 1600.f;
+    const FLinearColor BarBg(0.012f, 0.016f, 0.025f, 0.96f);
 
     Rect(0.f, BarY, BarR, BarH, BarBg);
-    Line(0.f, BarY, BarR, BarY, HairlineSoft, 1.f);
-    if (bStartUp) Line(BarR, BarY, BarR, BarY + BarH, HairlineSoft, 1.f);
+    // Subtle top refraction hairline
+    Line(0.f, BarY, BarR, BarY, FLinearColor(1.f, 1.f, 1.f, 0.12f), 1.2f);
+    // Team accent colored hairlines at outer flanks
+    Line(0.f, BarY, 560.f, BarY, TC, 2.2f);
+    Line(1040.f, BarY, 1600.f, BarY, TC2, 2.2f);
 
     // ---- LEFT: batting club badge ----
-    Disc(42.f, BarY + BarH * .5f, 24.f, FLinearColor(.071f, .086f, .102f, 1.f));
-    Circle(42.f, BarY + BarH * .5f, 24.f, TC, 2.f);
-    TextMid(Match->TeamShort(Bat), 42.f, BarY + BarH * .5f - 14.f, 28.f, 15, WhiteAthletic, true, 2);
+    Disc(40.f, BarY + BarH * 0.5f, 22.f, FLinearColor(0.06f, 0.08f, 0.12f, 1.f));
+    Circle(40.f, BarY + BarH * 0.5f, 22.f, TC, 2.2f);
+    TextMid(Match->TeamShort(Bat), 40.f, BarY + BarH * 0.5f - 13.f, 26.f, 14, WhiteAthletic, true, 2);
 
-    // ---- LEFT: two batter rows, each clearing its own leading ----
-    const float BatX = 78.f, BatR = 560.f, RowH = 24.f;
-    const float Row1Y = BarY + Sp4, Row2Y = BarY + Sp4 + RowH;
+    // ---- LEFT: two batter rows, clean athletic typography without noisy underlines ----
+    const float BatX = 76.f, BatR = 560.f, RowH = 25.f;
+    const float Row1Y = BarY + 4.f, Row2Y = BarY + 4.f + RowH;
     const int StrikerRuns = S.BatterRuns[FMath::Clamp(S.Striker, 0, 2)];
     const int StrikerBalls = S.BatterBalls[FMath::Clamp(S.Striker, 0, 2)];
     const int PartnerRuns = S.BatterRuns[FMath::Clamp(S.NonStriker, 0, 2)];
     const int PartnerBalls = S.BatterBalls[FMath::Clamp(S.NonStriker, 0, 2)];
-    const FString Fig1 = FString::Printf(TEXT("%d %d"), StrikerRuns, StrikerBalls);
-    const FString Fig2 = FString::Printf(TEXT("%d %d"), PartnerRuns, PartnerBalls);
-    const float Fig1W = Width(Fig1, 16, 2), Fig2W = Width(Fig2, 16, 2);
+    const FString Fig1 = FString::Printf(TEXT("%d*  (%d)"), StrikerRuns, StrikerBalls);
+    const FString Fig2 = FString::Printf(TEXT("%d  (%d)"), PartnerRuns, PartnerBalls);
+    const float Fig1W = Width(Fig1, 15, 2), Fig2W = Width(Fig2, 14, 2);
 
-    // Striker arrow: small solid marker, never a font glyph.
-    const float MkX = BatX, MkCY = Row1Y + RowH * .5f;
-    Line(MkX, MkCY - 5.f, MkX, MkCY + 5.f, Amber, 2.f);
-    Line(MkX, MkCY - 5.f, MkX + 8.f, MkCY, Amber, 2.f);
-    Line(MkX + 8.f, MkCY, MkX, MkCY + 5.f, Amber, 2.f);
+    // Striker pip indicator
+    Disc(BatX + 5.f, Row1Y + 12.f, 3.5f, Gold);
 
-    TextFit(Match->BatterName(), BatX + GapComp, Row1Y, 15, WhiteAthletic, BatR - BatX - GapComp - Fig1W - GapItem, false, 0);
-    Text(Fig1, BatR - Fig1W, Row1Y + (RowH - LineH(16.f)) * .5f + 2.f, 16, WhiteAthletic, false, 2);
-    Rect(BatX, Row1Y + RowH - 4.f, BatR - BatX, 2.f, FLinearColor(Amber.R, Amber.G, Amber.B, .8f));
+    TextFit(Match->BatterName(), BatX + 16.f, Row1Y + 2.f, 15, WhiteAthletic, BatR - BatX - 16.f - Fig1W - 14.f, false, 1);
+    Text(Fig1, BatR - Fig1W, Row1Y + 2.f, 15, WhiteAthletic, false, 2);
 
-    TextFit(Match->NonStrikerName(), BatX + GapComp, Row2Y, 15, SilverCool, BatR - BatX - GapComp - Fig2W - GapItem, false, 0);
-    Text(Fig2, BatR - Fig2W, Row2Y + (RowH - LineH(16.f)) * .5f + 2.f, 16, SilverCool, false, 2);
-    Rect(BatX, Row2Y + RowH - 4.f, BatR - BatX, 2.f, FLinearColor(Amber.R, Amber.G, Amber.B, .55f));
+    TextFit(Match->NonStrikerName(), BatX + 16.f, Row2Y + 2.f, 14, SilverCool, BatR - BatX - 16.f - Fig2W - 14.f, false, 0);
+    Text(Fig2, BatR - Fig2W, Row2Y + 2.f, 14, SilverCool, false, 2);
 
-    // ---- CENTER: score + overs, rate / chase beneath ----
-    const float DivL = 620.f, DivR = 980.f;
-    Line(DivL, BarY + Sp8, DivL, BarY + BarH - Sp8, HairlineSoft, 1.f);
-    Line(DivR, BarY + Sp8, DivR, BarY + BarH - Sp8, HairlineSoft, 1.f);
-    Line(DivR, BarY + 6.f, DivR + 12.f, BarY + BarH - 6.f, FLinearColor(Crimson.R, Crimson.G, Crimson.B, .8f), 2.5f);
+    // ---- CENTER: match score + overs, rate / chase beneath ----
+    const float DivL = 600.f, DivR = 1000.f;
+    Line(DivL, BarY + 8.f, DivL, BarY + BarH - 8.f, FLinearColor(1.f, 1.f, 1.f, 0.10f), 1.f);
+    Line(DivR, BarY + 8.f, DivR, BarY + BarH - 8.f, FLinearColor(1.f, 1.f, 1.f, 0.10f), 1.f);
 
-    const FString ScoreStr = FString::Printf(TEXT("%d-%d"), S.Runs, S.Wickets);
-    const FString OversStr = FString::Printf(TEXT("%d.%d OVERS"), Overs, Balls);
-    const float ScoreW = Width(ScoreStr, 22, 2), OversW = Width(OversStr, 13, 0);
-    const float CenX = (DivL + DivR) * .5f - 6.f;
-    const float LineX = CenX - (ScoreW + GapItem + OversW) * .5f;
-    const float ScoreY = BarY + Sp4, RateY = BarY + Sp4 + LineH(22.f) + Sp4;
-    Text(ScoreStr, LineX, ScoreY, 22, WhiteAthletic, false, 2);
-    Text(OversStr, LineX + ScoreW + GapItem, ScoreY + (22.f - 13.f), 13, SilverCool, false, 0);
+    const FString ScoreStr = FString::Printf(TEXT("%d - %d"), S.Runs, S.Wickets);
+    const FString OversStr = FString::Printf(TEXT("%d.%d OV"), Overs, Balls);
+    const float ScoreW = Width(ScoreStr, 24, 2), OversW = Width(OversStr, 14, 0);
+    const float CenX = (DivL + DivR) * 0.5f;
+    const float TotalW = ScoreW + 14.f + OversW;
+    const float ScoreStartX = CenX - TotalW * 0.5f;
+
+    Text(ScoreStr, ScoreStartX, BarY + 5.f, 24, WhiteAthletic, false, 2);
+    Text(OversStr, ScoreStartX + ScoreW + 14.f, BarY + 12.f, 14, SilverCool, false, 1);
 
     if (Match->Rules.Current == 1)
     {
-        const FString ReqStr = FString::Printf(TEXT("NEED %d (%db)"), Match->Rules.RunsRequired(), Match->Rules.BallsRemaining());
-        Text(ReqStr, CenX, RateY, 12, Amber, true, 2);
+        const FString ReqStr = FString::Printf(TEXT("NEED %d RUNS FROM %d BALLS"), Match->Rules.RunsRequired(), Match->Rules.BallsRemaining());
+        TextMid(ReqStr, CenX, BarY + 34.f, 20.f, 12, Gold, true, 1);
     }
     else
     {
         const float CRR = S.LegalBalls > 0 ? (float)S.Runs / (float)S.LegalBalls * 6.f : 0.f;
-        const FString RateStr = FString::Printf(TEXT("RUN RATE %.2f"), CRR);
-        Text(RateStr, CenX, RateY, 11, SilverCool, true, 0);
+        const FString RateStr = FString::Printf(TEXT("1ST INNINGS  \u2022  CRR %.2f"), CRR);
+        TextMid(RateStr, CenX, BarY + 34.f, 20.f, 11, SilverCool, true, 0);
     }
 
     // ---- RIGHT: bowler + figures, this-over balls beneath ----
-    const float BowlX = 1020.f, BowlR = (bStartUp ? BarR : 1500.f) - GapComp;
-    const FString BowlFig = FString::Printf(TEXT("%d-%d (%d.%d)"), S.Wickets, S.Runs, Overs, Balls);
-    const float BowlFigW = Width(BowlFig, 15, 2);
-    TextFit(Match->BowlerName(), BowlX, Row1Y, 15, T2, BowlR - BowlX - BowlFigW - GapItem, false, 0);
-    Text(BowlFig, BowlR - BowlFigW, Row1Y + (RowH - LineH(15.f)) * .5f + 2.f, 15, SilverCool, false, 2);
-    Rect(BowlX, Row1Y + RowH - 4.f, BowlR - BowlX, 2.f, FLinearColor(Amber.R, Amber.G, Amber.B, .8f));
+    const float BowlX = 1040.f, BowlR = 1510.f;
+    const FString BowlFig = FString::Printf(TEXT("%d-%d  (%d.%d ov)"), S.Wickets, S.Runs, Overs, Balls);
+    const float BowlFigW = Width(BowlFig, 14, 2);
+    TextFit(Match->BowlerName(), BowlX, Row1Y + 2.f, 15, WhiteAthletic, BowlR - BowlX - BowlFigW - 14.f, false, 1);
+    Text(BowlFig, BowlR - BowlFigW, Row1Y + 2.f, 14, SilverCool, false, 2);
 
     // Six ball slots, newest at the right. Unplayed slots stay hollow.
     const int Total = (int)S.Ledger.size();
     const int Shown = FMath::Min(6, Total);
     const int First = Total - Shown;
-    const float BallR = 9.f, BallCY = Row2Y + RowH * .5f;
+    const float BallR = 9.f, BallCY = Row2Y + 11.f;
     for (int K = 0; K < 6; ++K)
     {
-        const float CX = BowlR - BallR - 1.f - (5 - K) * 30.f;
+        const float CX = BowlR - BallR - (5 - K) * 28.f;
         const int LI = First + K - (6 - Shown);
         if (LI < First || LI >= Total)
         {
-            Circle(CX, BallCY, BallR, FLinearColor(SlateMuted.R, SlateMuted.G, SlateMuted.B, .30f), 1.2f);
+            Circle(CX, BallCY, BallR, FLinearColor(0.3f, 0.35f, 0.45f, 0.30f), 1.2f);
             continue;
         }
         const auto& O = S.Ledger[LI];
@@ -1826,37 +1820,34 @@ void AC26HUD::Score()
 
         if (Dot)
         {
-            Circle(CX, BallCY, BallR, FLinearColor(SlateMuted.R, SlateMuted.G, SlateMuted.B, .55f), 1.5f);
+            Circle(CX, BallCY, BallR, FLinearColor(0.4f, 0.45f, 0.55f, 0.55f), 1.2f);
+            Disc(CX, BallCY, 2.5f, FLinearColor(0.6f, 0.65f, 0.75f, 0.70f));
             continue;
         }
         FString V;
         FLinearColor Fill, LocalInk;
         if (W)            { V = TEXT("W"); Fill = Crimson; LocalInk = WhiteAthletic; }
-        else if (Six)     { V = TEXT("6"); Fill = Amber; LocalInk = DarkLabel; }
+        else if (Six)     { V = TEXT("6"); Fill = Gold; LocalInk = FLinearColor(0.04f, 0.05f, 0.08f, 1.f); }
         else if (Four)    { V = TEXT("4"); Fill = TurfGreen; LocalInk = WhiteAthletic; }
-        else if (Extra)   { V = O.WideRuns ? TEXT("Wd") : TEXT("Nb"); Fill = FLinearColor(.95f, .65f, .25f, 1.f); LocalInk = DarkLabel; }
-        else              { V = FString::FromInt(O.BatRuns + O.Byes + O.LegByes); Fill = WhiteAthletic; LocalInk = DarkLabel; }
+        else if (Extra)   { V = O.WideRuns ? TEXT("Wd") : TEXT("Nb"); Fill = FLinearColor(.95f, .65f, .25f, 1.f); LocalInk = FLinearColor(0.04f, 0.05f, 0.08f, 1.f); }
+        else              { V = FString::FromInt(O.BatRuns + O.Byes + O.LegByes); Fill = FLinearColor(0.12f, 0.16f, 0.22f, 0.90f); LocalInk = WhiteAthletic; }
 
-        Disc(CX, BallCY, BallR - 1.f, Fill);
-        Circle(CX, BallCY, BallR, FLinearColor(Fill.R, Fill.G, Fill.B, .9f), 1.2f);
-        const float FS = (V.Len() > 1) ? 10.f : 12.f;
-        TextMid(V, CX, BallCY - FS * .5f - 1.f, FS + 2.f, FS, LocalInk, true, 2);
+        Disc(CX, BallCY, BallR, Fill);
+        Circle(CX, BallCY, BallR, FLinearColor(Fill.R, Fill.G, Fill.B, 0.9f), 1.2f);
+        const float FS = (V.Len() > 1) ? 9.f : 11.f;
+        TextMid(V, CX, BallCY - 6.f, 12.f, FS, LocalInk, true, 2);
     }
 
-    // ---- FAR RIGHT: fielding club shield (full-width mode only) ----
-    if (!bStartUp)
-    {
-        Disc(1558.f, BarY + BarH * .5f, 22.f, FLinearColor(.071f, .086f, .102f, 1.f));
-        Circle(1558.f, BarY + BarH * .5f, 22.f, TC2, 2.f);
-        TextMid(Match->TeamShort(1 - Bat), 1558.f, BarY + BarH * .5f - 13.f, 26.f, 12, WhiteAthletic, true, 2);
-    }
+    // ---- FAR RIGHT: fielding club shield (ALWAYS visible full-width) ----
+    Disc(1558.f, BarY + BarH * 0.5f, 22.f, FLinearColor(0.06f, 0.08f, 0.12f, 1.f));
+    Circle(1558.f, BarY + BarH * 0.5f, 22.f, TC2, 2.2f);
+    TextMid(Match->TeamShort(1 - Bat), 1558.f, BarY + BarH * 0.5f - 13.f, 26.f, 14, WhiteAthletic, true, 2);
 
-    // Free hit rides just above the bar, clear of the release meter.
+    // Free hit floating tag above center bar
     if (S.FreeHit)
     {
-        TextMid(TEXT("FREE HIT"), 800.f, BarY - 30.f, 20.f, 12, Amber, true, 0);
-        const float FHW = Width(TEXT("FREE HIT"), 12, 0) + 2.f * GapComp;
-        Rect(800.f - FHW * .5f, BarY - 10.f, FHW, 2.f, FLinearColor(Amber.R, Amber.G, Amber.B, .8f));
+        Rect(730.f, BarY - 26.f, 140.f, 22.f, Crimson);
+        TextMid(TEXT("FREE HIT"), 800.f, BarY - 24.f, 18.f, 11, WhiteAthletic, true, 2);
     }
 
     // Top-right pause stays where it always was - the top is empty now.
@@ -2114,7 +2105,7 @@ void AC26HUD::Controls()
                 }
 
                 // ---- I. START RUN-UP BUTTON ----
-                Btn(TEXT("ready"), TEXT("START RUN-UP  >"), 1240, 810, 280, 60, 1);
+                Btn(TEXT("ready"), TEXT("START RUN-UP  >"), 1260, 760, 280, 56, 1);
 
                 // ---- J. INSTRUCTION HINT ----
                 // Centred in the clear band above the START button and below the
@@ -3130,12 +3121,7 @@ void AC26HUD::DrawDeliveryHistory()
     {
         Btn(TEXT("toggle_field_plan"), TEXT("TACTICAL FIELD PLAN  >"), 64.f, 760.f, 260.f, 48.f, 0);
 
-        const float PresetsX = 64.f, PresetsY = 704.f;
-        TextFit(TEXT("TARGET PRESETS:"), PresetsX, PresetsY - 18.f, 12, SlateMuted, 200.f, false, 0);
-        Btn(TEXT("bowl_preset_yorker"), TEXT("YORKER"), PresetsX, PresetsY, 76.f, 36.f, 0);
-        Btn(TEXT("bowl_preset_good"), TEXT("GOOD"), PresetsX + 82.f, PresetsY, 68.f, 36.f, 0);
-        Btn(TEXT("bowl_preset_short"), TEXT("SHORT"), PresetsX + 156.f, PresetsY, 68.f, 36.f, 0);
-        Btn(TEXT("bowl_preset_bouncer"), TEXT("BOUNCER"), PresetsX + 230.f, PresetsY, 78.f, 36.f, 0);
+
     }
 }
 
@@ -3164,7 +3150,23 @@ void AC26HUD::DrawFieldPlanning()
                    800, StatusY, 36, 15, FLinearColor(1.f, 0.4f, 0.4f, 1.f), 680, true, 0);
     }
 
-    const int Segs = 48;
+    // Boundary rope (faint outer ring)
+    const int BoundarySegs = 64;
+    for (int I = 0; I < BoundarySegs; ++I)
+    {
+        const float A1 = I * 2.f * PI / BoundarySegs;
+        const float A2 = (I + 1) * 2.f * PI / BoundarySegs;
+        const FVector P1(6400.f * FMath::Cos(A1), 7000.f * FMath::Sin(A1), 5.f);
+        const FVector P2(6400.f * FMath::Cos(A2), 7000.f * FMath::Sin(A2), 5.f);
+        FVector2D S1, S2;
+        if (PC->ProjectWorldLocationToScreen(P1, S1) && PC->ProjectWorldLocationToScreen(P2, S2))
+        {
+            Line(ToDesign(S1).X, ToDesign(S1).Y, ToDesign(S2).X, ToDesign(S2).Y, FLinearColor(1.f, 1.f, 1.f, 0.12f), 1.2f);
+        }
+    }
+
+    // 30-yard inner circle (clean cyan/emerald outline)
+    const int Segs = 64;
     for (int I = 0; I < Segs; ++I)
     {
         const float A1 = I * 2.f * PI / Segs;
@@ -3174,7 +3176,7 @@ void AC26HUD::DrawFieldPlanning()
         FVector2D S1, S2;
         if (PC->ProjectWorldLocationToScreen(P1, S1) && PC->ProjectWorldLocationToScreen(P2, S2))
         {
-            Line(ToDesign(S1).X, ToDesign(S1).Y, ToDesign(S2).X, ToDesign(S2).Y, FLinearColor(1.f, 1.f, 1.f, 0.22f), 1.5f);
+            Line(ToDesign(S1).X, ToDesign(S1).Y, ToDesign(S2).X, ToDesign(S2).Y, FLinearColor(0.2f, 0.9f, 0.7f, 0.40f), 1.8f);
         }
     }
 
@@ -3208,7 +3210,7 @@ void AC26HUD::DrawFieldPlanning()
     }
     else
     {
-        TextFit(TEXT("TAP OR DRAG ANY FIELDER (2–11) TO REPOSITION ON TURF"), 800, 715, 15, SilverCool, 700, true, 0);
+        TextFit(TEXT("TAP OR DRAG ANY FIELDER (3–11) TO CUSTOMIZE YOUR FIELD"), 800, 715, 15, SilverCool, 700, true, 0);
     }
 
     const float PanelY = 746.f, PanelH = 120.f;

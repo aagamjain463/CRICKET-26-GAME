@@ -143,7 +143,7 @@ void AC26CameraDirector::Direct(EC26Phase Phase,float Time,bool PlayerBatting,co
     if(bFieldPlanning)
     {
         // Elevated tactical camera framing the whole cricket ground, 30yd circle and boundary
-        Look(EC26CameraMode::FieldPlanning,FVector(0.f,-400.f,5600.f),FVector(0.f,100.f,0.f),58.f,Mode!=EC26CameraMode::FieldPlanning,Dt,6.f,85.f);
+        Look(EC26CameraMode::FieldPlanning,FVector(0.f,-100.f,9600.f),FVector(0.f,150.f,0.f),54.f,Mode!=EC26CameraMode::FieldPlanning,Dt,6.f,88.f);
         return;
     }
     if(Phase==EC26Phase::Menu)

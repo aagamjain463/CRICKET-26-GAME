@@ -274,6 +274,8 @@ public:
     FString FieldLegalityWarning;
     bool bFieldIsLegal = true;
     bool bCustomFieldApplied = false;
+    bool bInningsBreakPresented = false;
+    bool bMatchEndPresented = false;
 
     void ToggleFieldPlanning();
     void SetFieldPlanning(bool bActive);

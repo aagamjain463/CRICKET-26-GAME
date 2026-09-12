@@ -68,15 +68,36 @@ void AC26PlayerController::BeginGesture(int Index,FVector2D P)
     const FName Button=H->ActionAt(P);
     if(!Button.IsNone()){G.Consumed=true;M->UIAction(Button);return;}
     if(M->Paused||M->SettingsOpen||M->ControlsOpen){G.Consumed=true;return;}
+    if(M->Phase==EC26Phase::Interval){G.Consumed=true;M->Skip();return;}
 
     if(M->bFieldPlanningMode)
     {
-        FVector Origin, Dir;
-        if(DeprojectScreenPositionToWorld(P.X, P.Y, Origin, Dir) && FMath::Abs(Dir.Z) > 0.001f)
+        const FVector2D DesignPos = H->ToDesign(P);
+        int32 ClickedFielder = -1;
+        float BestScreenDist = 52.f;
+        const auto& Positions = M->GetFieldPositions();
+        for(int32 I = 2; I <= 10 && I < Positions.Num(); ++I)
         {
-            const FVector Hit = Origin + Dir * ((0.f - Origin.Z) / Dir.Z);
-            int32 BestIdx = -1;
-            float BestDistSq = 600.f * 600.f;
+            FVector2D Screen;
+            if(ProjectWorldLocationToScreen(Positions[I] + FVector(0.f, 0.f, 10.f), Screen))
+            {
+                const FVector2D D = H->ToDesign(Screen);
+                const float Dist = FVector2D::Distance(DesignPos, D);
+                if(Dist < BestScreenDist)
+                {
+                    BestScreenDist = Dist;
+                    ClickedFielder = I;
+                }
+            }
+        }
+
+        FVector Origin, Dir;
+        const bool bHitTurf = DeprojectScreenPositionToWorld(P.X, P.Y, Origin, Dir) && FMath::Abs(Dir.Z) > 0.001f;
+        const FVector Hit = bHitTurf ? (Origin + Dir * ((0.f - Origin.Z) / Dir.Z)) : FVector::ZeroVector;
+
+        if(ClickedFielder < 2 && bHitTurf)
+        {
+            float BestDistSq = 1200.f * 1200.f;
             for(int32 I = 2; I <= 10 && I < M->Athletes.Num(); ++I)
             {
                 if(M->Athletes[I])
@@ -85,26 +106,22 @@ void AC26PlayerController::BeginGesture(int Index,FVector2D P)
                     if(D < BestDistSq)
                     {
                         BestDistSq = D;
-                        BestIdx = I;
+                        ClickedFielder = I;
                     }
                 }
             }
-            if(BestIdx >= 2)
-            {
-                M->SelectFielderForReposition(BestIdx);
-                G.FieldDrag = true;
-                return;
-            }
         }
-    }
 
-    if(G.FieldDrag && M->bFieldPlanningMode && M->SelectedFielderIdx >= 2)
-    {
-        FVector Origin, Dir;
-        if(DeprojectScreenPositionToWorld(P.X, P.Y, Origin, Dir) && FMath::Abs(Dir.Z) > 0.001f)
+        if(ClickedFielder >= 2)
         {
-            const FVector Hit = Origin + Dir * ((0.f - Origin.Z) / Dir.Z);
+            M->SelectFielderForReposition(ClickedFielder);
+            G.FieldDrag = true;
+            return;
+        }
+        else if(bHitTurf && M->SelectedFielderIdx >= 2)
+        {
             M->MoveFielderToLocation(M->SelectedFielderIdx, Hit);
+            G.FieldDrag = true;
             return;
         }
     }
@@ -182,6 +199,20 @@ void AC26PlayerController::MoveGesture(int Index,FVector2D P)
     auto& G=Gestures[Index];if(!G.Active||G.Consumed)return;G.Last=P;
     if(M->Paused||M->SettingsOpen||M->ControlsOpen)return;
 
+    if(M->bFieldPlanningMode)
+    {
+        if(G.FieldDrag && M->SelectedFielderIdx >= 2)
+        {
+            FVector Origin, Dir;
+            if(DeprojectScreenPositionToWorld(P.X, P.Y, Origin, Dir) && FMath::Abs(Dir.Z) > 0.001f)
+            {
+                const FVector Hit = Origin + Dir * ((0.f - Origin.Z) / Dir.Z);
+                M->MoveFielderToLocation(M->SelectedFielderIdx, Hit);
+            }
+        }
+        return;
+    }
+
     const bool bGesturePro = (!M->Preferences || M->Preferences->ControlScheme == 0);
     const FVector2D DesignPos = H->ToDesign(P);
 
@@ -244,7 +275,20 @@ void AC26PlayerController::EndGesture(int Index,FVector2D P)
     G.Active=false;G.Mouse=false;
     const bool bWasBatting=G.Batting;G.Batting=false;
     if(BattingPointer==Index)BattingPointer=-1;
-    if(G.FieldDrag) { G.FieldDrag = false; }
+    if(G.FieldDrag)
+    {
+        if(M->bFieldPlanningMode && M->SelectedFielderIdx >= 2)
+        {
+            FVector Origin, Dir;
+            if(DeprojectScreenPositionToWorld(P.X, P.Y, Origin, Dir) && FMath::Abs(Dir.Z) > 0.001f)
+            {
+                const FVector Hit = Origin + Dir * ((0.f - Origin.Z) / Dir.Z);
+                M->MoveFielderToLocation(M->SelectedFielderIdx, Hit);
+            }
+        }
+        G.FieldDrag = false;
+        return;
+    }
     if(M->Phase == EC26Phase::InPlay) { M->SetManualFielderInput(FVector2D::ZeroVector); }
     if(G.Consumed){G.Pace=G.Movement=G.Target=false;return;}
 
