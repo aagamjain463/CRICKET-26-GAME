@@ -118,8 +118,9 @@ void AC26MatchGameMode::UpdateGoldenGate(float Dt)
         }
         if(GateStage==0&&bBattingGestureActive)
         {
-            // Change of mind mid-hold: aim off side, then settle back to straight.
-            UpdateBattingGesture(0,FVector2D(PhaseTime<2.f?1290.f:1200.f,440.f));
+            // Change of mind mid-hold: aim off side (screen-LEFT, because the
+            // camera is behind the bowler), then settle back to straight.
+            UpdateBattingGesture(0,FVector2D(PhaseTime<2.f?1110.f:1200.f,440.f));
             Check(!ShotQueued,TEXT("dragging never commits a shot"));
         }
     }

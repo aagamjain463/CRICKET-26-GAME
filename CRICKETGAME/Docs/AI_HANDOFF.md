@@ -1,5 +1,112 @@
 # CRICKET 26 — AI HANDOFF
 
+## WorkBuddy — 2026-09-12. Three requested fixes: mirrored batting aim, simplified bowling screen, tighter PERFECT band.
+
+User request, verbatim:
+
+> "FIRST MAKE THE BATTING PULL AND RELEASE CONTROL OPPOSITE LIKE IT SHOULD BE FROM THE
+> OPPOSITE SIDE. SECOND REMOVE BOWLING INFO AND OPTIONS LIKE YORKER ETC. I ONLY WANT ONE
+> OPTION THAT IS TO CHOOSE THE DELIVERY TYPE WHICH IS ALREADY THERE. ALSO MAKE THE
+> PERFECT SECTION IN RELEASE SMALLER TO INCREASE DIFFICULTY"
+
+Asked which reading of "opposite" was meant, the user answered: *"I WANT NORMAL CONTROLS
+WHEN A PLAYER PULLS TO THE RIGHT IT SHOULD PLAY ON THE LEG SIDE."*
+
+### 1. The batting aim really was mirrored — and the camera proves it
+
+`AC26CameraDirector` stations the batting camera **behind the bowler**
+(`BattingRig.Eye = (-10, -4400, 640)` looking at the striker at `Y = 900`). A UE camera
+with yaw 90° has `RightVector = (-1, 0, 0)`, so **screen-right is world −X**. Since
+`+X world` is a right-hander's off side (`C26Delivery.h`), the off side is on the
+**left of the screen** and the leg side on the right.
+
+`C26Controls::AimAngleFromPull` was written on the opposite assumption — its comment
+claimed "right-handed batter, facing +Y (bowler at −Y)", which is backwards: the striker
+is at `Y = 900` with the stumps at `Y = 1006`, so he faces −Y, toward the bowler. The
+result was a drag that sent the ball to the mirror of the side the player pulled toward.
+
+Fix: negate `Pull.X` inside `AimAngleFromPull` (the single source of the gesture→aim
+mapping, so the HUD arrow, the zone label, the shot-family preview and
+`FC26Simulation::Hit` all move together). The legacy flick path in
+`AC26PlayerController::EndGesture` got the same negation. **Drag right now plays leg.**
+
+Tests moved with it, so the same physical strokes are still being asserted:
+
+- `C26BatLab.cpp` — every synthetic `DragTo`/`MidDrag` X mirrored; the 27 expected
+  stroke names are unchanged because mirroring X flips the angle sign back.
+- `C26Automation.cpp` — the gesture tests now read *Leg-side pull aims leg* for a
+  rightward drag and *Off-side pull aims off* for a leftward one; the `COVER`/`MIDWICKET`
+  naming pair and the left-hander mirror test were swapped to match.
+- `C26GoldenGate.cpp` — the "change of mind" waypoint moved `1290 → 1110` so its comment
+  ("aim off side") stays true.
+
+The AI path is untouched: it writes `Intent.Angle` directly, and positive is still off side.
+
+### 2. Bowling planning screen reduced to one selectable option
+
+Removed from `AC26HUD::Controls` (planning phase):
+
+- the four-line delivery-plan readout panel (length/line, movement, target pace, movement %)
+- the six quick preset buttons — YORKER, 4TH OFF, BOUNCER, WIDE Y, SL CUT, IN YORK
+
+The delivery-type carousel is now the only selectable option, and **STOCK PACE is already
+the default** (it is entry 0 of every seam bowler's `C26Delivery::Library`). The
+around-the-wicket toggle moved up to `y = 466` so the column reads as one control instead
+of leaving a 218 px hole. `AC26MatchGameMode::ApplyBowlingPreset` and the `p_` action
+routing were deleted — they had no other callers.
+
+Kept, because they are how you bowl rather than options or readouts: the pitch drag, the
+movement dial, the pace slider, the around-the-wicket toggle, START RUN-UP and the
+release bar.
+
+### 3. PERFECT band narrowed
+
+`FC26ReleaseBar::PerfectStart` 0.855 → 0.90. The live no-ball line is **not** the struct
+default: `C26MatchGameMode` overwrites it with
+`(RunUpDuration - .14) / RunUpDuration` = 0.957. So the PERFECT band went from **10.2% to
+5.7%** of the bar, and `DifficultyWidth` narrows it further (Hard ×0.72, Expert ×0.55).
+`C26BowlLab`'s `RelPerfect` moved 0.90 → 0.93 so its release point stays clear of the new
+lower edge; `RelEdge` 0.950 and `RelNoBall` 0.965 still bracket the no-ball line.
+
+### Verified
+
+`CRICKETGAMEEditor Mac Development` → **`Result: Succeeded`** after a forced recompile
+(7 actions: `C26BatLab`, `C26BowlLab`, `C26Automation`, `C26HUD`, `C26MatchGameMode`, the
+unity module and the link). Confirmed the binary picked the change up by checking the
+dylib no longer contains `p_yorker`, `4TH OFF`, `WIDE Y`, `IN YORK` or `TARGET PACE`.
+
+**Playtests, both green:**
+
+| Harness | Result |
+|---|---|
+| `Tools/BatLab.sh batlab_mirror` | **`C26_LAB_PASS deliveries=27 failures=0`** |
+| `Tools/BowlLab.sh bowllab_fix` | **`C26_BOWL_PASS deliveries=39 failures=0`** |
+
+`BatLab` directly evidences the aim fix — a rightward drag now logs
+`case=02_legside_attack aim=-57.7 zone=MIDWICKET` (leg side) and a leftward drag
+`case=01_cover_drive aim=+45.0 zone=COVER` (off side).
+
+`BowlLab` evidences the narrowed band in its own output —
+`bar=[0.420 0.620 0.900 0.957]`, i.e. PERFECT occupies 0.900–0.957 = **5.7%** of the bar —
+and confirms the around-the-wicket toggle still works from its new position
+(`around the wicket shifts the release point (62.0 cm)`).
+
+**One self-inflicted regression, worth remembering.** Moving the around-the-wicket toggle
+from `y = 670` to `y = 466` broke `BowlLab`'s `32_crease_around` case (4 failures,
+"shifts the release point (0.0 cm)"), because the harness presses a *hard-coded* screen
+coordinate. The lab's `AroundX/AroundY` had to follow to the new button centre,
+`(134, 483)` — the centre of the `(56, 466, 156x34)` rect. **Any HUD geometry move must be
+mirrored in the labs that press that control.**
+
+`GoldenGate` was not re-run; its known baseline is `C26_GATE_FAIL failures=6`, all
+pre-existing camera-framing checks, so any count above 6 would be a real regression.
+
+**Trap re-confirmed:** `Build.sh` cannot run under the tool sandbox. UBT's
+`Log.BackupLogFile` unlinks `~/Library/Application Support/Epic/UnrealBuildTool/Trace.uba`
+and the denial aborts UBT *before* it compiles — it looks like a build failure but is a
+permissions one. Run it in the **foreground** with the sandbox bypassed; background
+invocations stayed sandboxed.
+
 ## WorkBuddy — 2026-09-12. Bowling control loop rebuilt and proven with a real playtest.
 
 The player now authors a delivery end to end: type → exact pitch target → movement

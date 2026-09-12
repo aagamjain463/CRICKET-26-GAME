@@ -1706,7 +1706,6 @@ void AC26MatchGameMode::UIAction(FName Action)
     else if(Action==TEXT("delivery_next"))CycleDelivery(1);
     else if(Action==TEXT("delivery_prev"))CycleDelivery(-1);
     else if(Action==TEXT("around")){if(Phase==EC26Phase::Ready&&!PlayerBatting()){BowlingPlan.bAroundWicket=!BowlingPlan.bAroundWicket;TrajectoryPreviewHash=0;Toast(BowlingPlan.bAroundWicket?TEXT("AROUND THE WICKET"):TEXT("OVER THE WICKET"));}}
-    else if(Action.ToString().StartsWith(TEXT("p_")))ApplyBowlingPreset(Action);
 }
 void AC26MatchGameMode::DebugOutcome(FString Type)
 {
@@ -2087,32 +2086,6 @@ void AC26MatchGameMode::SelectDelivery(EC26Delivery Type)
     BowlingState = EC26BowlingState::Planning;
     TrajectoryPreviewHash = 0;
     Audio->Cue(TEXT("ui_button_click"), 0.20f);
-}
-
-void AC26MatchGameMode::ApplyBowlingPreset(FName Preset)
-{
-    if (Phase != EC26Phase::Ready || PlayerBatting() || Paused) return;
-    // Presets only WRITE into the plan; every field stays editable afterwards.
-    const float Off = BatterIsLeftHanded() ? -1.f : 1.f;   // +X is a right-hander's off side
-    if (Preset == TEXT("p_yorker"))
-    { BowlingPlan.Type = EC26Delivery::Pace; BowlingPlan.TargetLength = 795.f; BowlingPlan.TargetLine = 4.f * Off; BowlingPlan.PaceNormalized = 0.86f; BowlingPlan.MovementMagnitude = 0.30f; }
-    else if (Preset == TEXT("p_fourth"))
-    { BowlingPlan.Type = EC26Delivery::Outswing; BowlingPlan.TargetLength = 470.f; BowlingPlan.TargetLine = 26.f * Off; BowlingPlan.PaceNormalized = 0.66f; BowlingPlan.MovementMagnitude = 0.72f; }
-    else if (Preset == TEXT("p_bouncer"))
-    { BowlingPlan.Type = EC26Delivery::Pace; BowlingPlan.TargetLength = 95.f; BowlingPlan.TargetLine = -6.f * Off; BowlingPlan.PaceNormalized = 0.95f; BowlingPlan.MovementMagnitude = 0.20f; }
-    else if (Preset == TEXT("p_widey"))
-    { BowlingPlan.Type = EC26Delivery::Pace; BowlingPlan.TargetLength = 800.f; BowlingPlan.TargetLine = 62.f * Off; BowlingPlan.PaceNormalized = 0.80f; BowlingPlan.MovementMagnitude = 0.25f; }
-    else if (Preset == TEXT("p_slowcut"))
-    { if (DeliveryLibrary.Contains(EC26Delivery::SlowerCutter)) BowlingPlan.Type = EC26Delivery::SlowerCutter;
-      BowlingPlan.TargetLength = 560.f; BowlingPlan.TargetLine = 20.f * Off; BowlingPlan.PaceNormalized = 0.30f; BowlingPlan.MovementMagnitude = 0.80f; }
-    else if (Preset == TEXT("p_inyork"))
-    { if (DeliveryLibrary.Contains(EC26Delivery::Inswing)) BowlingPlan.Type = EC26Delivery::Inswing;
-      BowlingPlan.TargetLength = 780.f; BowlingPlan.TargetLine = 10.f * Off; BowlingPlan.PaceNormalized = 0.88f; BowlingPlan.MovementMagnitude = 0.68f; }
-    if (!C26Delivery::DirectionIsFree(BowlingPlan.Type))
-        BowlingPlan.MovementDirection = C26Delivery::NaturalDirection(BowlingPlan.Type);
-    BowlingIntendedPitch = FVector(BowlingPlan.TargetLine, BowlingPlan.TargetLength, 8.f);
-    TrajectoryPreviewHash = 0;
-    Audio->Cue(TEXT("ui_button_click"), 0.22f);
 }
 
 // ---- movement dial: direction is the angle, amount is the radius -----------

@@ -73,18 +73,27 @@ namespace C26Controls
 
     // ------------------------------------------------------------------
     // Shot direction from gesture (PART I)
-    // Right-handed batter, facing +Y (bowler at -Y). Screen/design mapping:
-    // +X design = batter's off side, -X design = leg side, -Y design = up
-    // (toward bowler/sky on screen), +Y design = down (toward keeper/ground).
-    // Pull direction maps to shot intent: dragging toward off side aims off
-    // side, dragging up (+toward bowler) straightens the shot.
-    // Returns continuous aim angle in degrees, -135..135.
+    //
+    // The batting camera sits BEHIND THE BOWLER looking down the pitch, so the
+    // picture the player aims at is mirrored against the world axes: for a
+    // right-hander the OFF side (+X world) is on the LEFT of the screen and the
+    // LEG side (-X world) is on the RIGHT. The drag has to follow the SCREEN,
+    // not world X - pulling right plays to leg, pulling left plays to off, and
+    // pulling up (toward the bowler) straightens the shot.
+    //
+    // Design space: -X design = batter's off side, +X design = leg side,
+    // -Y design = up (toward the bowler), +Y design = down (toward the keeper).
+    // Returns a continuous aim angle in degrees, -135..135, where POSITIVE is
+    // the batter's off side - the same convention FC26Simulation::Hit and
+    // DirectionZoneName already use.
     // ------------------------------------------------------------------
     inline float AimAngleFromPull(const FVector2D& Pull, float DeadZone, float Sensitivity, bool bLeftHandedBatter)
     {
         if (Pull.Size() <= DeadZone) return 0.f;
-        // Angle of pull measured from screen-up (-Y): right = +, left = -.
-        const float RawDeg = FMath::RadiansToDegrees(FMath::Atan2(Pull.X, -Pull.Y));
+        // Angle of pull measured from screen-up (-Y). Screen-right (+X design) is
+        // the batter's LEG side, so X is negated against the world convention:
+        // pulling right yields a negative (leg-side) angle, pulling left positive.
+        const float RawDeg = FMath::RadiansToDegrees(FMath::Atan2(-Pull.X, -Pull.Y));
         float Angle = FMath::Clamp(RawDeg * Sensitivity, -135.f, 135.f);
         if (bLeftHandedBatter) Angle = -Angle;
         return Angle;

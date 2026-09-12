@@ -1867,35 +1867,10 @@ void AC26HUD::Controls()
                     }
                 }
 
-                // ---- B. DELIVERY PLAN SUMMARY ----
-                // Four readout lines on one 22px pitch, with equal PadPanel
-                // padding top and bottom so the block sits centred in its frame.
-                const float SumX = 56.f, SumY = 462.f, SumW = 310.f, SumH = 116.f;
-                const float SumPitch = 22.f;
-                Panel(SumX, SumY, SumW, SumH, HairlineSoft);
-                {
-                    const float SumTX = SumX + PadPanel;
-                    const float SumTW = SumW - 2.f * PadPanel;
-                    float SY = SumY + PadPanel;
-                    TextFit(Match->GetDeliveryLengthName() + TEXT("  \u2022  ") + Match->GetDeliveryLineName(),
-                            SumTX, SY, 14, SilverCool, SumTW, false, 0);
-                    SY += SumPitch;
-                    TextFit(Match->GetMovementText(), SumTX, SY, 14,
-                            C26Delivery::MovementOf(Match->BowlingPlan.Type) != EC26Movement::None ? Gold : SlateMuted,
-                            SumTW, false, 0);
-                    SY += SumPitch;
-                    TextFit(FString::Printf(TEXT("TARGET PACE  %.0f KM/H"), Match->PlannedKph()),
-                            SumTX, SY, 14, WhiteAthletic, SumTW, false, 0);
-                    SY += SumPitch;
-                    Text(FString::Printf(TEXT("MOVEMENT  %d%%"), int(Match->BowlingPlan.MovementMagnitude * 100.f + 0.5f)),
-                         SumTX, SY, 12, SlateMuted, false, 0);
-                    // The bar shares the label's line, inset from the right rim
-                    const float MagLabelW = 140.f;
-                    StatBar(SumTX + MagLabelW, SY + 2.f, SumTW - MagLabelW, 8.f, Match->BowlingPlan.MovementMagnitude,
-                            FLinearColor(Gold.R, Gold.G, Gold.B, .65f));
-                }
-
-                // ---- C. MOVEMENT DIAL (Visual) ----
+                // ---- B. MOVEMENT DIAL (Visual) ----
+                // The delivery-plan readout that used to sit here was removed:
+                // the planning screen now offers the delivery TYPE as the only
+                // selectable option, and everything else is a live control.
                 {
                     const float DX = Match->DialCentreX;
                     const float DY = Match->DialCentreY;
@@ -2023,23 +1998,14 @@ void AC26HUD::Controls()
                     }
                 }
 
-                // ---- F. QUICK PRESET BUTTONS ----
-                {
-                    const float PX = 56.f, PY = 588.f, PW = 94.f, PH_P = 34.f, PGap = 6.f;
-                    const TCHAR* Names[] = { TEXT("YORKER"), TEXT("4TH OFF"), TEXT("BOUNCER"), TEXT("WIDE Y"), TEXT("SL CUT"), TEXT("IN YORK") };
-                    const FName Actions[] = { TEXT("p_yorker"), TEXT("p_fourth"), TEXT("p_bouncer"), TEXT("p_widey"), TEXT("p_slowcut"), TEXT("p_inyork") };
-                    for (int I = 0; I < 6; ++I)
-                    {
-                        const float BX = PX + (I % 3) * (PW + PGap);
-                        const float BY = PY + (I / 3) * (PH_P + PGap);
-                        Btn(Actions[I], Names[I], BX, BY, PW, PH_P, 0);
-                    }
-                }
-
-                // ---- G. AROUND THE WICKET TOGGLE ----
+                // ---- F. AROUND THE WICKET TOGGLE ----
+                // The quick presets (YORKER / 4TH OFF / BOUNCER / WIDE Y / SL CUT /
+                // IN YORK) were removed: the delivery TYPE carousel above is the
+                // only selectable option on this screen. The toggle now sits
+                // directly under it so the column reads as one control.
                 {
                     const FString WicketStr = Match->BowlingPlan.bAroundWicket ? TEXT("AROUND WICKET") : TEXT("OVER WICKET");
-                    Btn(TEXT("around"), WicketStr, 56.f, 670.f, 156.f, 34.f, 0, Match->BowlingPlan.bAroundWicket);
+                    Btn(TEXT("around"), WicketStr, 56.f, 466.f, 156.f, 34.f, 0, Match->BowlingPlan.bAroundWicket);
                 }
 
                 // ---- H. LAST BALL GHOST ----

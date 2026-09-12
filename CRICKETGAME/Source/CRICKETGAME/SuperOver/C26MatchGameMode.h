@@ -199,7 +199,6 @@ public:
     void RefreshBowlerProfile();
     void CycleDelivery(int Direction);
     void SelectDelivery(EC26Delivery Type);
-    void ApplyBowlingPreset(FName Preset);
     bool BeginMovementDrag(int32 PointerId, FVector2D DesignPos);
     void UpdateMovementDrag(int32 PointerId, FVector2D DesignPos);
     void EndMovementDrag(int32 PointerId);
