@@ -30,6 +30,9 @@ public:
     void TurfScuff(const FVector& At,const FVector& Along,float Strength);
     /** Sharp bright burst when the ball breaks the stumps. */
     void StumpBurst(const FVector& At);
+    /** Whisper-thin wake behind a ball travelling at pace. Called every frame while fast; the
+        system itself throttles so the trail stays subliminal, never an arcade streak. */
+    void BallStreak(const FVector& At, const FVector& Velocity);
     /** Integrate and rebuild the billboard sheet. View vectors come from the live broadcast lens. */
     void Advance(float Dt,const FVector& ViewRight,const FVector& ViewUp,const FVector& ViewForward);
     void Clear();

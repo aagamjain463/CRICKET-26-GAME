@@ -310,14 +310,29 @@ public:
     void SetThrowTarget(EC26ThrowTarget Target);
     void StartThrowCharge();
     void ReleaseThrowCharge();
+    /** Manual-throw decision pause + execution (fielding-side interaction). */
+    bool bFieldingDecisionPaused = false;
+    void ExecuteFielderThrow();
+    void SetThrowStyle(bool bDirectHit);
 
     // System 6: Match Presentation Callbacks
     void OnPresentationCompleted();
-    void TriggerPresentationForOutcome(const C26::DeliveryOutcome& Outcome);
-    bool bFiftyCelebrated[3] = { false, false, false };
+    void TriggerPresentationForOutcome(const C26::DeliveryOutcome& Outcome);    bool bFiftyCelebrated[3] = { false, false, false };
     bool bCenturyCelebrated[3] = { false, false, false };
     int32 ConsecutiveBoundaries = 0;
     int32 ConsecutiveDots = 0;
+
+    // ---- Broadcast lower-third graphics queue (presentation only; scoring untouched) ----
+    /** Single active lower-third. The HUD draws it; expiry is on the match Clock. */
+    FString GraphicTitle, GraphicSub;
+    FLinearColor GraphicAccent = FLinearColor(1.f, 1.f, 1.f, 1.f);
+    float GraphicStartAt = -99.f, GraphicDuration = 0.f;
+    /** Push a restrained broadcast lower-third (new batter, milestone, bowler figures, ...). */
+    void PushGraphic(const FString& Title, const FString& Sub, const FLinearColor& Accent, float Duration = 2.6f);
+    /** Active graphic + fade alpha for the HUD. False when none is live. */
+    bool GetActiveGraphic(FString& Title, FString& Sub, FLinearColor& Accent, float& Alpha) const;
+    void UpdateBroadcastGraphics(const C26::DeliveryOutcome& Outcome);
+    int32 GraphicStriker = -1, GraphicOver = -1;
 
     // System 5: Batting Timing Feedback Meter
     float LastTimingDeltaMs = 0.f;
@@ -368,14 +383,16 @@ private:
 
     void BuildMatchActors();
     void UpdateBallVisual();
+    /** Seam-axis state for believable ball rotation; presentation only. */
+    FVector BallSeamAxis = FVector(0.f, 1.f, 0.f);
+    float BallSeamWobble = 0.f;
     void BreakWicket(float WicketY);
     void ResetStumps();
     void Haptic(float Strength);
     FC26CommentaryContext MakeCommentaryContext() const;
     FC26CommentaryEvent MakeCommentaryEvent(ECommentaryEventType Type, int32 Runs=0, bool bBoundary=false, bool bSix=false, bool bWicket=false, uint8 Dismissal=0) const;
     /** Dust and turf response for one ball's worth of contact events. */
-    void Spark(const FVector& At,bool Struck);
-    /** Momentary time pinch on a well-struck ball, and the real-time stamp it ends at. */
+    void Spark(const FVector& At,bool Struck);    /** Momentary time pinch on a well-struck ball, and the real-time stamp it ends at. */
     void HitStop(float Quality);
     void ClearHitStop();
     double HitStopUntil=0;

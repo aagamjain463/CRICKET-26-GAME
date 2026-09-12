@@ -173,4 +173,6 @@ public:
     // ---- Presentation & Cinematic Overlays ----
     void DrawPresentationOverlay();
     void DrawPresentationDebug();
+    /** Restrained broadcast lower-third above the score bug (new batter, milestones, ...). */
+    void DrawBroadcastGraphics();
 };

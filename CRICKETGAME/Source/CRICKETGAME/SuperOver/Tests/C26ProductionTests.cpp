@@ -2,6 +2,7 @@
 #include "../C26Simulation.h"
 #include "../C26Delivery.h"
 #include "../C26Motion.h"
+#include "../C26Stadium.h"
 #if WITH_DEV_AUTOMATION_TESTS
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FC26DeliveryPlanTest,"Cricket26.Production.DeliveryPlan",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
 bool FC26DeliveryPlanTest::RunTest(const FString&)
@@ -56,6 +57,34 @@ bool FC26CadenceTest::RunTest(const FString&)
     FC26AI AI;AI.Reset(2626);C26::Match M;M.Reset();TSet<int> Variations;
     for(int I=0;I<30;++I)Variations.Add(int(AI.Bowl(M,1).Type));
     TestTrue(TEXT("AI uses varied deliveries"),Variations.Num()>=3);
+    return true;
+}
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FC26BroadcastVisualsTest,"Cricket26.Presentation.BroadcastVisuals",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
+bool FC26BroadcastVisualsTest::RunTest(const FString&)
+{
+    // Crowd visual states: bigger moments must target strictly more rise, so a six visibly lifts
+    // the ground harder than applause and calm always settles back near still.
+    TestEqual(TEXT("Six lifts the ground fully"),AC26Stadium::CrowdTargetForState(EC26CrowdState::Six),1.f);
+    TestEqual(TEXT("Calm settles near still"),AC26Stadium::CrowdTargetForState(EC26CrowdState::Calm),.06f);
+    TestTrue(TEXT("Wicket outrises boundary"),AC26Stadium::CrowdTargetForState(EC26CrowdState::Wicket)>AC26Stadium::CrowdTargetForState(EC26CrowdState::Boundary));
+    TestTrue(TEXT("Boundary outrises excited"),AC26Stadium::CrowdTargetForState(EC26CrowdState::Boundary)>AC26Stadium::CrowdTargetForState(EC26CrowdState::Excited));
+    TestTrue(TEXT("Applause outrises anticipation"),AC26Stadium::CrowdTargetForState(EC26CrowdState::Excited)>AC26Stadium::CrowdTargetForState(EC26CrowdState::Anticipation));
+    TestTrue(TEXT("Anticipation outrises calm"),AC26Stadium::CrowdTargetForState(EC26CrowdState::Anticipation)>AC26Stadium::CrowdTargetForState(EC26CrowdState::Calm));
+    TestTrue(TEXT("Tension lingers above calm"),AC26Stadium::CrowdTargetForState(EC26CrowdState::Tense)>AC26Stadium::CrowdTargetForState(EC26CrowdState::Calm));
+    for(auto S:{EC26CrowdState::Calm,EC26CrowdState::Anticipation,EC26CrowdState::Excited,EC26CrowdState::Boundary,
+        EC26CrowdState::Six,EC26CrowdState::Wicket,EC26CrowdState::Tense,EC26CrowdState::Win})
+        TestTrue(TEXT("Every crowd state eases at a positive rate"),AC26Stadium::CrowdRateForState(S)>0.f);
+    // Environment grade: day is the brightest session, night the darkest; the shipped night look
+    // is pinned so a future tweak cannot silently re-expose the prototype grade.
+    TestEqual(TEXT("Night exposure pinned"),AC26Stadium::ExposureBiasForProfile(EC26EnvironmentProfile::Night),-.45f);
+    TestTrue(TEXT("Day brighter than afternoon"),AC26Stadium::ExposureBiasForProfile(EC26EnvironmentProfile::ClearDay)>AC26Stadium::ExposureBiasForProfile(EC26EnvironmentProfile::LateAfternoon));
+    TestTrue(TEXT("Afternoon brighter than night"),AC26Stadium::ExposureBiasForProfile(EC26EnvironmentProfile::LateAfternoon)>AC26Stadium::ExposureBiasForProfile(EC26EnvironmentProfile::Night));
+    // Pitch conditions: used is neutral, fresh skews green, dry/worn skew pale.
+    const auto Used=AC26Stadium::PitchTintForCondition(EC26PitchCondition::Used);
+    TestTrue(TEXT("Used condition is neutral"),Used.Equals(FLinearColor(1,1,1,1)));
+    TestTrue(TEXT("Fresh condition skews green"),AC26Stadium::PitchTintForCondition(EC26PitchCondition::Fresh).G>=AC26Stadium::PitchTintForCondition(EC26PitchCondition::Fresh).R);
+    TestTrue(TEXT("Dry condition skews pale"),AC26Stadium::PitchTintForCondition(EC26PitchCondition::Dry).R>=1.f);
+    TestTrue(TEXT("Worn condition skews pale"),AC26Stadium::PitchTintForCondition(EC26PitchCondition::Worn).R>=1.f);
     return true;
 }
 #endif

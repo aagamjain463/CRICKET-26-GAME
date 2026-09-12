@@ -64,6 +64,20 @@ void AC26Effects::StumpBurst(const FVector& At)
     Emit(14,At+FVector(0,0,26.f),FVector(0,0,.35f),210.f,1.f,
         FLinearColor(.62f,.58f,.46f),4.5f,10.f,.30f,-420.f,1.4f,.46f);
 }
+void AC26Effects::BallStreak(const FVector& At, const FVector& Velocity)
+{
+    // Only genuine pace leaves any wake, and even then it is a breath of pale shimmer half a frame
+    // long: readability without a neon comet. One quad per call, throttled by the live count.
+    const float Speed = Velocity.Size();
+    if (Speed < 2600.f || Puffs.Num() > Capacity - 12) return;
+    FC26Puff P;
+    P.Position = At - Velocity.GetSafeNormal() * 9.f;
+    P.Velocity = -Velocity * 0.06f;
+    P.Colour = FLinearColor(.78f, .78f, .74f);
+    P.Life = .11f; P.Size = 3.2f; P.Growth = 5.f;
+    P.Gravity = 0.f; P.Drag = 1.2f; P.Peak = .10f;
+    Puffs.Add(P);
+}
 void AC26Effects::Advance(float Dt,const FVector& ViewRight,const FVector& ViewUp,const FVector& ViewForward)
 {
     if(!Built)

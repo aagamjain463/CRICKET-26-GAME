@@ -1855,6 +1855,25 @@ void AC26HUD::Score()
 }
 
 // ============================================================================
+// BROADCAST LOWER-THIRD: restrained contextual graphics above the score bug.
+// One slim card, quick fades, never during replays (the replay pill owns those).
+// ============================================================================
+void AC26HUD::DrawBroadcastGraphics()
+{
+    if (!Match || Match->Phase == EC26Phase::Replay) return;
+    FString Title, Sub;
+    FLinearColor Accent;
+    float Alpha = 0.f;
+    if (!Match->GetActiveGraphic(Title, Sub, Accent, Alpha) || Alpha <= 0.01f) return;
+    const float W = 660.f, H = 58.f, X = 800.f - W * .5f, Y = 750.f;
+    Rect(X, Y, W, H, WithA(FLinearColor(0.012f, 0.016f, 0.025f, 0.94f), Alpha));
+    Line(X, Y, X + W, Y, WithA(Accent, Alpha), 1.5f);
+    Rect(X, Y, 3.5f, H, WithA(Accent, Alpha));
+    TextFit(Title, X + 24.f, Y + 5.f, 20, WithA(WhiteAthletic, Alpha), W - 48.f, false, 2);
+    TextFit(Sub, X + 24.f, Y + 32.f, 13, WithA(SilverCool, Alpha), W - 48.f, false, 0);
+}
+
+// ============================================================================
 // GAMEPLAY CONTROLS & ERGONOMIC TOUCH ZONES
 // Pro broadcast touch interface with zero obstruction of athlete and pitch.
 // ============================================================================
@@ -1943,14 +1962,13 @@ void AC26HUD::Controls()
                     }
                 }
 
-                // ---- B. MOVEMENT DIAL (Visual) ----
-                // The delivery-plan readout that used to sit here was removed:
-                // the planning screen now offers the delivery TYPE as the only
-                // selectable option, and everything else is a live control.
+                // ---- B. MOVEMENT DIAL (Visual - Minimalist & Elevated) ----
                 {
                     const float DX = Match->DialCentreX;
                     const float DY = Match->DialCentreY;
-                    const float DR = 78.f;
+                    const float DR = Match->DialRadius;
+
+                    TextFit(TEXT("MOVEMENT & SWING"), DX - DR - 20.f, DY - DR - 18.f, 11, SlateMuted, (DR + 20.f) * 2.f, true, 0);
 
                     Circle(DX, DY, DR, FLinearColor(SilverCool.R, SilverCool.G, SilverCool.B, .25f), 1.5f);
                     Circle(DX, DY, DR + 1.f, FLinearColor(0.f, 0.f, 0.f, .30f), 2.5f);
@@ -1962,25 +1980,25 @@ void AC26HUD::Controls()
                         const float A1 = -PI * 0.5f + I * 2.f * PI / ArcSegs;
                         const float A2 = -PI * 0.5f + (I + 1) * 2.f * PI / ArcSegs;
                         const bool On = I < ArcFill;
-                        Line(DX + (DR - 8.f) * FMath::Cos(A1), DY + (DR - 8.f) * FMath::Sin(A1),
-                             DX + (DR - 8.f) * FMath::Cos(A2), DY + (DR - 8.f) * FMath::Sin(A2),
-                             On ? FLinearColor(Gold.R, Gold.G, Gold.B, .75f) : FLinearColor(1.f, 1.f, 1.f, .08f),
+                        Line(DX + (DR - 7.f) * FMath::Cos(A1), DY + (DR - 7.f) * FMath::Sin(A1),
+                             DX + (DR - 7.f) * FMath::Cos(A2), DY + (DR - 7.f) * FMath::Sin(A2),
+                             On ? FLinearColor(Gold.R, Gold.G, Gold.B, .85f) : FLinearColor(1.f, 1.f, 1.f, .08f),
                              On ? 3.f : 1.5f);
                     }
 
                     const float DirVal = C26Delivery::DirectionIsFree(Match->BowlingPlan.Type)
                         ? Match->BowlingPlan.MovementDirection : C26Delivery::NaturalDirection(Match->BowlingPlan.Type);
                     const float ArrowMag = Match->BowlingPlan.MovementMagnitude;
+                    const bool bFixed = !C26Delivery::DirectionIsFree(Match->BowlingPlan.Type);
                     if (FMath::Abs(DirVal) > 0.05f || ArrowMag > 0.05f)
                     {
-                        const float ArrowLen = FMath::Clamp(ArrowMag, 0.15f, 1.f) * (DR - 14.f);
+                        const float ArrowLen = FMath::Clamp(ArrowMag, 0.15f, 1.f) * (DR - 12.f);
                         const FVector2D ArrowDir(DirVal, -0.3f);
                         const FVector2D ArrowN = ArrowDir.IsNearlyZero() ? FVector2D(1.f, 0.f) : ArrowDir.GetSafeNormal();
                         const FVector2D Tip(DX + ArrowN.X * ArrowLen, DY + ArrowN.Y * ArrowLen);
-                        const bool bFixed = !C26Delivery::DirectionIsFree(Match->BowlingPlan.Type);
                         const FLinearColor ACol = bFixed
                             ? FLinearColor(SilverCool.R, SilverCool.G, SilverCool.B, .65f)
-                            : FLinearColor(Gold.R, Gold.G, Gold.B, .90f);
+                            : FLinearColor(Gold.R, Gold.G, Gold.B, .95f);
                         Line(DX, DY, Tip.X, Tip.Y, FLinearColor(0.f, 0.f, 0.f, .50f), 5.f);
                         Line(DX, DY, Tip.X, Tip.Y, ACol, 2.5f);
                         const FVector2D Perp(-ArrowN.Y, ArrowN.X);
@@ -1989,47 +2007,51 @@ void AC26HUD::Controls()
                     }
                     else
                     {
-                        Circle(DX, DY, 6.f, FLinearColor(SilverCool.R, SilverCool.G, SilverCool.B, .40f), 1.5f);
+                        Circle(DX, DY, 5.f, FLinearColor(SilverCool.R, SilverCool.G, SilverCool.B, .40f), 1.5f);
                     }
 
                     const FString MovLabel = Match->GetMovementText();
-                    TextFit(MovLabel, DX - DR, DY + DR + 10.f, 12, SlateMuted, DR * 2.f, true, 0);
-                    if (!C26Delivery::DirectionIsFree(Match->BowlingPlan.Type))
-                        TextFit(TEXT("DIRECTION LOCKED"), DX - DR, DY + DR + 26.f, 10, FLinearColor(SlateMuted.R, SlateMuted.G, SlateMuted.B, .55f), DR * 2.f, true, 0);
+                    const int32 MovPct = FMath::RoundToInt(Match->BowlingPlan.MovementMagnitude * 100.f);
+                    TextFit(FString::Printf(TEXT("%s  \u2022  %d%%"), *MovLabel, MovPct), DX - DR - 20.f, DY + DR + 8.f, 12, Gold, (DR + 20.f) * 2.f, true, 0);
+                    if (bFixed)
+                        TextFit(TEXT("DIRECTION LOCKED"), DX - DR - 20.f, DY + DR + 22.f, 10, FLinearColor(SlateMuted.R, SlateMuted.G, SlateMuted.B, .55f), (DR + 20.f) * 2.f, true, 0);
                 }
 
-                // ---- D. PACE SLIDER (Visual) ----
+                // ---- D. PACE SLIDER (Visual - Minimalist & Spaced) ----
                 {
                     const float TX = Match->PaceTrackX;
                     const float TW = Match->PaceTrackW;
                     const float TY = Match->PaceTrackY;
-                    const float TH_S = 12.f;
+                    const float TH_S = 10.f;
 
                     float MinKph, MaxKph;
                     Match->PaceRangeKph(MinKph, MaxKph);
                     const float PaceN = Match->BowlingPlan.PaceNormalized;
                     const float CurKph = Match->PlannedKph();
                     const float Strain = C26Delivery::EffortStrain(PaceN);
+                    const int32 PaceEffortPct = FMath::RoundToInt(PaceN * 100.f);
+
+                    const FLinearColor FillCol = Strain > 0.5f ? Crimson
+                        : (Strain > 0.f ? FLinearColor(Gold.R, Gold.G, Gold.B, .70f) : FLinearColor(TurfGreen.R, TurfGreen.G, TurfGreen.B, .55f));
+
+                    Text(TEXT("DELIVERY PACE"), TX, TY - 20.f, 11, SlateMuted, false, 0);
+                    Text(FString::Printf(TEXT("%.0f KM/H  \u2022  %d%%"), CurKph, PaceEffortPct), TX + TW, TY - 20.f, 12, FillCol, false, 2);
 
                     Rect(TX, TY, TW, TH_S, SurfaceWell);
                     Line(TX, TY, TX + TW, TY, HairlineSoft, 1.f);
                     Line(TX, TY + TH_S, TX + TW, TY + TH_S, HairlineSoft, 1.f);
 
-                    const FLinearColor FillCol = Strain > 0.5f ? Crimson
-                        : (Strain > 0.f ? FLinearColor(Gold.R, Gold.G, Gold.B, .70f) : FLinearColor(TurfGreen.R, TurfGreen.G, TurfGreen.B, .55f));
                     Rect(TX, TY, TW * PaceN, TH_S, FLinearColor(FillCol.R, FillCol.G, FillCol.B, .40f));
 
                     const float ThumbX = TX + TW * PaceN;
-                    Rect(ThumbX - 4.f, TY - 6.f, 8.f, TH_S + 12.f, FillCol);
-                    Rect(ThumbX - 2.f, TY - 4.f, 4.f, TH_S + 8.f, WhiteAthletic);
+                    Rect(ThumbX - 4.f, TY - 5.f, 8.f, TH_S + 10.f, FillCol);
+                    Rect(ThumbX - 2.f, TY - 3.f, 4.f, TH_S + 6.f, WhiteAthletic);
 
-                    Text(FString::Printf(TEXT("%.0f"), MinKph), TX - 8.f, TY - 22.f, 11, SlateMuted, false, 0);
-                    Text(FString::Printf(TEXT("%.0f"), MaxKph), TX + TW - 28.f, TY - 22.f, 11, SlateMuted, false, 0);
-                    Text(FString::Printf(TEXT("%.0f KM/H"), CurKph), ThumbX, TY - 26.f, 14, FillCol, true, 0);
-                    Text(TEXT("PACE"), TX + TW * 0.5f, TY + TH_S + 8.f, 12, SlateMuted, true, 0);
+                    Text(FString::Printf(TEXT("%.0f"), MinKph), TX, TY + TH_S + 6.f, 10, SlateMuted, false, 0);
+                    Text(FString::Printf(TEXT("%.0f"), MaxKph), TX + TW, TY + TH_S + 6.f, 10, SlateMuted, false, 2);
                     if (Strain > 0.f)
                         Text(FString::Printf(TEXT("HIGH EFFORT  \u2022  -%d%% ACCURACY"), int(Strain * 100.f)),
-                             TX + TW * 0.5f, TY + TH_S + 24.f, 10, FLinearColor(Crimson.R, Crimson.G, Crimson.B, .70f), true, 0);
+                             TX + TW * 0.5f, TY + TH_S + 6.f, 10, FLinearColor(Crimson.R, Crimson.G, Crimson.B, .70f), true, 0);
                 }
 
                 // ---- E. TRAJECTORY PREVIEW (project 3D spline to screen) ----
@@ -2084,28 +2106,10 @@ void AC26HUD::Controls()
                     Btn(TEXT("around"), WicketStr, 56.f, 466.f, 156.f, 34.f, 0, Match->BowlingPlan.bAroundWicket);
                 }
 
-                // ---- H. LAST BALL GHOST ----
-                if (Match->bHasLastPitch)
-                {
-                    APlayerController* PC = GetOwningPlayerController();
-                    if (PC)
-                    {
-                        FVector2D GhostPx;
-                        if (PC->ProjectWorldLocationToScreen(Match->LastActualPitch, GhostPx))
-                        {
-                            const FVector2D G = ToDesign(GhostPx);
-                            if (G.X > -60.f && G.X < 1660.f && G.Y > -60.f && G.Y < 960.f)
-                            {
-                                Circle(G.X, G.Y, 8.f, FLinearColor(Crimson.R, Crimson.G, Crimson.B, .28f), 1.5f);
-                                Circle(G.X, G.Y, 3.f, FLinearColor(Crimson.R, Crimson.G, Crimson.B, .18f), 1.f);
-                                Text(TEXT("LAST"), G.X, G.Y - 18.f, 9, FLinearColor(Crimson.R, Crimson.G, Crimson.B, .35f), true, 0);
-                            }
-                        }
-                    }
-                }
+                // (Removed: LAST BALL ghost marker — only the live delivery marker is shown.)
 
-                // ---- I. START RUN-UP BUTTON ----
-                Btn(TEXT("ready"), TEXT("START RUN-UP  >"), 1260, 760, 280, 56, 1);
+                // ---- I. START RUN-UP BUTTON (Clean Minimalist Placement) ----
+                Btn(TEXT("ready"), TEXT("START RUN-UP  >"), 1240, 754, 300, 52, 1);
 
                 // ---- J. INSTRUCTION HINT ----
                 // Centred in the clear band above the START button and below the
@@ -2992,7 +2996,7 @@ void AC26HUD::DrawHUD()
     TextShadow = .80f;
     SubtitleY = 640.f;
 
-    if (Match->bFieldPlanningMode)
+    if (Match->bFieldPlanningMode && !Match->PlayerBatting())
     {
         DrawFieldPlanning();
     }
@@ -3039,6 +3043,7 @@ void AC26HUD::DrawHUD()
     else
     {
         Score();
+        DrawBroadcastGraphics();
         Controls();
         DrawBounceIndicator();
         DrawBowlingTarget();
@@ -3078,44 +3083,11 @@ void AC26HUD::DrawHUD()
 void AC26HUD::DrawDeliveryHistory()
 {
     if (!Match) return;
-    APlayerController* PC = GetOwningPlayerController();
-    if (!PC) return;
 
-    const bool bShowOnPitch = (Match->Phase == EC26Phase::Ready || Match->Phase == EC26Phase::RunUp || Match->Phase == EC26Phase::Delivery);
-    if (!bShowOnPitch) return;
-
-    const float PitchLinesY[] = { 100.f, 280.f, 480.f, 650.f, 800.f };
-    for (int32 I = 0; I < 5; ++I)
-    {
-        const float Y = PitchLinesY[I];
-        FVector2D SLeft, SRight;
-        if (PC->ProjectWorldLocationToScreen(FVector(-135.f, Y, 6.f), SLeft) &&
-            PC->ProjectWorldLocationToScreen(FVector(135.f, Y, 6.f), SRight))
-        {
-            const FVector2D DLeft = ToDesign(SLeft);
-            const FVector2D DRight = ToDesign(SRight);
-            Line(DLeft.X, DLeft.Y, DRight.X, DRight.Y, FLinearColor(1.f, 1.f, 1.f, 0.08f), 1.f);
-        }
-    }
-
-    for (int32 I = 0; I < Match->RecentDeliveries.Num(); ++I)
-    {
-        const auto& Rec = Match->RecentDeliveries[I];
-        FVector2D Screen;
-        if (PC->ProjectWorldLocationToScreen(FVector(Rec.ActualPitch.X, Rec.ActualPitch.Y, 7.f), Screen))
-        {
-            const FVector2D D = ToDesign(Screen);
-            if (D.X > 50.f && D.X < 1550.f && D.Y > 50.f && D.Y < 850.f)
-            {
-                FLinearColor DotColor = FLinearColor(0.85f, 0.88f, 0.92f, 0.55f);
-                if (Rec.bWicket) DotColor = FLinearColor(0.95f, 0.20f, 0.25f, 0.85f);
-                else if (Rec.bBoundary) DotColor = FLinearColor(1.0f, 0.82f, 0.22f, 0.85f);
-                else if (Rec.RunsConceded > 0) DotColor = FLinearColor(0.25f, 0.80f, 0.95f, 0.75f);
-
-                Circle(D.X, D.Y, 5.5f, DotColor, 2.f);
-            }
-        }
-    }
+    // Only the live delivery marker (DrawBounceIndicator / DrawBowlingTarget) is
+    // shown. Historical pitch lines and past-delivery dots were removed per design:
+    // they cluttered the pitch near the batter.
+    // This function now only keeps the non-marker tactical button.
 
     if (!Match->PlayerBatting() && Match->Phase == EC26Phase::Ready)
     {
@@ -3128,6 +3100,8 @@ void AC26HUD::DrawDeliveryHistory()
 void AC26HUD::DrawFieldPlanning()
 {
     if (!Match) return;
+    // Fielding controls belong to the bowling side only.
+    if (Match->PlayerBatting()) return;
     APlayerController* PC = GetOwningPlayerController();
     if (!PC) return;
 
@@ -3150,18 +3124,21 @@ void AC26HUD::DrawFieldPlanning()
                    800, StatusY, 36, 15, FLinearColor(1.f, 0.4f, 0.4f, 1.f), 680, true, 0);
     }
 
-    // Boundary rope (faint outer ring)
-    const int BoundarySegs = 64;
+    // Boundary rope (clean, crisp, prominent boundary circle matching C26Field bounds)
+    const int BoundarySegs = 72;
     for (int I = 0; I < BoundarySegs; ++I)
     {
         const float A1 = I * 2.f * PI / BoundarySegs;
         const float A2 = (I + 1) * 2.f * PI / BoundarySegs;
-        const FVector P1(6400.f * FMath::Cos(A1), 7000.f * FMath::Sin(A1), 5.f);
-        const FVector P2(6400.f * FMath::Cos(A2), 7000.f * FMath::Sin(A2), 5.f);
+        const FVector P1(C26Field::RadiusX * FMath::Cos(A1), C26Field::RadiusY * FMath::Sin(A1), 5.f);
+        const FVector P2(C26Field::RadiusX * FMath::Cos(A2), C26Field::RadiusY * FMath::Sin(A2), 5.f);
         FVector2D S1, S2;
         if (PC->ProjectWorldLocationToScreen(P1, S1) && PC->ProjectWorldLocationToScreen(P2, S2))
         {
-            Line(ToDesign(S1).X, ToDesign(S1).Y, ToDesign(S2).X, ToDesign(S2).Y, FLinearColor(1.f, 1.f, 1.f, 0.12f), 1.2f);
+            // Soft outer halo
+            Line(ToDesign(S1).X, ToDesign(S1).Y, ToDesign(S2).X, ToDesign(S2).Y, FLinearColor(0.2f, 0.7f, 1.f, 0.22f), 3.0f);
+            // Crisp white boundary rope
+            Line(ToDesign(S1).X, ToDesign(S1).Y, ToDesign(S2).X, ToDesign(S2).Y, FLinearColor(0.95f, 0.95f, 0.92f, 0.85f), 1.6f);
         }
     }
 
@@ -3176,7 +3153,32 @@ void AC26HUD::DrawFieldPlanning()
         FVector2D S1, S2;
         if (PC->ProjectWorldLocationToScreen(P1, S1) && PC->ProjectWorldLocationToScreen(P2, S2))
         {
-            Line(ToDesign(S1).X, ToDesign(S1).Y, ToDesign(S2).X, ToDesign(S2).Y, FLinearColor(0.2f, 0.9f, 0.7f, 0.40f), 1.8f);
+            Line(ToDesign(S1).X, ToDesign(S1).Y, ToDesign(S2).X, ToDesign(S2).Y, FLinearColor(0.2f, 0.95f, 0.65f, 0.50f), 1.8f);
+        }
+    }
+
+    // Central pitch strip projection
+    {
+        const FVector Corners[4] = {
+            FVector(-152.f, -1006.f, 2.f),
+            FVector( 152.f, -1006.f, 2.f),
+            FVector( 152.f,  1006.f, 2.f),
+            FVector(-152.f,  1006.f, 2.f)
+        };
+        FVector2D SC[4];
+        bool bAllProjected = true;
+        for (int K = 0; K < 4; ++K)
+        {
+            if (!PC->ProjectWorldLocationToScreen(Corners[K], SC[K])) bAllProjected = false;
+        }
+        if (bAllProjected)
+        {
+            for (int K = 0; K < 4; ++K)
+            {
+                const FVector2D D1 = ToDesign(SC[K]);
+                const FVector2D D2 = ToDesign(SC[(K + 1) % 4]);
+                Line(D1.X, D1.Y, D2.X, D2.Y, FLinearColor(0.85f, 0.78f, 0.65f, 0.70f), 1.6f);
+            }
         }
     }
 
@@ -3191,14 +3193,31 @@ void AC26HUD::DrawFieldPlanning()
             const bool bSelected = (I == Match->SelectedFielderIdx);
             const bool bMovable = (I >= 2 && I <= 10);
 
-            const float R = bSelected ? 22.f : 16.f;
+            const float R = bSelected ? 20.f : 15.f;
             const FLinearColor RingCol = bSelected ? Gold : (bMovable ? TurfGreen : SlateMuted);
 
+            // Dark backing disk so the number pops against grass
             Circle(D.X, D.Y, R, RingCol, bSelected ? 2.5f : 1.5f);
-            TextMid(FString::FromInt(I + 1), D.X, D.Y - R, R * 2.f, 13, WhiteAthletic, true, 0);
+            Rect(D.X - R + 2.f, D.Y - R + 2.f, (R - 2.f) * 2.f, (R - 2.f) * 2.f, FLinearColor(0.02f, 0.05f, 0.09f, 0.90f));
+
+            TextMid(FString::FromInt(I + 1), D.X, D.Y - R, R * 2.f, 13, bSelected ? Gold : WhiteAthletic, true, 0);
+
+            // If selected, draw guideline to pitch center and targeting reticle
+            if (bSelected)
+            {
+                Circle(D.X, D.Y, R + 6.f, FLinearColor(Gold.R, Gold.G, Gold.B, 0.40f), 1.2f);
+                FVector2D PitchCentreScreen;
+                if (PC->ProjectWorldLocationToScreen(FVector(0.f, 0.f, 10.f), PitchCentreScreen))
+                {
+                    const FVector2D PCD = ToDesign(PitchCentreScreen);
+                    Line(PCD.X, PCD.Y, D.X, D.Y, FLinearColor(Gold.R, Gold.G, Gold.B, 0.35f), 1.2f);
+                }
+            }
 
             const FString PosName = C26Fielding::GetFieldPositionName(Pos, Match->BatterIsLeftHanded());
-            TextFit(PosName, D.X, D.Y + R + 3.f, 11, bSelected ? Gold : SilverCool, 120.f, true, 0);
+            const float PosLabelW = 120.f;
+            Rect(D.X - PosLabelW * 0.5f, D.Y + R + 2.f, PosLabelW, 16.f, FLinearColor(0.01f, 0.03f, 0.06f, 0.80f));
+            TextFit(PosName, D.X, D.Y + R + 3.f, 11, bSelected ? Gold : SilverCool, PosLabelW - 8.f, true, 0);
         }
     }
 
@@ -3240,6 +3259,9 @@ void AC26HUD::DrawFieldPlanning()
 void AC26HUD::DrawFieldingHUD()
 {
     if (!Match || Match->Phase != EC26Phase::InPlay) return;
+    // Manual fielding (dive / catch / throw + active fielder ring) belongs
+    // to the bowling side only. The batting side runs, never fields.
+    if (Match->PlayerBatting()) return;
     APlayerController* PC = GetOwningPlayerController();
     if (!PC) return;
 
@@ -3273,19 +3295,61 @@ void AC26HUD::DrawFieldingHUD()
         Btn(TEXT("field_catch"), TEXT("TAKE CATCH!  [C]"), 660.f, 690.f, 280.f, 62.f, 1);
     }
 
-    if (Match->bThrowTargetActive)
+    if (Match->bFieldingDecisionPaused || Match->bThrowTargetActive)
     {
-        const float ThrowX = 1180.f, ThrowY = 660.f, ThrowW = 380.f, ThrowH = 130.f;
-        Rect(ThrowX, ThrowY, ThrowW, ThrowH, FLinearColor(0.02f, 0.05f, 0.09f, 0.90f));
-        Line(ThrowX, ThrowY, ThrowX + ThrowW, ThrowY, HairlineSoft, 1.f);
+        const float CardW = 440.f, CardH = 270.f;
+        const float CardX = 1120.f, CardY = 460.f;
 
-        TextFit(TEXT("THROW TARGET:"), ThrowX + 16.f, ThrowY + 14.f, 13, SlateMuted, 200.f, false, 0);
+        // Dark frosted backdrop card
+        Rect(CardX, CardY, CardW, CardH, FLinearColor(0.02f, 0.05f, 0.09f, 0.94f));
+        Line(CardX, CardY, CardX + CardW, CardY, Gold, 2.5f);
+        Line(CardX, CardY + CardH, CardX + CardW, CardY + CardH, HairlineSoft, 1.f);
+        Line(CardX, CardY, CardX, CardY + CardH, HairlineSoft, 1.f);
+        Line(CardX + CardW, CardY, CardX + CardW, CardY + CardH, HairlineSoft, 1.f);
+
+        // Header
+        TextFit(TEXT("TACTICAL FIELDING DECISION"), CardX + 18.f, CardY + 16.f, 13, WhiteAthletic, 260.f, false, 0);
+        if (Match->bFieldingDecisionPaused)
+        {
+            Rect(CardX + CardW - 96.f, CardY + 14.f, 78.f, 20.f, FLinearColor(0.85f, 0.65f, 0.12f, 0.85f));
+            TextMid(TEXT("PAUSED"), CardX + CardW - 96.f, CardY + 15.f, 78.f, 11, FLinearColor::Black, true, 0);
+        }
+
+        const FString FielderStr = (Match->Athletes.IsValidIndex(Match->ActiveFielder) && Match->Athletes[Match->ActiveFielder])
+            ? FString::Printf(TEXT("#%d %s GATHERED THE BALL"), Match->ActiveFielder + 1, *Match->Athletes[Match->ActiveFielder]->GetName())
+            : TEXT("BALL GATHERED IN THE OUTFIELD");
+        TextFit(FielderStr, CardX + 18.f, CardY + 42.f, 11, SlateMuted, CardW - 36.f, false, 0);
+
+        // Section: Target Selection
+        TextFit(TEXT("TARGET END:"), CardX + 18.f, CardY + 62.f, 11, SilverCool, 120.f, false, 0);
         const bool bKeeper = Match->SelectedThrowTarget == EC26ThrowTarget::KeepersEnd;
-        Btn(TEXT("throw_keeper"), TEXT("KEEPER  [2]"), ThrowX + 16.f, ThrowY + 34.f, 166.f, 42.f, bKeeper ? 1 : 0);
-        Btn(TEXT("throw_bowler"), TEXT("BOWLER  [1]"), ThrowX + 198.f, ThrowY + 34.f, 166.f, 42.f, !bKeeper ? 1 : 0);
+        Btn(TEXT("throw_bowler"), TEXT("BOWLER  [1]"), CardX + 18.f, CardY + 80.f, 196.f, 42.f, !bKeeper ? 1 : 0);
+        Btn(TEXT("throw_keeper"), TEXT("KEEPER  [2]"), CardX + 226.f, CardY + 80.f, 196.f, 42.f, bKeeper ? 1 : 0);
 
-        TextFit(TEXT("THROW POWER:"), ThrowX + 16.f, ThrowY + 86.f, 12, SilverCool, 100.f, false, 0);
-        StatBar(ThrowX + 110.f, ThrowY + 88.f, 254.f, 14.f, Match->ThrowPowerCharge, Gold);
+        // Section: Throw Power / Style
+        TextFit(TEXT("THROW EFFORT:"), CardX + 18.f, CardY + 132.f, 11, SilverCool, 120.f, false, 0);
+        const bool bDirect = Match->ThrowPowerCharge > 0.8f;
+        Btn(TEXT("throw_regular"), TEXT("REGULAR (SAFE)"), CardX + 18.f, CardY + 150.f, 196.f, 36.f, !bDirect ? 1 : 0);
+        Btn(TEXT("throw_direct"), TEXT("DIRECT HIT (POWER)"), CardX + 226.f, CardY + 150.f, 196.f, 36.f, bDirect ? 1 : 0);
+
+        // Power bar
+        StatBar(CardX + 18.f, CardY + 194.f, CardW - 36.f, 8.f, Match->ThrowPowerCharge, bDirect ? Crimson : Gold);
+
+        // Confirm / Execute button
+        Btn(TEXT("throw_execute"), TEXT("EXECUTE THROW  [SPACE]  >"), CardX + 18.f, CardY + 210.f, CardW - 36.f, 48.f, 1);
+
+        // Draw on-field target reticle at target wicket
+        const float TargetY = bKeeper ? C26Field::WicketY : -C26Field::WicketY;
+        FVector2D TargetScreen;
+        if (PC->ProjectWorldLocationToScreen(FVector(0.f, TargetY, 40.f), TargetScreen))
+        {
+            const FVector2D TD = ToDesign(TargetScreen);
+            Circle(TD.X, TD.Y, 26.f, Gold, 2.5f);
+            Circle(TD.X, TD.Y, 32.f, FLinearColor(Gold.R, Gold.G, Gold.B, 0.4f), 1.5f);
+            Line(TD.X - 36.f, TD.Y, TD.X + 36.f, TD.Y, Gold, 1.2f);
+            Line(TD.X, TD.Y - 36.f, TD.X, TD.Y + 36.f, Gold, 1.2f);
+            TextMid(bKeeper ? TEXT("STRIKER CREASE") : TEXT("BOWLER CREASE"), TD.X - 100.f, TD.Y - 48.f, 200.f, 11, Gold, true, 0);
+        }
     }
 }
 

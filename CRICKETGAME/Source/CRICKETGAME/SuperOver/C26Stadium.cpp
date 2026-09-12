@@ -181,7 +181,12 @@ void AC26Stadium::OnConstruction(const FTransform& Transform){Super::OnConstruct
 // restored from the package renders every tinted surface as its parent default.
 void AC26Stadium::BeginPlay()
 {
-    Super::BeginPlay();ConfigureLighting();BuildVenue();BuildLightShafts();FillLight->RecaptureSky();
+    Super::BeginPlay();ConfigureLighting();BuildVenue();BuildLightShafts();
+    // The saved map serializes the prototype's component overrides over new C++ defaults, and the
+    // authored profile lives on this actor: re-assert both after the venue exists.
+    SetEnvironment(EnvironmentProfile);
+    SetPitchCondition(PitchCondition);
+    FillLight->RecaptureSky();
 #if !UE_BUILD_SHIPPING
     if(FParse::Param(FCommandLine::Get(),TEXT("C26Scale")))
     {
@@ -237,6 +242,154 @@ void AC26Stadium::BuildLightShafts()
     Shafts->SetMaterial(0,ShaftMaterial);
     UE_LOG(LogC26Venue,Display,TEXT("C26_SHAFT built verts=%d tris=%d visible=%d"),V.Num(),T.Num()/3,Shafts->IsVisible()?1:0);
 }
+float AC26Stadium::CrowdTargetForState(EC26CrowdState State)
+{
+    switch (State)
+    {
+    case EC26CrowdState::Six:          return 1.00f;
+    case EC26CrowdState::Wicket:       return 0.95f;
+    case EC26CrowdState::Win:          return 1.00f;
+    case EC26CrowdState::Boundary:     return 0.80f;
+    case EC26CrowdState::Excited:      return 0.60f;
+    case EC26CrowdState::Anticipation: return 0.45f;
+    case EC26CrowdState::Tense:        return 0.35f;
+    case EC26CrowdState::Loss:         return 0.25f;
+    case EC26CrowdState::Calm:
+    default:                           return 0.06f;
+    }
+}
+float AC26Stadium::CrowdRateForState(EC26CrowdState State)
+{
+    // How fast the visible excitement eases toward its target. Big moments spike fast and decay
+    // through CrowdReaction falloff; tension and victory linger instead of settling.
+    switch (State)
+    {
+    case EC26CrowdState::Six:          return 3.2f;
+    case EC26CrowdState::Wicket:       return 3.0f;
+    case EC26CrowdState::Win:          return 1.2f;
+    case EC26CrowdState::Boundary:     return 2.6f;
+    case EC26CrowdState::Excited:      return 2.0f;
+    case EC26CrowdState::Anticipation: return 2.4f;
+    case EC26CrowdState::Tense:        return 0.8f;
+    case EC26CrowdState::Loss:         return 1.0f;
+    case EC26CrowdState::Calm:
+    default:                           return 1.4f;
+    }
+}
+float AC26Stadium::ExposureBiasForProfile(EC26EnvironmentProfile Profile)
+{
+    switch (Profile)
+    {
+    case EC26EnvironmentProfile::ClearDay:      return -0.30f;
+    case EC26EnvironmentProfile::LateAfternoon: return -0.38f;
+    case EC26EnvironmentProfile::Night:
+    default:                                    return -0.45f;
+    }
+}
+FLinearColor AC26Stadium::PitchTintForCondition(EC26PitchCondition Condition)
+{
+    switch (Condition)
+    {
+    case EC26PitchCondition::Fresh: return FLinearColor(0.94f, 1.02f, 0.94f);
+    case EC26PitchCondition::Dry:   return FLinearColor(1.06f, 1.00f, 0.90f);
+    case EC26PitchCondition::Worn:  return FLinearColor(1.03f, 0.98f, 0.90f);
+    case EC26PitchCondition::Used:
+    default:                        return FLinearColor(1.00f, 1.00f, 1.00f);
+    }
+}
+void AC26Stadium::SetCrowdState(EC26CrowdState State)
+{
+    CrowdState = State;
+    CrowdTarget = CrowdTargetForState(State);
+    CrowdRate = CrowdRateForState(State);
+    // A spike lands instantly: the ground is up before the ease would get there.
+    if (State == EC26CrowdState::Six || State == EC26CrowdState::Wicket || State == EC26CrowdState::Win)
+        CrowdReaction = FMath::Max(CrowdReaction, 0.75f);
+    else if (State == EC26CrowdState::Boundary)
+        CrowdReaction = FMath::Max(CrowdReaction, 0.55f);
+}
+void AC26Stadium::PulseLED(float Strength)
+{
+    LEDSpike = FMath::Max(LEDSpike, FMath::Clamp(Strength, 0.f, 1.5f));
+    CrowdReaction = FMath::Max(CrowdReaction, FMath::Clamp(Strength * 0.8f, 0.f, 1.f));
+}
+void AC26Stadium::SetPitchCondition(EC26PitchCondition Condition)
+{
+    PitchCondition = Condition;
+    if (GroundMID) GroundMID->SetVectorParameterValue(TEXT("Tint"), PitchTintForCondition(Condition));
+}
+void AC26Stadium::ApplyLightVisibility()
+{
+    const bool bNight = EnvironmentProfile == EC26EnvironmentProfile::Night;
+    for (auto& F : Floods) if (F) F->SetVisibility(bNight && CrowdQuality >= 2);
+    if (Shafts) Shafts->SetVisibility(bNight && CrowdQuality >= 2);
+}
+void AC26Stadium::SetEnvironment(EC26EnvironmentProfile Profile)
+{
+    EnvironmentProfile = Profile;
+    const bool bDay = Profile == EC26EnvironmentProfile::ClearDay;
+    const bool bAfternoon = Profile == EC26EnvironmentProfile::LateAfternoon;
+    if (bDay)
+    {
+        KeyLight->SetRelativeRotation(FRotator(-52, -35, 0)); KeyLight->SetIntensity(6.4f);
+        KeyLight->SetLightColor(FLinearColor(1.f, .96f, .89f));
+        CrossLight->SetRelativeRotation(FRotator(-20, 140, 0)); CrossLight->SetIntensity(2.2f);
+        CrossLight->SetLightColor(FLinearColor(.88f, .93f, 1.f));
+        FillLight->SetIntensity(1.30f); FillLight->SetLightColor(FLinearColor(.70f, .78f, .90f));
+        FillLight->SetLowerHemisphereColor(FLinearColor(.18f, .20f, .16f));
+        Haze->SetFogDensity(.000008f); Haze->SetFogMaxOpacity(.12f); Haze->SetStartDistance(8000.f);
+        Haze->SetFogInscatteringColor(FLinearColor(.45f, .55f, .65f));
+        Grade->Settings.AutoExposureBias = ExposureBiasForProfile(Profile);
+        Grade->Settings.ColorSaturation = FVector4(1.05, 1.05, 1.03, 1);
+        Grade->Settings.BloomIntensity = .22f; Grade->Settings.BloomThreshold = 1.8f;
+    }
+    else if (bAfternoon)
+    {
+        KeyLight->SetRelativeRotation(FRotator(-28, -78, 0)); KeyLight->SetIntensity(6.0f);
+        KeyLight->SetLightColor(FLinearColor(1.f, .88f, .72f));
+        CrossLight->SetRelativeRotation(FRotator(-16, 132, 0)); CrossLight->SetIntensity(2.6f);
+        CrossLight->SetLightColor(FLinearColor(.98f, .90f, .80f));
+        FillLight->SetIntensity(1.05f); FillLight->SetLightColor(FLinearColor(.72f, .70f, .72f));
+        FillLight->SetLowerHemisphereColor(FLinearColor(.14f, .12f, .09f));
+        Haze->SetFogDensity(.000010f); Haze->SetFogMaxOpacity(.15f); Haze->SetStartDistance(7000.f);
+        Haze->SetFogInscatteringColor(FLinearColor(.50f, .42f, .34f));
+        Grade->Settings.AutoExposureBias = ExposureBiasForProfile(Profile);
+        Grade->Settings.ColorSaturation = FVector4(1.07, 1.06, 1.03, 1);
+        Grade->Settings.BloomIntensity = .28f; Grade->Settings.BloomThreshold = 1.6f;
+    }
+    else
+    {
+        // Night session: the calibrated broadcast grade. Mirrors ConfigureLighting so a saved map
+        // restoring stale overrides converges back to the same look.
+        KeyLight->SetRelativeRotation(FRotator(-36, -62, 0)); KeyLight->SetIntensity(5.6f);
+        KeyLight->SetLightColor(FLinearColor(1.f, .97f, .91f));
+        CrossLight->SetRelativeRotation(FRotator(-13, 126, 0)); CrossLight->SetIntensity(3.30f);
+        CrossLight->SetLightColor(FLinearColor(.91f, .95f, 1.f));
+        FillLight->SetIntensity(.95f); FillLight->SetLightColor(FLinearColor(.65f, .70f, .76f));
+        FillLight->SetLowerHemisphereColor(FLinearColor(.075f, .082f, .058f));
+        Haze->SetFogDensity(.000012f); Haze->SetFogMaxOpacity(.18f); Haze->SetStartDistance(6200.f);
+        Haze->SetFogInscatteringColor(FLinearColor(.055f, .086f, .145f));
+        Grade->Settings.AutoExposureBias = ExposureBiasForProfile(Profile);
+        Grade->Settings.ColorSaturation = FVector4(1.03, 1.03, 1.02, 1);
+        Grade->Settings.BloomIntensity = .30f; Grade->Settings.BloomThreshold = 1.55f;
+    }
+    // Sky ramp per session: warm pale horizon to blue zenith by day, amber dusk band late, deep
+    // navy night. Tints land on the stored section materials so no geometry rebuild is needed.
+    static const FLinearColor DayRamp[6] = {
+        FLinearColor(.55f,.65f,.78f),FLinearColor(.42f,.55f,.74f),FLinearColor(.28f,.44f,.70f),
+        FLinearColor(.17f,.33f,.64f),FLinearColor(.10f,.24f,.58f),FLinearColor(.06f,.17f,.50f)};
+    static const FLinearColor DuskRamp[6] = {
+        FLinearColor(.62f,.48f,.34f),FLinearColor(.48f,.38f,.34f),FLinearColor(.32f,.28f,.34f),
+        FLinearColor(.19f,.19f,.30f),FLinearColor(.10f,.11f,.24f),FLinearColor(.05f,.06f,.17f)};
+    static const FLinearColor NightRamp[6] = {
+        FLinearColor(.0320f,.0510f,.0880f),FLinearColor(.0225f,.0365f,.0660f),FLinearColor(.0140f,.0235f,.0460f),
+        FLinearColor(.0080f,.0140f,.0305f),FLinearColor(.0042f,.0078f,.0180f),FLinearColor(.0022f,.0042f,.0105f)};
+    const FLinearColor* Ramp = bDay ? DayRamp : (bAfternoon ? DuskRamp : NightRamp);
+    for (int I = 0; I < SkyMaterials.Num(); ++I)
+        if (SkyMaterials[I]) SkyMaterials[I]->SetVectorParameterValue(TEXT("Tint"), Ramp[I % 6]);
+    ApplyLightVisibility();
+    if (HasActorBegunPlay() && FillLight) FillLight->RecaptureSky();
+}
 void AC26Stadium::ConfigureLighting()
 {
     // Apply the authored setup after map deserialization: saved component overrides from the
@@ -287,6 +440,7 @@ void AC26Stadium::ConfigureLighting()
         Floods[I]->SetRelativeLocation(Head);Floods[I]->SetRelativeRotation((FVector(0,0,80)-Head).Rotation());
         Floods[I]->SetIntensity(FloodCandelas);Floods[I]->SetLightColor(FLinearColor(1,.98,.94));
     }
+    ApplyLightVisibility();
 }
 UHierarchicalInstancedStaticMeshComponent* AC26Stadium::Batch(const TCHAR* Name,UStaticMesh* Mesh,UMaterialInterface* Material)
 {
@@ -299,6 +453,7 @@ void AC26Stadium::BuildVenue()
 {
     for(auto& C:Batches)if(C)C->DestroyComponent();Batches.Reset();
     for(auto& C:Signs)if(C)C->DestroyComponent();Signs.Reset();CrowdMaterials.Reset();
+    SkyMaterials.Reset();GroundMID = nullptr;
     Bowl->ClearAllMeshSections();Sky->ClearAllMeshSections();Architecture->ClearAllMeshSections();
     auto Mat=[](const TCHAR* N){return LoadObject<UMaterialInterface>(nullptr,*FString::Printf(TEXT("/Game/Cricket26/Materials/%s.%s"),N,N));};
     auto* Surface=Mat(TEXT("M_Surface"));if(!Surface)return;
@@ -360,7 +515,10 @@ void AC26Stadium::BuildVenue()
     // ================= PLAYING SURFACE =================
     FC26Surface Turf,Mark;
     Turf.Band(-TurfRY,TurfRY,TurfRX,TurfRY,C26Field::SurfaceZ,128);
-    Emit(Turf,Ground?Ground:GrassBase);
+    // The condition re-tint lives on a venue-owned instance so switching Fresh/Used/Dry/Worn never
+    // touches the shared baked asset or pops streaming.
+    if (Ground) { GroundMID = UMaterialInstanceDynamic::Create(Ground, this); GroundMID->SetVectorParameterValue(TEXT("Tint"), PitchTintForCondition(PitchCondition)); }
+    Emit(Turf,GroundMID ? (UMaterialInterface*)GroundMID : (UMaterialInterface*)GrassBase);
     // A 2 mm paint film is the only surface layer. Physics and rendered turf agree at Z=0.
     for(int End:{-1,1})
     {
@@ -606,6 +764,58 @@ void AC26Stadium::BuildVenue()
         for(int Post:{-1,1})Beam(Rails,FVector(X+Post*306,-7550,0),FVector(X+Post*306,-7550,255),12);
         Add(Rails,FVector(X,-7490,48),FVector(530,55,24));
     }
+    // ================= STADIUM LIFE =================
+    // Background life where the broadcast cameras actually look. All static instanced geometry on
+    // existing meshes/materials: photographers crouched behind the rope at both ends, raised camera
+    // platforms on the diagonals, benches + seated team groups under the dugout canopies, hi-vis
+    // stewards spaced along the wall. No ticking actors, no skeletal meshes.
+    {
+        auto* Crew = Batch(TEXT("MediaCrew"), Person, Colour(FLinearColor(.05f,.06f,.08f),0,.9f));
+        auto* Vests = Batch(TEXT("Stewards"), Person, Colour(FLinearColor(.55f,.60f,.12f),0,.85f));
+        auto* Subs = Batch(TEXT("DugoutGroups"), Person, Colour(FLinearColor(.10f,.16f,.24f),0,.9f));
+        auto* Benches = Batch(TEXT("DugoutBenches"), Cube, Colour(FLinearColor(.10f,.11f,.12f),0,.8f));
+        auto* Decks = Batch(TEXT("CameraPlatforms"), Cube, Steel);
+        for (int End : {-1, 1})
+            for (int K = -3; K <= 3; ++K)
+            {
+                const float A = End * PI * .5f + K * .09f;
+                const FRotator Face(0, FMath::RadiansToDegrees(A) + 90.f, 0);
+                const FVector At = Oval(C26Field::RadiusX + 130, C26Field::RadiusY + 130, A, 0);
+                if (Crew && Crew->GetStaticMesh()) Crew->AddInstance(FTransform(Face, At, FVector(.72f)));
+            }
+        for (int K = 0; K < 4; ++K)
+        {
+            const float A = PI / 4 + K * PI / 2;
+            const FVector Base = Oval(8200, 8900, A, 0);
+            Add(Decks, Base + FVector(0, 0, 420), FVector(260, 260, 26));
+            Add(Decks, Base + FVector(0, 0, 478), FVector(60, 44, 44));
+            for (int Leg : {-1, 1})
+                for (int Leg2 : {-1, 1})
+                    Beam(Rails, Base + FVector(Leg * 115, Leg2 * 115, 0), Base + FVector(Leg * 115, Leg2 * 115, 420), 10);
+        }
+        for (int Side : {-1, 1})
+        {
+            const float X = Side * 2090;
+            Add(Benches, FVector(X - 150, -7360, 40), FVector(300, 60, 45));
+            Add(Benches, FVector(X + 150, -7360, 40), FVector(300, 60, 45));
+            for (int K = 0; K < 5; ++K)
+            {
+                const FRotator Face(0, -90.f, 0);
+                if (Subs && Subs->GetStaticMesh())
+                {
+                    Subs->AddInstance(FTransform(Face, FVector(X - 260 + K * 105, -7360, 62), FVector(.95f)));
+                    Subs->AddInstance(FTransform(Face, FVector(X - 260 + K * 105, -7240, 0), FVector(1.f)));
+                }
+            }
+        }
+        for (int I = 0; I < 16; ++I)
+        {
+            const float A = 2 * PI * I / 16 + .19f;
+            const FRotator Face(0, FMath::RadiansToDegrees(A) + 90.f, 0);
+            if (Vests && Vests->GetStaticMesh())
+                Vests->AddInstance(FTransform(Face, Oval(WallRX - 60, WallRY - 60, A, 0), FVector(1.1f)));
+        }
+    }
     for(int I=0;I<24;++I)
     {
         const float A=2*PI*(I+.45f)/24;
@@ -651,7 +861,9 @@ void AC26Stadium::BuildVenue()
             Dome.Quad(Point(A,E0),Point(B,E0),Point(B,E1),Point(A,E1),-Point((A+B)*.5f,(E0+E1)*.5f).GetSafeNormal());
         }
         Sky->CreateMeshSection_LinearColor(Layer,Dome.V,Dome.T,Dome.N,Dome.UV,Dome.C,Dome.Tan,false);
-        Sky->SetMaterial(Layer,Tinted(Mat(TEXT("M_Sky"))?Mat(TEXT("M_Sky")):Surface,SkyRamp[Layer],1.f,.98f));
+        auto* SkyMID = Tinted(Mat(TEXT("M_Sky"))?Mat(TEXT("M_Sky")):Surface,SkyRamp[Layer],1.f,.98f);
+        Sky->SetMaterial(Layer,SkyMID);
+        SkyMaterials.Add(SkyMID);
     }
     (void)White;(void)VenueTeal;(void)Navy;(void)GrassBase;(void)PitchBase;
     for(auto& B:Batches){B->bAutoRebuildTreeOnInstanceChanges=true;B->BuildTreeIfOutdated(true,true);}
@@ -679,9 +891,8 @@ void AC26Stadium::SetQuality(int Level)
     // Far seating treads are smaller than a cascade texel and self-shadow into moire.
     // Model their recesses in geometry/material; reserve dynamic maps for the playing area.
     if(Architecture)Architecture->SetCastShadow(false);
-    for(auto& F:Floods)if(F)F->SetVisibility(Level>=2);
-    if(Shafts)Shafts->SetVisibility(Level>=2);
-    if(Rebuild&&HasActorBegunPlay()){BuildVenue();BuildLightShafts();}
+    ApplyLightVisibility();
+    if(Rebuild&&HasActorBegunPlay()){BuildVenue();BuildLightShafts();SetEnvironment(EnvironmentProfile);SetPitchCondition(PitchCondition);}
     for(auto& B:Batches)
     {
         if(B->GetName().StartsWith(TEXT("CrowdHeads")))B->SetVisibility(Level>0);
@@ -695,9 +906,13 @@ void AC26Stadium::UpdateAtmosphere(float Time)
     AtmosphereUpdateAccumulator+=FMath::Clamp(Time-LastAtmosphereTime,0.f,.25f);LastAtmosphereTime=Time;
     if(AtmosphereUpdateAccumulator<.05f)return;
     const float Step=AtmosphereUpdateAccumulator;AtmosphereUpdateAccumulator=0;
-    CrowdReaction=FMath::Max(0.f,CrowdReaction-Step*.42f);
+    // Named states ease the visible excitement toward their own target instead of only decaying:
+    // a six holds the ground on its feet, tension lingers, calm settles quickly.
+    if (CrowdReaction < CrowdTarget) CrowdReaction = FMath::FInterpTo(CrowdReaction, CrowdTarget, Step, CrowdRate);
+    else CrowdReaction = FMath::Max(CrowdTarget, CrowdReaction - Step * .42f);
     const float Pulse=FMath::Max(0.f,FMath::Sin(Time*4.1f));
-    if(LED)LED->SetScalarParameterValue(TEXT("Glow"),.42f+CrowdReaction*Pulse*.18f);
+    LEDSpike = FMath::Max(0.f, LEDSpike - Step * .55f);
+    if(LED)LED->SetScalarParameterValue(TEXT("Glow"),.42f+CrowdReaction*Pulse*.18f+LEDSpike*.9f);
     // Hand the same reaction level to the crowd shader. The spectators' rise is vertex motion with
     // a per-instance random phase, so this one scalar is the whole cost of a ground that gets to
     // its feet for a six and settles again over the next couple of seconds.
