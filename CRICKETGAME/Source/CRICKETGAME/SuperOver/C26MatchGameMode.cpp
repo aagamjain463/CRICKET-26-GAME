@@ -176,6 +176,11 @@ FString AC26MatchGameMode::BatterName()const
     static const TCHAR* Names[2][3]={{TEXT("A. RAO"),TEXT("K. DESAI"),TEXT("R. MEHRA")},{TEXT("J. HART"),TEXT("L. REED"),TEXT("M. VALE")}};
     return Names[BattingTeam()][FMath::Clamp(Rules.Now().Striker,0,2)];
 }
+FString AC26MatchGameMode::NonStrikerName()const
+{
+    static const TCHAR* Names[2][3]={{TEXT("A. RAO"),TEXT("K. DESAI"),TEXT("R. MEHRA")},{TEXT("J. HART"),TEXT("L. REED"),TEXT("M. VALE")}};
+    return Names[BattingTeam()][FMath::Clamp(Rules.Now().NonStriker,0,2)];
+}
 FString AC26MatchGameMode::BowlerName()const{return BattingTeam()==0?TEXT("N. ARCHER"):TEXT("V. SEN");}
 FC26CommentaryContext AC26MatchGameMode::MakeCommentaryContext() const
 {

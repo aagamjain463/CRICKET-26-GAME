@@ -60,6 +60,7 @@ public:
     FString TeamName(int Team) const;
     FString TeamShort(int Team) const;
     FString BatterName() const;
+    FString NonStrikerName() const;
     FString BowlerName() const;
     void StartMatch();
     void Menu();
