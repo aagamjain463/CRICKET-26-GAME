@@ -1342,6 +1342,9 @@ void AC26Athlete::LoadShotLibrary()
     Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingCut.A_C26_BattingCut"),BattingCutClip);
     Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingSweep.A_C26_BattingSweep"),BattingSweepClip);
     Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingDefence.A_C26_BattingDefence"),BattingDefenceClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingHook.A_C26_BattingHook"),BattingHookClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingLoftedDrive.A_C26_BattingLoftedDrive"),BattingLoftedDriveClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingGlance.A_C26_BattingGlance"),BattingGlanceClip);
     Load(TEXT("/Game/Cricket26/Animations/A_C26_BowlingOffSpin.A_C26_BowlingOffSpin"),BowlingOffSpinClip);
     Load(TEXT("/Game/Cricket26/Animations/A_C26_BowlingLegSpin.A_C26_BowlingLegSpin"),BowlingLegSpinClip);
 }
@@ -1349,14 +1352,28 @@ void AC26Athlete::LoadShotLibrary()
 UAnimSequence* AC26Athlete::SelectBattingClip()
 {
     LoadShotLibrary();
-    // The simulation's own shot intent, not a visual guess: Defending comes straight
-    // off the shot intent; ShotAngle is the shot's horizontal direction (0 = straight,
-    // negative = leg side, positive = off side) and StrideIntent says whether the
-    // weight went back (short ball) or forward (full ball).
+    // The simulation's own shot intent, not a visual guess. ShotAngle is the shot's
+    // horizontal direction (0 = straight, negative = leg side, positive = off side),
+    // StrideIntent says whether the weight went back or forward, Loft is the
+    // player's own loft toggle, and the ball's height at the contact point is
+    // measured off ContactTarget -- the same geometry C26Controls::ShotFamily()
+    // names the stroke from, so the clip shows the shot the scorecard printed.
+    // Visual only: no branch below can change what the simulation scored.
+    const float BallHeight=ContactTarget.IsZero()?60.f:ContactTarget.Z-GetActorLocation().Z;
     if(Defending&&BattingDefenceClip)return BattingDefenceClip;
-    if(ShotAngle<=-40.f)
-        return StrideIntent<0.f?(BattingPullClip?BattingPullClip:BattingClip)
-                               :(BattingSweepClip?BattingSweepClip:BattingClip);
+    if(BallHeight>108.f)  // a short ball: the swing goes horizontal, not through
+    {
+        if(ShotAngle<=0.f)  // leg side: hook if it is up at the head, pull at the chest
+            return BallHeight>148.f?(BattingHookClip?BattingHookClip:BattingPullClip)
+                                   :(BattingPullClip?BattingPullClip:BattingClip);
+        return BattingCutClip?BattingCutClip:BattingClip;  // square/upper cut share the slash
+    }
+    if(Loft&&FMath::Abs(ShotAngle)<40.f&&BattingLoftedDriveClip)return BattingLoftedDriveClip;
+    if(ShotAngle<=-75.f)return BattingGlanceClip?BattingGlanceClip:BattingClip;  // leg glance
+    if(ShotAngle<=-40.f)  // leg side, full: a low full ball on the toes is swept,
+        return BallHeight<45.f&&StrideIntent>=0.f  // anything higher is flicked
+            ?(BattingSweepClip?BattingSweepClip:BattingClip)
+            :(BattingPullClip?BattingPullClip:BattingClip);
     if(ShotAngle>=40.f&&StrideIntent<0.f)
         return BattingCutClip?BattingCutClip:BattingClip;
     return BattingClip;

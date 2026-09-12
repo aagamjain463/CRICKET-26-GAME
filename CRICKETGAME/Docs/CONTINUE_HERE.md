@@ -15,16 +15,19 @@ twists by rotZ(180), rotate IK targets by (x,y,z)->(-x,-y,z), poles keep x/z neg
 is applied at solve time and by the offline pipeline:
 
     python3 Tools/rebuild_authored_clips.py        # solve+bake all 8 clips -> Solved/
-    python3 Tools/correct_authored_anim.py         # -> Corrected/, 66/66 checks PASS
+    python3 Tools/correct_authored_anim.py         # -> Corrected/, 93/93 checks PASS
 
-Library (all verified): BattingDrive/Pull/Cut/Sweep/Defence + BowlingPace/OffSpin/
-LegSpin. C26Athlete selects per shot intent (Defending/ShotAngle/StrideIntent) and
-delivery type (DeliveryStyle), with fallback chain library -> base clip ->
-procedural. A SECOND corrector bug was found and fixed while authoring the cut: the
+Library (all verified, 93 offline checks): BattingDrive/LoftedDrive/Pull/Hook/Cut/
+Sweep/Glance/Defence + BowlingPace/OffSpin/LegSpin. C26Athlete selects per shot
+intent (Defending/ShotAngle/StrideIntent/Loft + ball height at contact measured off
+ContactTarget, mirroring C26Controls::ShotFamily) and delivery type (DeliveryStyle),
+with fallback chain library -> base clip -> procedural. Next library candidates:
+back-foot defence, upper/late cut split, keeper crouch/dive/stump, umpire signals,
+fielder pickup/throw/catch/dive. A SECOND corrector bug was found and fixed while authoring the cut: the
 hips retarget referenced the FBX Model defaults (a stale frozen POSE) instead of the
 true T-pose, rotating every corrected clip by ~52 deg of chest yaw — chest-yaw gates
 now exist in both the offline checks and the in-engine test
-(Cricket26.Anim.AuthoredClips covers all 8 clips).
+(Cricket26.Anim.AuthoredClips covers all 11 clips).
 
 **Not yet done: the UE import + build + playtest on this Mac** — exact sequence in
 `Docs/PREMIUM_CHARACTER_SYSTEM.md` §6. Everything else in this file below is older

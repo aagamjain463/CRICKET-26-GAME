@@ -608,6 +608,99 @@ def batting_defence_keys():
     return keys
 
 
+def batting_hook_keys():
+    """Right-handed HOOK: the pull's tall sibling, for the ball that gets up to
+    head height. Weight hard on the back foot, body leaning slightly AWAY from
+    the bounce, the highest backlift in the library, contact at head height with
+    the chest swivelled fully open, and a finish that whips around behind square
+    leg rather than through midwicket."""
+    keys = []
+    K = _batting_key_builder()
+    keys.append(_stance_key(K))
+    # Rock back hard: everything onto the back foot, hands lift early.
+    keys.append(K(7, 58, 0, -18, -10, -28, (0.14, -0.06, 1.14), (0.10, 0.22, 0.09),
+                  (-0.16, 0.00, 0.09), -0.11, -0.05))
+    # The coil: backlift at its highest, body leaning back away from the bounce.
+    # (Positive lean = backward, per the batting_keys() sign note.)
+    keys.append(K(13, 70, 4, -24, -8, -24, (0.02, -0.20, 1.44), (0.10, 0.18, 0.09),
+                  (-0.16, -0.03, 0.09), -0.12, -0.06))
+    # Swivel: hips rotating open, hands dropping from the top of the arc.
+    keys.append(K(18, 62, 2, -10, -6, -16, (-0.08, 0.00, 1.30), (0.10, 0.20, 0.09),
+                  (-0.17, -0.02, 0.09), -0.10, -0.04))
+    # CONTACT: head height (the whole point of a hook), in front of the hips but
+    # only just, chest fully open toward the bowler's end.
+    keys.append(K(23, 102, 3, 14, -2, -4, (-0.10, 0.24, 1.27), (0.10, 0.22, 0.09),
+                  (-0.17, 0.00, 0.09), -0.08, -0.03))
+    # Follow-through: the bat whips around BEHIND square -- more leg-side and
+    # higher than the pull's midwicket finish.
+    keys.append(K(29, 106, 0, 18, 2, 0, (-0.34, 0.06, 1.42), (0.10, 0.24, 0.09),
+                  (-0.16, 0.04, 0.09), -0.07, -0.02))
+    # Recover.
+    keys.append(K(36, 34, -6, 6, -4, -10, (-0.04, 0.18, 1.02), (0.10, 0.24, 0.09),
+                  (-0.15, 0.05, 0.09), -0.11, 0.0))
+    return keys
+
+
+def batting_lofted_drive_keys():
+    """Right-handed LOFTED DRIVE: the drive's swing with an aerial finish. The
+    contact is the drive's own -- over the front foot, leaning in -- and the
+    difference is everything AFTER it: the hands keep going up past the head,
+    the front leg braces straight, the back heel leaves the ground and the
+    chest opens to the sky. Getting "under" the ball reads in the finish."""
+    keys = []
+    K = _batting_key_builder()
+    keys.append(_stance_key(K))
+    keys.append(K(7, 58, -3, -18, -10, -28, (0.14, -0.04, 1.08), (0.10, 0.24, 0.09),
+                  (-0.15, 0.02, 0.09), -0.128, -0.03))
+    # Backlift a touch fuller than the drive's: the swing has further to travel
+    # and more of it upward.
+    keys.append(K(13, 64, 1, -22, -8, -26, (0.18, -0.20, 1.32), (0.11, 0.20, 0.09),
+                  (-0.15, -0.02, 0.09), -0.132, -0.05))
+    keys.append(K(18, 44, -12, -4, -6, -18, (0.12, 0.14, 1.00), (0.13, 0.38, 0.10),
+                  (-0.14, 0.06, 0.09), -0.125, 0.02))
+    # CONTACT: identical intent to the drive -- hands past the front foot,
+    # chest over the ball. The loft comes from the finish, not the contact.
+    keys.append(K(23, 26, -20, 10, -2, -8, (0.08, 0.50, 0.96), (0.15, 0.46, 0.10),
+                  (-0.12, 0.12, 0.09), -0.135, 0.10))
+    # FOLLOW: hands up PAST the head, front leg braced, back heel off the turf,
+    # chest opening to the sky. The signature of the lofted drive.
+    keys.append(K(29, 8, -12, 34, 2, 2, (-0.02, 0.36, 1.60), (0.15, 0.48, 0.10),
+                  (-0.10, 0.18, 0.18), -0.09, 0.15))
+    # Recover down out of the finish.
+    keys.append(K(36, 20, -9, 8, -4, -10, (0.06, 0.26, 1.02), (0.14, 0.40, 0.10),
+                  (-0.11, 0.14, 0.09), -0.118, 0.08))
+    return keys
+
+
+def batting_glance_keys():
+    """Right-handed LEG GLANCE: the quietest shot in the library. No backlift to
+    speak of, no arc: the bat turns its face, the ball is DEFLECTED with soft
+    hands low off the hip, and the finish is barely a finish -- the hands cross
+    the body toward fine leg and stay low. What distinguishes it from the sweep
+    is that the body never goes down to meet the ball."""
+    keys = []
+    K = _batting_key_builder()
+    keys.append(_stance_key(K))
+    keys.append(K(7, 54, -5, -12, -10, -26, (0.10, 0.10, 0.94), (0.10, 0.26, 0.09),
+                  (-0.14, 0.05, 0.09), -0.115, 0.0))
+    # A suggestion of a backlift -- this is a deflection, not a swing.
+    keys.append(K(13, 56, -2, -10, -8, -22, (0.10, 0.00, 1.04), (0.10, 0.25, 0.09),
+                  (-0.14, 0.04, 0.09), -0.118, 0.0))
+    # Soft press onto the front foot; the bat face is already turning.
+    keys.append(K(18, 48, -10, -2, -6, -14, (0.02, 0.20, 0.92), (0.11, 0.32, 0.09),
+                  (-0.13, 0.06, 0.09), -0.125, 0.02))
+    # CONTACT: low off the hip, fractionally leg-side of the line, in front.
+    keys.append(K(23, 44, -12, -2, -4, -12, (-0.08, 0.24, 0.80), (0.12, 0.36, 0.09),
+                  (-0.12, 0.08, 0.09), -0.125, 0.03))
+    # The deflection: hands cross softly toward fine leg and stay LOW. No arc,
+    # no follow-through to speak of.
+    keys.append(K(29, 50, -8, 2, 0, -8, (-0.30, 0.10, 0.86), (0.12, 0.36, 0.09),
+                  (-0.12, 0.08, 0.09), -0.122, 0.03))
+    keys.append(K(36, 46, -7, 0, -4, -14, (-0.06, 0.18, 0.92), (0.11, 0.30, 0.09),
+                  (-0.13, 0.07, 0.09), -0.118, 0.02))
+    return keys
+
+
 def _batting_key_builder():
     """The batting K, identical to batting_keys()' local K."""
     def K(frame, turn, lean, chest, neck, head, grip, lfoot, rfoot, hips_z, hips_y=0.0,

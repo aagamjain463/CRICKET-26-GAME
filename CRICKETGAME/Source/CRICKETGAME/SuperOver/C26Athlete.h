@@ -156,6 +156,9 @@ private:
     UPROPERTY() TObjectPtr<UAnimSequence> BattingCutClip;
     UPROPERTY() TObjectPtr<UAnimSequence> BattingSweepClip;
     UPROPERTY() TObjectPtr<UAnimSequence> BattingDefenceClip;
+    UPROPERTY() TObjectPtr<UAnimSequence> BattingHookClip;
+    UPROPERTY() TObjectPtr<UAnimSequence> BattingLoftedDriveClip;
+    UPROPERTY() TObjectPtr<UAnimSequence> BattingGlanceClip;
     UPROPERTY() TObjectPtr<UAnimSequence> BowlingOffSpinClip;
     UPROPERTY() TObjectPtr<UAnimSequence> BowlingLegSpinClip;
     UPROPERTY() TObjectPtr<UMaterialInterface> TexturedSkin;

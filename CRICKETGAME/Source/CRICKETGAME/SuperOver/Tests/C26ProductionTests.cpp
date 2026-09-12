@@ -104,7 +104,9 @@ bool FC26AuthoredClipsTest::RunTest(const FString&)
     const FClipSpec Specs[]={
         {TEXT("A_C26_BattingDrive"),true},{TEXT("A_C26_BattingPull"),true},
         {TEXT("A_C26_BattingCut"),true},{TEXT("A_C26_BattingSweep"),true},
-        {TEXT("A_C26_BattingDefence"),true},{TEXT("A_C26_BowlingPace"),false},
+        {TEXT("A_C26_BattingDefence"),true},{TEXT("A_C26_BattingHook"),true},
+        {TEXT("A_C26_BattingLoftedDrive"),true},{TEXT("A_C26_BattingGlance"),true},
+        {TEXT("A_C26_BowlingPace"),false},
         {TEXT("A_C26_BowlingOffSpin"),false},{TEXT("A_C26_BowlingLegSpin"),false},
     };
     // Skeleton-space transform of one bone chain: GetBoneTransform returns LOCALS
@@ -178,6 +180,28 @@ bool FC26AuthoredClipsTest::RunTest(const FString&)
             if(Shot==TEXT("BattingCut"))
                 TestTrue(*FString::Printf(TEXT("%s: cut slashes to the off side"),*Tag),
                          FVector::DotProduct(H-P,OffSide)>10.f);
+            if(Shot==TEXT("BattingHook"))
+                // Head-height contact is what makes a hook (the pull sits at chest
+                // height): gate it above the pull's +30 band.
+                TestTrue(*FString::Printf(TEXT("%s: hook meets the ball at head height"),*Tag),H.Z>P.Z+85.f);
+            if(Shot==TEXT("BattingLoftedDrive"))
+            {
+                // The contact is a drive's own (low, in front); the loft reads in
+                // the finish, which goes overhead -- well above the drive's own
+                // shoulder-height follow-through.
+                TestTrue(*FString::Printf(TEXT("%s: lofted drive met low and in front"),*Tag),Front>10.f&&H.Z<P.Z+60.f);
+                TestTrue(*FString::Printf(TEXT("%s: lofted drive finishes overhead"),*Tag),
+                         HandMid(Clip,29.f/Fps).Z-Bone(Clip,29.f/Fps,{Hips}).Z>150.f);
+            }
+            if(Shot==TEXT("BattingGlance"))
+            {
+                // Low contact off the hip, and a deflection rather than a swing:
+                // the hands cross to fine leg and stay low.
+                TestTrue(*FString::Printf(TEXT("%s: glance met low off the hip"),*Tag),H.Z<P.Z+45.f&&Front>5.f);
+                const FVector G=HandMid(Clip,29.f/Fps),GP=Bone(Clip,29.f/Fps,{Hips});
+                TestTrue(*FString::Printf(TEXT("%s: glance deflected soft to fine leg"),*Tag),
+                         FVector::DotProduct(G-GP,OffSide)<-25.f&&G.Z<GP.Z+60.f);
+            }
             if(Shot==TEXT("BattingSweep"))
                 TestTrue(*FString::Printf(TEXT("%s: sweep is a deep crouch"),*Tag),P.Z<150.f&&Front>5.f);
         }

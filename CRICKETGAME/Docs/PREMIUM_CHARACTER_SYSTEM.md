@@ -117,7 +117,7 @@ c26_anim_author.py            keyframes + IK solve + repair_facing  (single sour
   orientation copy per bone, hips delta at the measured rig ratio (2.23739), per-frame ground
   pin, root rename to `Armature.001`, v1 Lcl defaults. It **exits non-zero if any check fails**.
 
-### Verification (offline, 66 checks across 8 clips, all PASS)
+### Verification (offline, 93 checks across 11 clips, all PASS)
 
 | Clip | Check | Result |
 |---|---|---|
@@ -148,9 +148,19 @@ never by a visual guess:
 | BattingCut | off side, weight back (short/wide) | 57.9 off side, 15.9 front (late, beside the body) |
 | BattingSweep | leg side, weight forward (full ball) | hips 124 (deep crouch), hands 18.1 above hips, 60.9 in front |
 | BattingDefence | `Defending` intent | +56 front, bat 17.5 above hips, absorb frame static |
+| BattingHook | short ball, leg side, contact >148 cm high | contact 93.0 above hips (head height), follow -68.3 leg side / +122.6 above |
+| BattingLoftedDrive | `Loft`, contact <108 cm, straight/off | contact 78.4 front / 42.3 above (a drive's own), finish 361.8 overhead |
+| BattingGlance | angle <= -75 deg, full ball | contact 7.3 above hips (low), deflect -53.8 to fine leg at 21.7 above |
 | BowlingPace | seam/swing family | release 400 vs head 329, 74.6 down the pitch |
 | BowlingOffSpin | OffBreak/ArmBall/TopSpinner/Doosra | release 360 (deliberately lower), 65.7 down pitch |
 | BowlingLegSpin | LegBreak/Googly/Flipper | release 399, 74.6 down pitch |
+
+Selection mirrors `C26Controls::ShotFamily()` -- the single implementation the
+simulation itself names strokes with -- using the shot angle, stride intent, loft
+toggle and the ball's height at the contact point (measured off ContactTarget,
+never fed back into gameplay): >108 cm is a short ball (horizontal swing: hook if
+it is up at the head, pull at the chest, cut on the off side), a low full ball on
+the legs is swept, anything higher is flicked with the pull's arc.
 
 Fallback chain: library clip -> family base clip -> procedural action. A missing
 asset logs once and degrades; nothing T-poses.
@@ -196,11 +206,11 @@ importer has done its own conversion. If it fails with an asset error, run
 1. **Mac verification of this session's changes.** The corrected FBX pass 11/11 offline checks,
    but the UE import + build + in-match playtest of the *corrected* clips has not run yet
    (sandbox has no UE). The exact sequence is in §6.
-2. **Shot library breadth.** Drive, pull, cut, sweep, defence and pace/off-spin/leg-spin
-   bowling are authored and verified. Not yet: hook, leg glance, lofted drives (the drive
-   clip covers them structurally), keeper dive/stump, umpire signals, fielder
-   pickup/throw/catch/dive. Each is a key-list addition to `c26_anim_author.py` — no
-   Blender round-trip needed.
+2. **Shot library breadth.** Batting: drive, lofted drive, pull, hook, cut, sweep,
+   glance, defence. Bowling: pace, off-spin, leg-spin. Not yet: upper cut / late cut
+   (share the cut clip), back-foot defence, keeper crouch/dive/stump, umpire signals,
+   fielder pickup/throw/catch/dive. Each is a key-list addition to
+   `c26_anim_author.py` — no Blender round-trip needed.
 3. **Garment mesh quality.** Torso prototype-grade meshes remain the biggest visual gap for
    "premium" (open item since before this session; never overwrite `SK_Cricketer_KitBase`).
 4. **Equipment LOD meshes** (tiers exist, mesh swaps not).
@@ -215,12 +225,10 @@ importer has done its own conversion. If it fails with an asset error, run
 ```bash
 cd ~/Desktop/CRICKET-26-GAME/CRICKETGAME
 
-# 1. Re-run the offline pipeline (proves the FBX on disk, ~2 s):
-python3 Tools/rebuild_authored_clips.py
-python3 Tools/correct_authored_anim.py \
-    ArtSource/Exports/Animations/Solved/A_C26_BattingDrive.fbx \
-    ArtSource/Exports/Animations/Solved/A_C26_BowlingPace.fbx
-#    -> all 11 checks must print PASS
+# 1. Re-run the offline pipeline (proves the FBXs on disk, ~10 s):
+python3 Tools/rebuild_authored_clips.py     # solve+bake all 11 clips -> Solved/
+python3 Tools/correct_authored_anim.py      # -> Corrected/, all 93 checks must PASS
+python3 Tools/correct_authored_anim.py --verify-only   # re-check without rewriting
 
 # 2. Import the corrected clips into UE:
 "/Users/Shared/Epic Games/UE_5.8/Engine/Build/BatchFiles/Mac/RunUAT.sh" -ScriptsForProject=... # or:
@@ -236,7 +244,9 @@ python3 Tools/correct_authored_anim.py \
     "$PWD/CRICKETGAME.uproject" -ExecCmds="Automation RunTests Cricket26;Quit" -unattended -nopause
 
 # 5. Playtest in an actual match: BatLab / BowlLab maps, then a full match:
-#    - striker's drive: backlift behind the body, contact in front of the front foot
+#    - striker's shots: drive backlift behind the body + contact in front of the front
+#      foot; pull horizontal at chest height; hook high; cut late and off side; sweep
+#      crouched; glance soft to fine leg; lofted drive finishing overhead; defence compact
 #    - bowler: overhead arm, ball leaves the hand at the release frame, runs in toward the batter
 #    - fielders: team clothing, no pads; keeper padded; umpire unpadded
 #    - no T-pose at any moment, no gliding on role changes

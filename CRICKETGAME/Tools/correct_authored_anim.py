@@ -433,7 +433,9 @@ def main():
     files = args or [
         'Solved/A_C26_BattingDrive.fbx', 'Solved/A_C26_BattingPull.fbx',
         'Solved/A_C26_BattingCut.fbx', 'Solved/A_C26_BattingSweep.fbx',
-        'Solved/A_C26_BattingDefence.fbx', 'Solved/A_C26_BowlingPace.fbx',
+        'Solved/A_C26_BattingDefence.fbx', 'Solved/A_C26_BattingHook.fbx',
+        'Solved/A_C26_BattingLoftedDrive.fbx', 'Solved/A_C26_BattingGlance.fbx',
+        'Solved/A_C26_BowlingPace.fbx',
         'Solved/A_C26_BowlingOffSpin.fbx', 'Solved/A_C26_BowlingLegSpin.fbx',
     ]
 
@@ -550,6 +552,44 @@ def main():
             checks.append(('absorb: no follow-through swing', 29,
                            lambda m, w, t: (hands_height(m) - hips_height(m) < 55.0,
                                             'hands %.1f cm above hips' % (hands_height(m) - hips_height(m)))))
+        if 'BattingHook' in f:
+            # Head-height contact is what makes a hook a hook (the pull's is chest
+            # height), and the finish whips BEHIND square -- more leg-side and
+            # higher than the pull's midwicket arc.
+            checks.append(('contact: hands at head height', CONTACT_FRAME,
+                           lambda m, w, t: (85.0 < hands_height(m) - hips_height(m) < 135.0,
+                                            'hands %.1f cm above hips' % (hands_height(m) - hips_height(m)))))
+            checks.append(('contact: played off the back foot', CONTACT_FRAME,
+                           lambda m, w, t: (hands_forward(m) > 0.0,
+                                            'hands %.1f cm in front of hips' % hands_forward(m))))
+            checks.append(('follow: whipped behind square leg', 29,
+                           lambda m, w, t: (hands_offside(m) < -20.0 and hands_height(m) - hips_height(m) > 80.0,
+                                            '%.1f cm off side, %.1f cm above hips' % (hands_offside(m), hands_height(m) - hips_height(m)))))
+        if 'BattingLoftedDrive' in f:
+            # The contact is a drive's own (low, in front); the loft reads in the
+            # FINISH, which goes overhead -- visibly higher than the drive's
+            # shoulder-height follow-through.
+            checks.append(('contact: driven in front of the body', CONTACT_FRAME,
+                           lambda m, w, t: (hands_forward(m) > 10.0,
+                                            'hands %.1f cm in front of hips' % hands_forward(m))))
+            checks.append(('contact: the ball is met low', CONTACT_FRAME,
+                           lambda m, w, t: (hands_height(m) - hips_height(m) < 60.0,
+                                            'hands %.1f cm above hips' % (hands_height(m) - hips_height(m)))))
+            checks.append(('follow: hands finish overhead', 29,
+                           lambda m, w, t: (hands_height(m) > 355.0,
+                                            'hands %.1f cm absolute' % hands_height(m))))
+        if 'BattingGlance' in f:
+            # The quietest shot: low contact off the hip, and a deflection rather
+            # than a swing -- the hands cross to fine leg and stay low.
+            checks.append(('contact: low off the hip', CONTACT_FRAME,
+                           lambda m, w, t: (-10.0 < hands_height(m) - hips_height(m) < 45.0,
+                                            'hands %.1f cm above hips' % (hands_height(m) - hips_height(m)))))
+            checks.append(('contact: in front of the pads', CONTACT_FRAME,
+                           lambda m, w, t: (hands_forward(m) > 5.0,
+                                            'hands %.1f cm in front of hips' % hands_forward(m))))
+            checks.append(('deflect: soft hands across to fine leg', 29,
+                           lambda m, w, t: (hands_offside(m) < -25.0 and hands_height(m) - hips_height(m) < 60.0,
+                                            '%.1f cm off side, %.1f cm above hips' % (hands_offside(m), hands_height(m) - hips_height(m)))))
         if 'Bowling' in f:
             def release_check(m, w, t):
                 head = m['mixamorig:Head'].t[1]

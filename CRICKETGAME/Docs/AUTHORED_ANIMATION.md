@@ -135,7 +135,7 @@ per-frame ground pin) and refuses to emit anything that fails verification.
 
 ## Verification actually performed (offline, on the CORRECTED clips)
 
-66 checks across the 8-clip library (`python3 Tools/correct_authored_anim.py`), all PASS:
+93 checks across the 11-clip library (`python3 Tools/correct_authored_anim.py`), all PASS:
 
 - Every clip: chest faces the bowler at the stance AND the defining frame (the gate a
   whole-body yaw bug cannot hide from -- one existed; see below); stance ankles at
@@ -150,11 +150,20 @@ per-frame ground pin) and refuses to emit anything that fails verification.
   **18.1 cm above** the hips (low over the ball), **60.9 cm in front** of the pad.
 - BattingDefence: contact **56 cm in front**, bat **17.5 cm above** the hips (under
   the eyes), and the absorb frame stays at 13.7 cm -- no swing to finish.
+- BattingHook: contact **93.0 cm above** the hips (head height -- the pull's is 73),
+  and the follow-through whips **68.3 cm to the leg side and 122.6 cm above** the
+  hips -- behind square, not through midwicket like the pull.
+- BattingLoftedDrive: the contact is the drive's own (**78.4 cm in front**, **42.3 cm
+  above** the hips) and the finish goes **overhead (361.8 absolute)**, well above the
+  drive's shoulder-height follow-through.
+- BattingGlance: contact **7.3 cm above** the hips (low off the hip), **42.5 cm in
+  front** of the pads, and the deflect frame crosses **53.8 cm to fine leg at only
+  21.7 cm above** the hips -- soft hands, no arc.
 - BowlingPace: release hand **400 cm vs head 329** (fully extended), hips **74.6 cm
   down the pitch**; BowlingOffSpin: release **360** (deliberately lower -- finger
   spin), hips 65.7; BowlingLegSpin: release **399**, hips 74.6.
 
-The same facts are re-asserted IN ENGINE by `Cricket26.Anim.AuthoredClips`
+The same facts are re-asserted IN ENGINE by `Cricket26.Anim.AuthoredClips` (all 11 clips)
 (`Tests/C26ProductionTests.cpp`) for all 8 clips, sampling the imported
 AnimSequences through `GetBoneTransform` after the FBX importer's own conversion.
 
@@ -179,10 +188,12 @@ bit-exactly, and chest yaw gates were added to every clip's checks.
    the two `ApplyAuthoredClip` call sites), but the import + build + playtest must run on a Mac
    with UE 5.8. The in-engine gate is `Cricket26.Anim.AuthoredClips` plus the BatLab/BowlLab
    playtests.
-2. **Library gaps.** Hook, leg glance and the lofted drives are not authored yet (the
-   drive clip covers them structurally); keeper and umpire clips are not authored. With
+2. **Library gaps.** Batting now covers drive, lofted drive, pull, hook, cut, sweep,
+   glance and defence; bowling covers pace, off-spin and leg-spin. Not yet authored:
+   the upper cut / late cut distinction (both share the cut clip), back-foot defence,
+   keeper crouch/dive/stump, umpire signals, fielder pickup/throw/catch/dive. With
    the offline pipeline each new clip is a pure-Python key-list addition to
-   `c26_anim_author.py` plus a template reference in `Tools/rebuild_authored_clips.py`.
+   `c26_anim_author.py` plus a job in `Tools/rebuild_authored_clips.py`.
 3. **Timing authority.** `C26MatchGameMode` owns release and contact timing. The clips must be
    *driven* by those instants, not allowed to own them — the same rule the audio director follows.
    `A_C26_BattingDrive` contact is at frame 23 of 36 (0.958 s in) and `A_C26_BowlingPace` release is
