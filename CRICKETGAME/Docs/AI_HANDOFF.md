@@ -1,5 +1,371 @@
 # CRICKET 26 — AI HANDOFF
 
+## WorkBuddy — 2026-09-12. Three requested fixes: mirrored batting aim, simplified bowling screen, tighter PERFECT band.
+
+User request, verbatim:
+
+> "FIRST MAKE THE BATTING PULL AND RELEASE CONTROL OPPOSITE LIKE IT SHOULD BE FROM THE
+> OPPOSITE SIDE. SECOND REMOVE BOWLING INFO AND OPTIONS LIKE YORKER ETC. I ONLY WANT ONE
+> OPTION THAT IS TO CHOOSE THE DELIVERY TYPE WHICH IS ALREADY THERE. ALSO MAKE THE
+> PERFECT SECTION IN RELEASE SMALLER TO INCREASE DIFFICULTY"
+
+Asked which reading of "opposite" was meant, the user answered: *"I WANT NORMAL CONTROLS
+WHEN A PLAYER PULLS TO THE RIGHT IT SHOULD PLAY ON THE LEG SIDE."*
+
+### 1. The batting aim really was mirrored — and the camera proves it
+
+`AC26CameraDirector` stations the batting camera **behind the bowler**
+(`BattingRig.Eye = (-10, -4400, 640)` looking at the striker at `Y = 900`). A UE camera
+with yaw 90° has `RightVector = (-1, 0, 0)`, so **screen-right is world −X**. Since
+`+X world` is a right-hander's off side (`C26Delivery.h`), the off side is on the
+**left of the screen** and the leg side on the right.
+
+`C26Controls::AimAngleFromPull` was written on the opposite assumption — its comment
+claimed "right-handed batter, facing +Y (bowler at −Y)", which is backwards: the striker
+is at `Y = 900` with the stumps at `Y = 1006`, so he faces −Y, toward the bowler. The
+result was a drag that sent the ball to the mirror of the side the player pulled toward.
+
+Fix: negate `Pull.X` inside `AimAngleFromPull` (the single source of the gesture→aim
+mapping, so the HUD arrow, the zone label, the shot-family preview and
+`FC26Simulation::Hit` all move together). The legacy flick path in
+`AC26PlayerController::EndGesture` got the same negation. **Drag right now plays leg.**
+
+Tests moved with it, so the same physical strokes are still being asserted:
+
+- `C26BatLab.cpp` — every synthetic `DragTo`/`MidDrag` X mirrored; the 27 expected
+  stroke names are unchanged because mirroring X flips the angle sign back.
+- `C26Automation.cpp` — the gesture tests now read *Leg-side pull aims leg* for a
+  rightward drag and *Off-side pull aims off* for a leftward one; the `COVER`/`MIDWICKET`
+  naming pair and the left-hander mirror test were swapped to match.
+- `C26GoldenGate.cpp` — the "change of mind" waypoint moved `1290 → 1110` so its comment
+  ("aim off side") stays true.
+
+The AI path is untouched: it writes `Intent.Angle` directly, and positive is still off side.
+
+### 2. Bowling planning screen reduced to one selectable option
+
+Removed from `AC26HUD::Controls` (planning phase):
+
+- the four-line delivery-plan readout panel (length/line, movement, target pace, movement %)
+- the six quick preset buttons — YORKER, 4TH OFF, BOUNCER, WIDE Y, SL CUT, IN YORK
+
+The delivery-type carousel is now the only selectable option, and **STOCK PACE is already
+the default** (it is entry 0 of every seam bowler's `C26Delivery::Library`). The
+around-the-wicket toggle moved up to `y = 466` so the column reads as one control instead
+of leaving a 218 px hole. `AC26MatchGameMode::ApplyBowlingPreset` and the `p_` action
+routing were deleted — they had no other callers.
+
+Kept, because they are how you bowl rather than options or readouts: the pitch drag, the
+movement dial, the pace slider, the around-the-wicket toggle, START RUN-UP and the
+release bar.
+
+### 3. PERFECT band narrowed
+
+`FC26ReleaseBar::PerfectStart` 0.855 → 0.90. The live no-ball line is **not** the struct
+default: `C26MatchGameMode` overwrites it with
+`(RunUpDuration - .14) / RunUpDuration` = 0.957. So the PERFECT band went from **10.2% to
+5.7%** of the bar, and `DifficultyWidth` narrows it further (Hard ×0.72, Expert ×0.55).
+`C26BowlLab`'s `RelPerfect` moved 0.90 → 0.93 so its release point stays clear of the new
+lower edge; `RelEdge` 0.950 and `RelNoBall` 0.965 still bracket the no-ball line.
+
+### Verified
+
+`CRICKETGAMEEditor Mac Development` → **`Result: Succeeded`** after a forced recompile
+(7 actions: `C26BatLab`, `C26BowlLab`, `C26Automation`, `C26HUD`, `C26MatchGameMode`, the
+unity module and the link). Confirmed the binary picked the change up by checking the
+dylib no longer contains `p_yorker`, `4TH OFF`, `WIDE Y`, `IN YORK` or `TARGET PACE`.
+
+**Playtests, both green:**
+
+| Harness | Result |
+|---|---|
+| `Tools/BatLab.sh batlab_mirror` | **`C26_LAB_PASS deliveries=27 failures=0`** |
+| `Tools/BowlLab.sh bowllab_fix` | **`C26_BOWL_PASS deliveries=39 failures=0`** |
+
+`BatLab` directly evidences the aim fix — a rightward drag now logs
+`case=02_legside_attack aim=-57.7 zone=MIDWICKET` (leg side) and a leftward drag
+`case=01_cover_drive aim=+45.0 zone=COVER` (off side).
+
+`BowlLab` evidences the narrowed band in its own output —
+`bar=[0.420 0.620 0.900 0.957]`, i.e. PERFECT occupies 0.900–0.957 = **5.7%** of the bar —
+and confirms the around-the-wicket toggle still works from its new position
+(`around the wicket shifts the release point (62.0 cm)`).
+
+**One self-inflicted regression, worth remembering.** Moving the around-the-wicket toggle
+from `y = 670` to `y = 466` broke `BowlLab`'s `32_crease_around` case (4 failures,
+"shifts the release point (0.0 cm)"), because the harness presses a *hard-coded* screen
+coordinate. The lab's `AroundX/AroundY` had to follow to the new button centre,
+`(134, 483)` — the centre of the `(56, 466, 156x34)` rect. **Any HUD geometry move must be
+mirrored in the labs that press that control.**
+
+`GoldenGate` was not re-run; its known baseline is `C26_GATE_FAIL failures=6`, all
+pre-existing camera-framing checks, so any count above 6 would be a real regression.
+
+**Trap re-confirmed:** `Build.sh` cannot run under the tool sandbox. UBT's
+`Log.BackupLogFile` unlinks `~/Library/Application Support/Epic/UnrealBuildTool/Trace.uba`
+and the denial aborts UBT *before* it compiles — it looks like a build failure but is a
+permissions one. Run it in the **foreground** with the sandbox bypassed; background
+invocations stayed sandboxed.
+
+## WorkBuddy — 2026-09-12. Bowling control loop rebuilt and proven with a real playtest.
+
+The player now authors a delivery end to end: type → exact pitch target → movement
+direction → movement amount → pace → run-up → release bar → actual ball. Full
+reference in `Docs/BOWLING_CONTROL_SYSTEM.md`.
+
+### What was actually wrong
+
+The plan/compose/bar architecture was already on disk. Two things were not:
+
+1. **The tree did not compile.** `C26HUD.cpp::DrawBowlingTarget()` still read
+   `bBowlingCharging`, `BowlingChargeStart`, `BowlingChargeCurrent` and
+   `BowlingEffort` — members of a bowling-charge model that no longer exists. Fixed.
+2. **Reverse swing was a no-op.** `FC26BowlingTuning::ReverseOnsetFrac` is
+   documented as a *fraction of the flight*, but `FC26Simulation::Integrate` compared
+   it against `S.Age` in **seconds**. The flight to the pitch is ~0.38 s and the
+   constant was 0.55, so the acceleration never applied once. Worse, `Release()`
+   still trimmed the launch as though it had, so a reverse swinger pitched ~10 cm
+   short of the target on the wrong line. The onset is now resolved against the real
+   flight time in `Release()`, and the launch trim uses the same curve the integrator
+   does (`C26Delivery::SwingDeflection`). `MaxReverseAccel` was raised to 1080 to
+   compensate for integrating over a much shorter window, so a reverse swing bends
+   the ball about as far as a conventional one — the difference is *when*.
+
+### Also changed
+
+- **Around the wicket is real.** `bAroundWicket` was a dead toggle. It now shifts
+  the release point by `BowlingTuning.AroundWicketOffsetCm`, sign-following the
+  bowling arm, and both the trajectory preview and the live release go through the
+  same `CreaseOffsetCm()` so they cannot disagree.
+- **The debug overlay** grew a full `— BOWLING PLAN —` block (desired vs actual
+  target/pace/movement, meter, band, quality, no-ball, bar boundaries, hands, crease).
+- **A steerable stock ball now moves.** The free-direction branch was 0.22 of
+  `MaxSwingAccel` — 2 cm over 14 m, invisible, so the dial looked like it worked and
+  produced nothing. Raised to 0.55.
+
+### New: `Tools/BowlLab.sh` + `Tests/C26BowlLab.cpp`
+
+39 deliveries driven through the real `AC26PlayerController` pointer path. It is the
+bowling analogue of `C26BatLab`, and it is what makes the mechanics verifiable
+rather than cosmetic. It re-integrates each delivered ball twice — as bowled, and
+with the movement stripped but the **identical launch** — and measures the lateral
+separation half way, at the pitch and at the bat. Stripping the movement and keeping
+the launch is the whole trick: `Release()` trims the launch so the ball still lands
+on the aim point, so comparing where two plans pitch measures the *aim*, not the
+movement.
+
+Result: `C26_BOWL_PASS deliveries=39 failures=0`, 2993 assertions.
+
+### Regression gates
+
+| Gate | Result |
+|---|---|
+| Automation (`Cricket26.*`, 9 tests) | **9/9 PASS** — includes `Simulation.Trajectories` and `Simulation.GoldenDelivery`, the two most exposed to the `Release()` change. |
+| `Tools/BatLab.sh batlab_b` | **`C26_LAB_PASS deliveries=27 failures=0`** |
+| `Tools/BowlLab.sh bowllab_05` | **`C26_BOWL_PASS deliveries=39 failures=0`** |
+| `Tools/GoldenGate.sh gate_b` | **`C26_GATE_FAIL failures=6`** — pre-existing, not from this work (below). |
+
+The six gate failures are two camera-composition checks repeated across the three
+stages: `human-scale batter occupies readable gameplay frame` and
+`bowler clear of top HUD`. Both measure where `Athletes[]` project to screen
+(`C26GoldenGate.cpp:79-81`) — nothing the bowling model, the movement integrator or
+the debug overlay can influence. Neither check existed in the last recorded passing
+gate (`Artifacts/gate_final.log`, 2026-09-09, `C26_GATE_PASS failures=0`); they were
+added during the later HUD/presentation work. **Left open — it is a camera framing
+issue, not a bowling one.**
+
+### Trap that cost time
+
+`UnrealEditor -game` loads `Binaries/Mac/libUnrealEditor-CRICKETGAME.dylib`, so the
+playtest must be built with the **`CRICKETGAMEEditor`** target. Building
+`CRICKETGAME` succeeds, updates `Binaries/Mac/CRICKETGAME`, and changes nothing the
+playtest can see — a full green build plus a full playtest that quietly runs the old
+code. Verify a harness change actually landed before trusting a run:
+
+```bash
+python3 -c "d=open('Binaries/Mac/libUnrealEditor-CRICKETGAME.dylib','rb').read();print(d.count('some new string'.encode('utf-16-le')))"
+```
+
+`TEXT()` literals are UTF-16LE on Mac, so `strings | grep` finds nothing and is not a
+valid check.
+
+
+## Claude (Opus 5) — 2026-09-11. Players rebuilt on a body that actually works.
+
+### The finding that explains every "AI slop" complaint
+
+The ten `SK_Cricketer_Hero*` bodies are unusable and always were. Measured in Blender on the source
+FBX, not inferred:
+
+- They are **half bodies**. The geometry stops at mid-thigh. There are no legs. That is exactly the
+  torso-standing-in-a-hole every player rendered as in game.
+- They stand with their **arms at their sides while the rig is a T-pose**, so the arm bones sit
+  outside the mesh entirely. `LeftArm`, `LeftForeArm`, `LeftHand`, `RightArm`, `RightForeArm` and
+  `RightHand` owned no vertices at all.
+- The weights are nonsense: `Spine` dominated vertices from ankle height to the chest, `LeftEye`
+  owned the whole head, `RightToe_End` owned the lower leg. 24 of 67 bones had a vertex group.
+
+They are Sketchfab scans that were parented to the Mixamo rig and auto-weighted. They were never
+rigged. No amount of re-skinning adds legs.
+
+### What changed
+
+- `AC26Athlete::MatchesBindPose()` (new) — refuses any body whose widest span *along its own rig's
+  hand-to-hand axis* is under 75% of that rig's reach. A T-posed rig demands a T-posed mesh; the
+  scans measure 0.53-0.67. All ten are now rejected at load and the match plays on
+  `SK_Cricketer_Match`, which is a complete, correctly weighted cricketer. Verified live: 68 of 68
+  binds are the match mesh, 23 scan rejections logged, and the batter renders with legs, pads, bat,
+  helmet and shoes. The scan path is left wired — drop in a real full-body scan and it binds with
+  no code change.
+- `C26Motion::BowlArm()` (new) — the bowling arm now rides a circle centred on its own shoulder at
+  radius `ArmSpan*0.97`, keyed by ANGLE. The authored hand keys in `Pace()` asked for a hand 218 cm
+  up on a rig that reaches 196; the two-bone solve absorbed the overshoot silently, which is what
+  made the delivery read as a sling from the hip. A point on that circle is reachable by
+  construction. The arm is above the shoulder from ~0.34 s, vertical at release (0.62 s), and down
+  across the body through the follow-through.
+- Elbow poles are now per-arm and follow the hand. A pole pointing down and back solves the elbow
+  *underneath* the shoulder, which was the other half of the underarm look.
+- Leg targets are clamped to the real chain length before the IK runs. The bowler's authored 86 cm
+  front stride was hauling the pelvis down after the foot and folding him in half at the crease.
+- **Both authored clips are disabled.** `A_C26_BattingDrive` and `A_C26_BowlingPace` land on top of
+  a fully solved procedural pose at full weight, so they replace rather than refine it. That is what
+  produced the contorted batting stance and the folded delivery. Re-enable only once each is
+  verified pose-by-pose on `SK_Cricketer_Match` and applied additively.
+- Fixed a dead branch in the LOD early-out: it tested `Detail==Mid` inside a path that only runs when
+  Detail is `Distant`, so a distant athlete's skin was never refreshed and one who was distant on his
+  first tick kept the bind pose — the T-posing boundary fielders.
+
+### Tools added
+
+- `ArtSource/Blender/Characters/c26_reskin_heroes.py` — rebinds a hero body onto the shared rig with
+  weights transferred from the Mixamo donor, including a Kabsch rig fit, an arms-down pose match and
+  an LBS un-pose. It works; the bodies it was written for are simply half bodies. Keep it for any
+  future full-body scan. Note it records: `Tops`, `Bottoms` and `Shoes` in `C26_KitBase_v002.blend`
+  are collapsed to a 3 mm blob in world space and poison a weight transfer. Only `Body` is a donor.
+- `ArtSource/Blender/Characters/render_skin_check.py` — renders a body in crouch, overhead and
+  batting poses. A bind-pose screenshot is the one view where broken and good weights look alike.
+
+### Next
+
+1. The batting stance is now procedural-only and no longer contorted, but it has not been tuned
+   shot by shot. That is the next visible win.
+2. `SK_Cricketer_Match` is correct but plain. Premium look now comes from materials, not geometry:
+   the jersey currently tiles a weave normal 24x over a full-body atlas and reads as a striped tube.
+3. If photoreal bodies are still wanted, they need a **full-body** source. MetaHuman remains blocked
+   on one interactive Epic sign-in (see below).
+
+## WorkBuddy continuation — 2026-09-11, first authored cricket animation. Branch `feature/metahuman-presentation-swap`.
+
+Task from the user: *"change the players into premium realistic ones and make their movement and
+motion smooth and realistic."* The user chose the two heaviest routes: **MetaHuman photoreal** for
+the players and **authored cricket clips** for the motion. Both are long arcs; this session
+established the second one and unblocked nothing on the first.
+
+### What changed
+
+- `ArtSource/Blender/Animation/` (new) — `c26_anim_author.py` authors two real keyframed clips on
+  the production 67-bone `Armature` in `C26_KitBase_v002.blend`, so they play on the skeleton the
+  game already skins to with no retargeting. Plus `dump_pose.py` (numeric verification),
+  `render_rig_proxy.py` (stick-figure contact sheets), `render_anim_sheet.py`, `export_anim_fbx.py`.
+- `ArtSource/Exports/Animations/A_C26_BattingDrive.fbx` (36 frames) and `A_C26_BowlingPace.fbx`
+  (46 frames) — exported, **not imported**.
+- `Docs/AUTHORED_ANIMATION.md` (new) — full detail, including the two bugs that cost the most time
+  and the .blend gotchas, so nobody rediscovers them.
+
+### The finding that matters
+
+The first version set joint angles directly and measured the batter's hands **0.83 m apart**. Both
+hands on the bat handle is the whole point of a batting animation. The script now solves limbs with
+a two-bone IK against hand/foot *targets*; measured result is **5.7 cm apart**, held for the clip.
+**Rotate a limb from its inherited direction (`base_quaternion @ (0,1,0)`), never its rest
+direction** — using the rest direction bakes in the spine chain's rotation and the limb lands
+somewhere else. That single mistake was a 40 cm miss.
+
+Also: `C26_KitBase_v002.blend` keeps its objects in a collection **not linked into the scene**, so
+headless renders and selects see nothing until they are linked. Workbench/EEVEE render empty under
+`--background` on macOS; use Cycles.
+
+### Next exact task, in order
+
+1. `Tools/ImportAnimations.py` — import the two FBX as `AnimSequence` under
+   `/Game/Cricket26/Animations`, bound to the existing skeleton.
+2. Wire them into `AC26Athlete`. **`ApplyRecordedMotion()` is dead code — grep confirms nothing
+   calls it**, and it only handles run/idle. `UPoseableMeshComponent` has no `PlayAnimation`, so
+   sample via `UAnimSequence::GetBoneTransform()` into `Pose` as that function already does.
+3. Sync to the simulation's timing, do not let the clip own it: batting contact is frame 23/36
+   (0.958 s), bowling release is frame 31/46 (1.292 s). `C26MatchGameMode` stays authoritative.
+4. Re-run the capture harness and look at the PNGs.
+
+### Still blocked, and only the user can unblock it
+
+`MH_C26_Player_001` has a sculpted body but **no skeleton and no skinned mesh**. Auto-rigging calls
+Epic's cloud service and needs an authenticated Epic account with MetaHuman entitlement. One manual
+sign-in in the editor (Edit → Editor Preferences → General → Accounts) then re-running
+`Tools/MetaHumanBuildPlayer001.py` is the entire unblock — the script needs no changes.
+
+## Claude (Opus/Sonnet 5) continuation — 2026-09-11, MetaHuman player foundation. Branch `rescue/player-role-visual-fix`.
+
+First real MetaHuman-founded player asset, orthogonal to the static-mesh hero athlete system
+(`AC26Athlete`/`SM_C26_Player_*`) which is untouched and still what the live match spawns.
+
+### What changed
+
+- `CRICKETGAME.uproject` — enabled `MetaHumanCharacter`, `MetaHumanSDK`, `MetaHumanCoreTech`
+  (the engine ships these at `UE_5.8/Engine/Plugins/MetaHuman/`; they were present but disabled).
+  Plugin `Name` in a `.uproject` must match the `.uplugin` filename, not the folder or
+  `FriendlyName` — `MetaHumanCoreTechLib/` ships `MetaHumanCoreTech.uplugin`, easy to get wrong.
+- `Tools/MetaHumanDiag.py` — read-only probe of the real, present-on-disk
+  `MetaHumanCharacterEditorSubsystem` Python API (confirms it exists locally in UE 5.8, no Bridge/
+  MHC-web-app dependency for body sculpting: `create_asset` with `MetaHumanCharacterFactoryNew`,
+  `get_body_constraints`/`set_body_constraints`/`commit_body_state`, `request_auto_rigging`,
+  `build_meta_human`). Body constraint names confirmed: Height, Across Shoulder, Chest, Bicep,
+  Forearm, Waist, Thigh, Calf, Masculine/Feminine, Muscularity, etc.
+- `Tools/MetaHumanBuildPlayer001.py` — creates/edits `MH_C26_Player_001` at
+  `Content/Cricket26/Characters/MetaHumans/Players/Player_001/`, sculpts an athletic
+  professional-male body (182cm, 47cm shoulders, developed-not-bodybuilder proportions) via the
+  confirmed constraint API, then requests auto-rigging and `build_meta_human`. **Idempotent** --
+  re-running it finds and reuses the existing asset rather than duplicating.
+- `Source/CRICKETGAME/SuperOver/C26MetaHumanPlayer.h/.cpp` (new) — `AC26MetaHumanPlayer`, a plain
+  `USkeletalMeshComponent` actor that soft-loads the MetaHuman build output by path so it compiles
+  and can be placed before the mesh exists. Exposes `GetEquipmentSocketTransform()` against the
+  fixed MetaHuman skeleton bone names (`hand_r`/`hand_l`/`head`/`calf_r`/`calf_l`) for future
+  two-handed-bat/helmet/pad attachment. **Not** wired into `AC26MatchGameMode::BuildMatchActors()`
+  or the `Athletes[]` array -- cannot affect a running match. Build verified clean
+  (`Result: Succeeded`, no new warnings).
+- `Tools/PlaceMetaHumanPreview.py` — placed one `AC26MetaHumanPlayer` instance
+  (`MHPreview_C26_Player_001`) in the real level `L_SuperOver` at the exact striker-crease
+  transform `BuildMatchActors()` uses (`FVector(-38,900,5)`, yaw -90), for visual
+  validation only. Idempotent (finds/replaces its own prior instance by label).
+
+### The actual blocker, found by running it, not by guessing
+
+`request_auto_rigging` is not local -- it calls Epic's live cloud service
+(`mh-uemhc-autorig-service...epicgames.com`). Headless run: EOSSDK attempted an interactive
+device-code sign-in (poll loop of `authorization_pending`), fell back to an anonymous session,
+and after a 300s HTTP timeout the service returned `Server Error` because that session has no
+MetaHuman entitlement. `build_meta_human` then correctly refused: *"Character is not rigged."*
+So `MH_C26_Player_001` exists with a sculpted athletic body but **no skeleton and no skinned mesh
+yet** -- `AC26MetaHumanPlayer` in the level currently renders nothing (logs
+`C26_MH_PLAYER ... body mesh not found`, by design, not a bug).
+
+### Next exact task
+
+One manual step, then the rest is scripted and ready to go: open the project in the editor once
+and complete the interactive Epic account sign-in the MetaHuman Creator panel prompts for (Edit →
+Editor Preferences → General → Accounts also works). Then re-run
+`UnrealEditor-Cmd CRICKETGAME.uproject -run=pythonscript -script=Tools/MetaHumanBuildPlayer001.py`
+-- same script, no changes needed, it will now complete auto-rig + assembly and produce a real
+skeletal mesh at `Content/Cricket26/Characters/MetaHumans/Players/Player_001/Body/`.
+`AC26MetaHumanPlayer` picks it up automatically at `BeginPlay()`. After that: author a batting-
+ready pose (Phase G of the brief -- feet shoulder-width, knees flexed, hands at grip height,
+facing the bowler; nothing rigged yet to pose against), author `USkeletalMeshSocket`s on the built
+skeleton at the four bone names above, and only then decide whether/how this MetaHuman replaces
+the striker in `BuildMatchActors()` or stays a separate hero-shot/toss/celebration asset --
+that's a scope decision for whoever's holding the project next, not one to make silently.
+Optional wardrobe/groom content (`/MetaHumanCharacter/Optional/...`) is not present in this
+engine install either (`MetaHuman Optional Content folder not found` warning) -- hair and any
+MHC-authored clothing need that content added before they'll work, independent of the rig issue.
+
 ## Muse Spark continuation — 2026-09-10, complete UI/UX overhaul.
 
 Canvas immediate-mode HUD rebuilt into a design system + full front end.

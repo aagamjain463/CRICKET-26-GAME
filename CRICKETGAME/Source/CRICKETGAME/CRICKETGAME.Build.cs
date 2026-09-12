@@ -21,7 +21,10 @@ public class CRICKETGAME : ModuleRules
 			"Slate",
 			"SlateCore",
 			"ProceduralMeshComponent",
-			"DeveloperSettings"
+			"DeveloperSettings",
+			"HTTP",
+			"Json",
+			"JsonUtilities"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });

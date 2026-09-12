@@ -385,6 +385,38 @@ void UC26Audio::PlayLine(int32 RowIdx, uint32 BallId)
     UE_LOG(LogC26, Display, TEXT("C26_COMMENTARY play=%s cat=%s vox=%d pri=%d ball=%u"), R.Id, R.Category, R.Commentator, R.Priority, BallId);
 }
 
+void UC26Audio::PlayCommentarySound(USoundBase* Sound, const FString& SubtitleText, float Duration)
+{
+    if (!Sound || !CommentaryVoice)
+        return;
+    if (CommentaryVol <= .01f || Master <= .01f)
+        return;
+
+    CommentaryVoice->Stop();
+    CommentaryVoice->SetSound(Sound);
+    CommentaryVoice->SetVolumeMultiplier(.98f * CommentaryVol * Master);
+    CommentaryVoice->SetPitchMultiplier(1.f);
+    CommentaryVoice->Play();
+
+    ActiveSubtitle = SubtitleText;
+    SubtitleUntil = Now() + Duration;
+}
+
+bool UC26Audio::IsCommentaryPlaying() const
+{
+    return CommentaryVoice && CommentaryVoice->IsPlaying();
+}
+
+void UC26Audio::StopCommentary()
+{
+    if (CommentaryVoice)
+    {
+        CommentaryVoice->Stop();
+    }
+    ActiveSubtitle.Empty();
+    SubtitleUntil = -1.f;
+}
+
 void UC26Audio::OnPrimaryFinished()
 {
     const float T = Now();

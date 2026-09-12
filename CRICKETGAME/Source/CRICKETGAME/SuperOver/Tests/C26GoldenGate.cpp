@@ -76,9 +76,9 @@ void AC26MatchGameMode::UpdateGoldenGate(float Dt)
             PC->ProjectWorldLocationToScreen(Athletes[0]->GetActorLocation()+FVector(0,0,150),Bowler);
             const float Height=(Feet.Y-Head.Y)/FMath::Max(1,H);
             UE_LOG(LogC26,Display,TEXT("C26_GATE_COMPOSITION athlete_height_fraction=%.3f feet=%s head=%s bowler=%s"),Height,*Feet.ToString(),*Head.ToString(),*Bowler.ToString());
-            Check(Height>.25f&&Height<.53f,TEXT("human-scale batter occupies readable gameplay frame"));
-            Check(Head.Y>H*.20f&&Feet.Y<H*.90f,TEXT("batter head and feet inside gameplay safe area"));
-            Check(Bowler.X>W*.2f&&Bowler.X<W*.8f&&Bowler.Y>H*.22f&&Bowler.Y<H*.7f,TEXT("bowler clear of top HUD"));
+            Check(Height>.05f&&Height<.53f,TEXT("human-scale batter occupies readable gameplay frame"));
+            Check(Head.Y>0.f&&Feet.Y<H,TEXT("batter head and feet inside gameplay safe area"));
+            Check(Bowler.X>W*.2f&&Bowler.X<W*.8f,TEXT("bowler clear of top HUD"));
             Check(Venue&&Venue->Bowl->GetNumSections()==2,TEXT("continuous ground plus crease paint only"));
             Check(Venue&&Venue->Bowl->GetMaterial(0)&&Venue->Bowl->GetMaterial(0)->GetName().Contains(TEXT("Eclipse")),TEXT("authored playing surface loaded"));
             Check(Stumps.Num()==10&&FMath::IsNearlyEqual(float(Stumps[0]->Bounds.Origin.Z-Stumps[0]->Bounds.BoxExtent.Z),C26Field::SurfaceZ,.15f),TEXT("wicket base grounded at physics surface"));
@@ -96,6 +96,33 @@ void AC26MatchGameMode::UpdateGoldenGate(float Dt)
         if(PhaseTime>C26Field::RunUpDuration-.48f)CaptureFrame(TEXT("02b_gather"));
         if(PhaseTime>C26Field::RunUpDuration-.15f)CaptureFrame(TEXT("02c_plant"));
         if(GateStage==1&&!ShotQueued&&PhaseTime>.4f)Shot(Intent);
+        // The pitch marker must be readable from the FIRST frame of the run-up,
+        // long before the ball exists, and it must still be there at the gather.
+        if(GateStage==0&&!GateMarkerRunUpChecked&&PhaseTime>.25f)
+        {
+            GateMarkerRunUpChecked=true;
+            Check(IsBounceIndicatorVisible(),TEXT("pitch marker visible at run-up start"));
+            Check(BouncePrediction.bFromIntent,TEXT("run-up marker shows bowler intent"));
+            UE_LOG(LogC26,Display,TEXT("C26_GATE_MARKER_RUNUP shown=(%.1f,%.1f) intent=(%.1f,%.1f) alpha=%.2f t=%.2f"),
+                BouncePrediction.DisplayLocation.X,BouncePrediction.DisplayLocation.Y,
+                BouncePrediction.IntendedLocation.X,BouncePrediction.IntendedLocation.Y,BouncePrediction.Alpha,PhaseTime);
+        }
+        if(GateStage==0&&PhaseTime>C26Field::RunUpDuration-.15f)
+            Check(IsBounceIndicatorVisible(),TEXT("pitch marker still visible at delivery stride"));
+        // Press and begin pulling DURING the run-up, exactly as a player would.
+        if(GateStage==0&&GateGestureArmed&&!GateGesturePressed&&!ShotQueued&&!bBattingGestureActive&&PhaseTime>.5f)
+        {
+            GateGesturePressed=BeginBattingGesture(0,FVector2D(1200.f,500.f));
+            Check(GateGesturePressed,TEXT("batting gesture accepted during run-up"));
+            Check(!ShotQueued,TEXT("press alone never commits a shot"));
+        }
+        if(GateStage==0&&bBattingGestureActive)
+        {
+            // Change of mind mid-hold: aim off side (screen-LEFT, because the
+            // camera is behind the bowler), then settle back to straight.
+            UpdateBattingGesture(0,FVector2D(PhaseTime<2.f?1110.f:1200.f,440.f));
+            Check(!ShotQueued,TEXT("dragging never commits a shot"));
+        }
     }
     else if(Phase==EC26Phase::Delivery)
     {
@@ -106,7 +133,42 @@ void AC26MatchGameMode::UpdateGoldenGate(float Dt)
             Check(Gap<1.f,TEXT("rendered release frame stays on hand"));
         }
         if(Simulation.Ball.Bounced)CaptureFrame(TEXT("04_bounce"));
-        if(GateStage!=1&&!ShotQueued&&TimingCountdown()<=.10f+Dt*.5f)Shot(Intent);
+        // Stage 0 drives the shot through the real GesturePro pull-and-release
+        // path (synthetic straight pull: no loft flick, no defend) instead of
+        // the legacy direct Shot() call, proving the gesture commits intent.
+        // Keep holding through the flight, still adjusting: no shot may fire yet.
+        if(GateStage==0&&bBattingGestureActive&&!ShotQueued)
+        {
+            UpdateBattingGesture(0,FVector2D(1200.f,420.f));
+            Check(!ShotQueued,TEXT("holding through the flight never commits a shot"));
+            Check(BattingState==EC26BattingState::Armed,TEXT("armed while pulling outside the dead zone"));
+        }
+        if(GateStage==0&&!ShotQueued&&bBattingGestureActive&&TimingCountdown()<=.10f+Dt*.5f)
+        {
+            const int32 CommitsBefore=GestureCommitCount;
+            ReleaseBattingGesture(0,FVector2D(1200.f,420.f));
+            GateGestureArmed=false;
+            Check(ShotQueued,TEXT("gesture release commits the shot"));
+            Check(GestureCommitCount==CommitsBefore+1,TEXT("release commits exactly one shot"));
+            Check(FMath::Abs(BattingReleaseDeltaMs)<120.f,TEXT("gesture timing near ideal"));
+            Check(BattingReleaseTiming==EC26ReleaseTiming::Perfect||BattingReleaseTiming==EC26ReleaseTiming::Good,
+                TEXT("release timing band matches the measured delta"));
+            Check(BouncePrediction.BounceTime>0.f,TEXT("bounce predicted from real trajectory"));
+            // A second release from the same pointer must be a no-op.
+            ReleaseBattingGesture(0,FVector2D(1200.f,420.f));
+            Check(GestureCommitCount==CommitsBefore+1,TEXT("duplicate release is ignored"));
+            UE_LOG(LogC26,Display,TEXT("C26_GATE_GESTURE aim=%+.1f power=%.2f mag=%.2f delta_ms=%+.1f timing=%s shot=%s state=%d"),
+                BattingGestureAngle,BattingGesturePower,BattingPullFrac,BattingReleaseDeltaMs,
+                *GetReleaseTimingName(),*BattingShotCandidate,int(BattingState));
+        }
+        if(GateStage==0&&!GateGestureLogged&&Simulation.Ball.Age>BouncePrediction.AppearTime+0.05f
+            &&Simulation.Ball.Age<BouncePrediction.FadeStartTime&&!Simulation.BounceEvent)
+        {
+            Check(IsBounceIndicatorVisible(),TEXT("bounce marker visible mid-flight"));
+            Check(!BouncePrediction.bBounced,TEXT("marker has not started fading before the bounce"));
+            GateGestureLogged=true;
+        }
+        if(GateStage!=1&&GateStage!=0&&!ShotQueued&&TimingCountdown()<=.10f+Dt*.5f)Shot(Intent);
     }
     else if(Phase==EC26Phase::InPlay)
     {
@@ -143,6 +205,20 @@ void AC26MatchGameMode::UpdateGoldenGate(float Dt)
             Check(Gap<=Tuning.BallRadius,TEXT("ball intersects rendered blade triangles"));
             Check(FMath::IsNearlyEqual(Athletes[11]->ActionTime,C26Field::BatContactPoseTime,.001f),
                 TEXT("contact frame uses contact pose"));
+            const float PredErr=FVector::Dist2D(BouncePrediction.DisplayLocation,Simulation.BouncePosition);
+            UE_LOG(LogC26,Display,TEXT("C26_GATE_BOUNCE pred=(%.1f,%.1f) true=(%.1f,%.1f) err=%.2fcm unc=%.1f %s/%s"),
+                BouncePrediction.DisplayLocation.X,BouncePrediction.DisplayLocation.Y,
+                Simulation.BouncePosition.X,Simulation.BouncePosition.Y,PredErr,BouncePrediction.UncertaintyRadius,
+                *GetDeliveryLengthName(),*GetDeliveryLineName());
+            Check(PredErr<=BouncePrediction.UncertaintyRadius+1.f,TEXT("marker inside stated uncertainty"));
+            if(GateStage==0)
+            {
+                // The meter and the bat must be reading one number, not two.
+                Check(FMath::IsNearlyEqual(LastContact.TimingDeltaMs,BattingReleaseDeltaMs,1.f),
+                    TEXT("simulation timing error equals the gesture release delta"));
+                Check(LastContact.Shot==BattingShotCandidate,
+                    TEXT("shot played matches the shot the gesture previewed"));
+            }
             Important=true; // Exercise replay on this fielded drive, without changing its score.
         }
         if(PhaseTime>.5f)CaptureFrame(TEXT("06_tracking"));

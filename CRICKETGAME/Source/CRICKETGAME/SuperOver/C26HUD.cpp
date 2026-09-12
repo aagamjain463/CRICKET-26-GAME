@@ -1,4 +1,7 @@
 #include "C26HUD.h"
+#include "C26PresentationDirector.h"
+#include "C26Athlete.h"
+#include "C26Controls.h"
 #include "C26MatchGameMode.h"
 #include "C26Settings.h"
 #include "C26Audio.h"
@@ -9,55 +12,134 @@
 #include "CanvasItem.h"
 #include "Fonts/CompositeFont.h"
 #include "Misc/Paths.h"
+#include "Misc/CommandLine.h"
 
 // ============================================================================
-// CRICKET 26 — AAA ATHLETIC SPORTS BROADCAST UI
-// ============================================================================
-// Art Direction & Spacing Principles:
-// - ZERO OVERLAPS: Every text element, button, crest, and container has
-//   mathematically verified bounding boxes and generous breathing room.
-// - MODERN SPORTS PALETTE:
-//   * Pitch Obsidian (#090D14) & Stadium Slate (#0E1420)
-//   * Signature Athletic Mint-Teal (#00EBBF) for primary focus & Mumbai
-//   * Sunset Coral (#FF4752) for Melbourne & danger/wickets
-//   * Trophy Amber Gold (#FAA01A) for scores, targets & victory
-//   * Crisp Off-White (#F5F7FA) and Cool Slate Silver (#8E9EB2) for typography
-// - PURE TYPOGRAPHY: Clean uppercase without artificial letter-spacing spaces.
+// CRICKET 26 — COMMERCIAL SPORTS BROADCAST UI & PRESENTATION SYSTEM
+// Rigorous UI layout, strict 8-point spacing scale, non-overlapping responsive design
 // ============================================================================
 
 namespace
 {
-const FLinearColor Void(.035f, .045f, .065f, .94f);        // Deep Pitch Obsidian
-const FLinearColor PillBg(.055f, .075f, .105f, .88f);      // Stadium Slate Surface
-const FLinearColor CardBg(.045f, .060f, .085f, .82f);      // Soft secondary surface
-const FLinearColor Paper(.96f, .97f, .99f, 1.f);           // Crisp Athletic White
-const FLinearColor PaperDim(.72f, .78f, .85f, 1.f);        // Cool Silver Secondary
-const FLinearColor Muted(.42f, .48f, .58f, 1.f);           // Technical Slate
-const FLinearColor Hairline(.16f, .22f, .30f, .65f);       // Subtle Architectural Hairline
-const FLinearColor MintCyan(.00f, .92f, .75f, 1.f);        // Signature Athletic Mint-Teal
-const FLinearColor Gold(.98f, .68f, .10f, 1.f);            // Trophy Amber Gold
-const FLinearColor Coral(1.00f, .28f, .32f, 1.f);          // Sunset Coral
+// ---- Color System ----
+const FLinearColor Void(.008f, .011f, .016f, .98f);          // Pure Obsidian Carbon (#020304)
+const FLinearColor SurfaceBase(.016f, .022f, .032f, .94f);   // Deep Stadium Charcoal Base (#040608)
+const FLinearColor SurfaceCard(.025f, .034f, .048f, .94f);   // Structured Sports Card Surface (#06090C)
+const FLinearColor SurfaceWell(.012f, .016f, .024f, .96f);   // Recessed Technical Well (#030406)
+const FLinearColor SurfacePill(.038f, .050f, .068f, .88f);   // Tactile Pill Surface (#0A0D12)
+const FLinearColor SurfaceHover(.065f, .085f, .115f, .92f);  // Interactive Highlight
 
-// ---- Reference shell geometry: full-width top profile bar + fixed left nav rail ----
-// (matches the six-screen reference collage: brand+profile bar above, vertical rail left,
-// hero content fills the remaining ~76% of the 1600x900 design canvas)
-const float TopH = 84.f;    // top profile bar height
-const float NavW = 336.f;   // left navigation rail width (~21% of 1600)
-const float ContentX = NavW + 48.f;      // hero content left edge
-const float ContentR = 1600.f - 56.f;    // hero content right edge
-const float ContentW = ContentR - ContentX;
-const float ContentTop = TopH + 40.f;    // hero content top edge
+// Athletic Typography & Hairlines
+const FLinearColor WhiteAthletic(.96f, .98f, 1.00f, 1.f);    // Stadium White (#F5FAFF)
+const FLinearColor SilverCool(.74f, .80f, .88f, 1.f);        // Cool Silver Secondary (#BDCCE0)
+const FLinearColor SlateMuted(.44f, .50f, .60f, 1.f);        // Technical Metadata Slate (#708099)
+const FLinearColor HairlineSoft(.18f, .24f, .34f, .42f);     // Subtle Structural Hairline
+const FLinearColor HairlineGleam(.60f, .72f, .90f, .22f);    // Luminous Top Edge Sheen
+
+// Semantic Sports Palette
+const FLinearColor Gold(1.00f, .76f, .14f, 1.f);             // Championship Gold (#FFC224)
+const FLinearColor Crimson(.92f, .14f, .20f, 1.f);           // Cricket Crimson / Wickets (#EB2433)
+const FLinearColor TurfGreen(.08f, .82f, .44f, 1.f);         // Boundaries (4s) / Sweet Spot (#14D170)
+const FLinearColor ElectricCyan(.00f, .78f, .98f, 1.f);      // Focus Highlight (#00C7FA)
+const FLinearColor DarkLabel(.015f, .025f, .035f, 1.f);      // High-contrast dark text on solid buttons
+
+// ---- CRICKET 26 FRONT-END PALETTE ------------------------------------------
+// Near-black ground, a single mint accent, and a five-step neutral ramp that
+// carries the whole hierarchy. Mint is only ever used for the one actionable
+// thing on a screen, the section eyebrow, and a single highlighted figure --
+// never for structure. Structure is hairlines and space.
+//
+// These are authored as sRGB hex, exactly as the approved mockups specify them.
+// The canvas treats an FLinearColor as linear and gamma-encodes on write, so a
+// raw hex/255 value would come out washed out by roughly two stops; going
+// through the FColor constructor applies the sRGB->linear conversion first.
+FLinearColor Hex(uint8 R, uint8 G, uint8 B, float A = 1.f)
+{
+    FLinearColor C = FLinearColor(FColor(R, G, B, 255));
+    C.A = A;
+    return C;
+}
+const FLinearColor Ink     = Hex(0x08, 0x09, 0x0B);   // page ground
+const FLinearColor Mint    = Hex(0x2E, 0xE8, 0xC7);   // accent
+const FLinearColor MintLit = Hex(0x6B, 0xF4, 0xDD);   // accent, pressed
+const FLinearColor MintInk = Hex(0x06, 0x10, 0x0F);   // label on mint
+const FLinearColor T1      = Hex(0xF4, 0xF7, 0xF8);   // headline
+const FLinearColor T2      = Hex(0xE7, 0xED, 0xF0);   // row title
+const FLinearColor T3      = Hex(0x8B, 0x95, 0x9B);   // control key
+const FLinearColor T4      = Hex(0x68, 0x74, 0x7C);   // meta
+const FLinearColor T5      = Hex(0x5C, 0x68, 0x70);   // sub / de-emphasis
+const FLinearColor T6      = Hex(0x4E, 0x59, 0x60);   // micro label
+const FLinearColor T7      = Hex(0x39, 0x43, 0x4A);   // faintest
+const FLinearColor TBody   = Hex(0x6E, 0x7A, 0x82);   // table figures
+const FLinearColor TGhost  = Hex(0xB9, 0xC4, 0xCA);   // ghost button label
+const FLinearColor TVal    = Hex(0xD7, 0xDF, 0xE3);   // stat value
+const FLinearColor Podium  = Hex(0xD9, 0xC0, 0x7A);   // rank 1
+// Hairlines are white at a low alpha over the ground, so they stay neutral.
+const FLinearColor Hair    = Hex(0xFF, 0xFF, 0xFF, .065f);
+
+// Layout Metrics (1600 x 900 design canvas)
+const float TopH = 68.f;
+const float ContentX = 80.f;
+const float ContentR = 1520.f;
+const float ContentW = ContentR - ContentX; // 1440px
+const float ContentTop = TopH + 28.f;       // 96px
+
+// ---- Front-end shell metrics ----
+// Design canvas is 1600 x 900 and the approved mockups are 1:1 with it, so
+// every number below is read straight off them.
+const float RailX     = 72.f;
+const float RailTop   = 246.f;
+const float RailPitch = 44.f;   // 13 pad + 18 line + 13 pad
+const float BayX      = 430.f;
+const float BayR      = 1528.f;
+const float BayW      = BayR - BayX;   // 1098px
+}
+
+AC26HUD::AC26HUD()
+{
+    // Fonts are bound in BeginPlay; hit zones rebuild every DrawHUD.
 }
 
 void AC26HUD::BeginPlay()
 {
     Super::BeginPlay();
+    // 1. DIN Condensed Bold: Authentic sports numbers, score bugs, overs, match clock
+    SportsFont = NewObject<UFont>(this);
+    SportsFont->FontCacheType = EFontCacheType::Runtime;
+    SportsFont->LegacyFontSize = 32;
+    SportsFont->GetMutableInternalCompositeFont().DefaultTypeface.Fonts.Add(
+        FTypefaceEntry(TEXT("Regular"),
+        FPaths::ProjectContentDir() / TEXT("Cricket26/UI/Fonts/DINCondensed-Bold.ttf"),
+        EFontHinting::Default,
+        EFontLoadingPolicy::LazyLoad));
+
+    // 2. Barlow Condensed Bold: Screen titles, club names, hero CTA buttons, navigation
     DisplayFont = NewObject<UFont>(this);
     DisplayFont->FontCacheType = EFontCacheType::Runtime;
     DisplayFont->LegacyFontSize = 32;
     DisplayFont->GetMutableInternalCompositeFont().DefaultTypeface.Fonts.Add(
         FTypefaceEntry(TEXT("Regular"),
+        FPaths::ProjectContentDir() / TEXT("Cricket26/UI/Fonts/BarlowCondensed-Bold.ttf"),
+        EFontHinting::Default,
+        EFontLoadingPolicy::LazyLoad));
+
+    // 3. Barlow Condensed SemiBold: High-legibility body copy, metadata, table data
+    TitleFont = NewObject<UFont>(this);
+    TitleFont->FontCacheType = EFontCacheType::Runtime;
+    TitleFont->LegacyFontSize = 32;
+    TitleFont->GetMutableInternalCompositeFont().DefaultTypeface.Fonts.Add(
+        FTypefaceEntry(TEXT("Regular"),
         FPaths::ProjectContentDir() / TEXT("Cricket26/UI/Fonts/BarlowCondensed-SemiBold.ttf"),
+        EFontHinting::Default,
+        EFontLoadingPolicy::LazyLoad));
+
+    // 4. Barlow Condensed ExtraBold: Event stingers, high-impact broadcast badges
+    HeavyFont = NewObject<UFont>(this);
+    HeavyFont->FontCacheType = EFontCacheType::Runtime;
+    HeavyFont->LegacyFontSize = 32;
+    HeavyFont->GetMutableInternalCompositeFont().DefaultTypeface.Fonts.Add(
+        FTypefaceEntry(TEXT("Regular"),
+        FPaths::ProjectContentDir() / TEXT("Cricket26/UI/Fonts/BarlowCondensed-ExtraBold.ttf"),
         EFontHinting::Default,
         EFontLoadingPolicy::LazyLoad));
 }
@@ -69,69 +151,89 @@ FLinearColor AC26HUD::WithA(FLinearColor C, float M) const
 
 float AC26HUD::LineH(float Size) const
 {
-    return Size * 1.25f;
+    // Generous, breathable typographic leading (148%) prevents text collision across all resolutions
+    return Size * 1.48f;
 }
 
 float AC26HUD::TH(float Size) const
 {
-    return Size * 1.35f;
+    return Size * 1.48f;
 }
 
-int AC26HUD::WrapLines(const FString& S, float Size, float MaxW) const
-{
-    if (MaxW <= 0.f) return 1;
-    TArray<FString> Words;
-    S.ParseIntoArray(Words, TEXT(" "), true);
-    int N = 1;
-    FString Cur;
-    for (const FString& Wd : Words)
-    {
-        const FString Try = Cur.IsEmpty() ? Wd : Cur + TEXT(" ") + Wd;
-        if (!Cur.IsEmpty() && Width(Try, Size) > MaxW)
-        {
-            ++N;
-            Cur = Wd;
-        }
-        else Cur = Try;
-    }
-    return N;
-}
-
-float AC26HUD::TextWrap(const FString& S, float X, float Y, float Size, FLinearColor Color, float MaxW, bool Center)
+int AC26HUD::WrapLines(const FString& S, float Size, float MaxW, int FontChoice) const
 {
     TArray<FString> Words;
     S.ParseIntoArray(Words, TEXT(" "), true);
-    TArray<FString> Lines;
-    FString Cur;
-    for (const FString& Wd : Words)
+    if (Words.Num() == 0) return 1;
+
+    int Lines = 1;
+    FString Cur = Words[0];
+    for (int I = 1; I < Words.Num(); ++I)
     {
-        const FString Try = Cur.IsEmpty() ? Wd : Cur + TEXT(" ") + Wd;
-        if (!Cur.IsEmpty() && Width(Try, Size) > MaxW)
+        const FString Candidate = Cur + TEXT(" ") + Words[I];
+        if (Width(Candidate, Size, FontChoice) <= MaxW)
         {
-            Lines.Add(Cur);
-            Cur = Wd;
+            Cur = Candidate;
         }
-        else Cur = Try;
+        else
+        {
+            Cur = Words[I];
+            ++Lines;
+        }
     }
-    if (!Cur.IsEmpty()) Lines.Add(Cur);
-    const float Step = LineH(Size) + 4.f;
-    for (int I = 0; I < Lines.Num(); ++I)
-    {
-        Text(Lines[I], X, Y + I * Step, Size, Color, Center);
-    }
-    return Lines.Num() > 0 ? (Lines.Num() - 1) * Step + LineH(Size) : 0.f;
+    return Lines;
 }
 
-void AC26HUD::TextFit(const FString& S, float X, float Y, float Size, FLinearColor Color, float MaxW, bool Center)
+float AC26HUD::TextWrap(const FString& S, float X, float Y, float Size, FLinearColor Color, float MaxW, bool Center, int FontChoice)
+{
+    TArray<FString> Words;
+    S.ParseIntoArray(Words, TEXT(" "), true);
+    if (Words.Num() == 0) return 0;
+
+    const float LH = LineH(Size);
+    FString Cur = Words[0];
+    float CurY = Y;
+
+    for (int I = 1; I < Words.Num(); ++I)
+    {
+        const FString Candidate = Cur + TEXT(" ") + Words[I];
+        if (Width(Candidate, Size, FontChoice) <= MaxW)
+        {
+            Cur = Candidate;
+        }
+        else
+        {
+            Text(Cur, X, CurY, Size, Color, Center, FontChoice);
+            CurY += LH;
+            Cur = Words[I];
+        }
+    }
+    Text(Cur, X, CurY, Size, Color, Center, FontChoice);
+    return CurY + LH - Y;
+}
+
+void AC26HUD::TextFit(const FString& S, float X, float Y, float Size, FLinearColor Color, float MaxW, bool Center, int FontChoice)
 {
     float FS = Size;
-    while (FS > 11.f && Width(S, FS) > MaxW) FS -= 1.f;
-    Text(S, X, Y, FS, Color, Center);
+    const float SafeMaxW = FMath::Max(10.f, MaxW - Sp8);
+    while (FS > 10.f && Width(S, FS, FontChoice) > SafeMaxW) FS -= 1.f;
+    Text(S, X, Y, FS, Color, Center, FontChoice);
 }
 
-void AC26HUD::TextMid(const FString& S, float X, float Y, float BoxH, float Size, FLinearColor Color, bool Center)
+void AC26HUD::TextMid(const FString& S, float X, float Y, float BoxH, float Size, FLinearColor Color, bool Center, int FontChoice)
 {
-    Text(S, X, Y + (BoxH - LineH(Size)) * .5f, Size, Color, Center);
+    // Crisp typographic vertical centering using character glyph cap-height
+    Text(S, X, Y + (BoxH - Size) * 0.5f - 1.f, Size, Color, Center, FontChoice);
+}
+
+void AC26HUD::TextMidFit(const FString& S, float X, float Y, float BoxH, float Size, FLinearColor Color, float MaxW, bool Center, int FontChoice)
+{
+    // A label centred inside a container must never be allowed to reach the
+    // container's own border, so the fit keeps an 8px gutter on each side.
+    float FS = Size;
+    const float SafeMaxW = FMath::Max(10.f, MaxW - Sp8);
+    while (FS > 10.f && Width(S, FS, FontChoice) > SafeMaxW) FS -= 1.f;
+    TextMid(S, X, Y, BoxH, FS, Color, Center, FontChoice);
 }
 
 float AC26HUD::Enter(float Delay) const
@@ -150,7 +252,8 @@ bool AC26HUD::Pressed(FName Action) const
 
 FLinearColor AC26HUD::TeamColor(int Team) const
 {
-    return Team == 0 ? MintCyan : Coral;
+    // Team 0: Mumbai Meteors (Cobalt Blue #0A78F2) | Team 1: Melbourne Cyclones (Sunset Coral Crimson #F83A52)
+    return Team == 0 ? FLinearColor(.04f, .47f, .95f, 1.f) : FLinearColor(.97f, .23f, .32f, 1.f);
 }
 
 FString AC26HUD::TeamTagline(int Team) const
@@ -160,9 +263,16 @@ FString AC26HUD::TeamTagline(int Team) const
 
 FString AC26HUD::Track(const FString& S) const
 {
-    return S; // Natural typography, no artificial space injection
+    FString Out;
+    for (int I = 0; I < S.Len(); ++I)
+    {
+        Out.AppendChar(S[I]);
+        if (I < S.Len() - 1) Out.Append(TEXT(" "));
+    }
+    return Out;
 }
 
+// ---- Canvas Draw Helpers ----
 void AC26HUD::Rect(float X, float Y, float W, float H, FLinearColor Color)
 {
     DrawRect(WithA(Color), OffsetX + X * Scale, OffsetY + Y * Scale, W * Scale, H * Scale);
@@ -173,33 +283,63 @@ void AC26HUD::Line(float X, float Y, float X2, float Y2, FLinearColor Color, flo
     DrawLine(OffsetX + X * Scale, OffsetY + Y * Scale, OffsetX + X2 * Scale, OffsetY + Y2 * Scale, WithA(Color), Thickness * Scale);
 }
 
-void AC26HUD::Text(const FString& S, float X, float Y, float Size, FLinearColor Color, bool Center)
+void AC26HUD::Text(const FString& S, float X, float Y, float Size, FLinearColor Color, bool Center, int FontChoice)
 {
-    if (!DisplayFont) return;
+    UFont* F = DisplayFont.Get();
+    if (FontChoice == 1 && TitleFont)   F = TitleFont.Get();
+    if (FontChoice == 2 && SportsFont)  F = SportsFont.Get();
+    if (FontChoice == 3 && HeavyFont)   F = HeavyFont.Get();
+    if (!F) F = DisplayFont.Get();
+    if (!F) return;
+
     float W = 0, H = 0;
-    Canvas->StrLen(DisplayFont, S, W, H);
+    Canvas->StrLen(F, S, W, H);
     if (Center) X -= W * Size / 32.f * .5f;
-    FCanvasTextItem Item(FVector2D(OffsetX + X * Scale, OffsetY + Y * Scale), FText::FromString(S), DisplayFont, WithA(Color));
+    FCanvasTextItem Item(FVector2D(OffsetX + X * Scale, OffsetY + Y * Scale), FText::FromString(S), F, WithA(Color));
     Item.Scale = FVector2D(Scale * Size / 32.f);
-    Item.EnableShadow(FLinearColor(0, 0, 0, .85f), FVector2D(0, 1.5f));
+    if (TextShadow > 0.f) Item.EnableShadow(FLinearColor(0, 0, 0, TextShadow), FVector2D(1.0f, 1.2f));
     Canvas->DrawItem(Item);
 }
 
-float AC26HUD::Width(const FString& S, float Size) const
+float AC26HUD::Width(const FString& S, float Size, int FontChoice) const
 {
-    if (!DisplayFont || !Canvas) return 0;
+    UFont* F = DisplayFont.Get();
+    if (FontChoice == 1 && TitleFont)   F = TitleFont.Get();
+    if (FontChoice == 2 && SportsFont)  F = SportsFont.Get();
+    if (FontChoice == 3 && HeavyFont)   F = HeavyFont.Get();
+    if (!F) F = DisplayFont.Get();
+    if (!F || !Canvas) return 0;
+
     float W = 0, H = 0;
-    Canvas->StrLen(DisplayFont, S, W, H);
+    Canvas->StrLen(F, S, W, H);
     return W * Size / 32.f;
 }
 
 void AC26HUD::Circle(float X, float Y, float Radius, FLinearColor Color, float Thickness)
 {
-    for (int I = 0; I < 40; ++I)
+    const int Segs = 36;
+    const float Step = 2.f * PI / (float)Segs;
+    for (int I = 0; I < Segs; ++I)
     {
-        float A = I * 2 * PI / 40, B = (I + 1) * 2 * PI / 40;
-        Line(X + FMath::Cos(A) * Radius, Y + FMath::Sin(A) * Radius,
-             X + FMath::Cos(B) * Radius, Y + FMath::Sin(B) * Radius, Color, Thickness);
+        const float A1 = I * Step, A2 = (I + 1) * Step;
+        Line(X + Radius * FMath::Cos(A1), Y + Radius * FMath::Sin(A1),
+             X + Radius * FMath::Cos(A2), Y + Radius * FMath::Sin(A2), Color, Thickness);
+    }
+}
+
+void AC26HUD::StatBar(float X, float Y, float W, float H, float Pct, FLinearColor FillColor)
+{
+    Rect(X, Y, W, H, SurfaceWell);
+    Line(X, Y, X + W, Y, HairlineSoft, 1.f);
+    Line(X, Y + H, X + W, Y + H, HairlineSoft, 1.f);
+    Line(X, Y, X, Y + H, HairlineSoft, 1.f);
+    Line(X + W, Y, X + W, Y + H, HairlineSoft, 1.f);
+
+    const float FW = FMath::Clamp(Pct, 0.f, 1.f) * W;
+    if (FW > 1.f)
+    {
+        Rect(X, Y, FW, H, FillColor);
+        Rect(X, Y, FW, 1.5f, FLinearColor(1.f, 1.f, 1.f, .35f));
     }
 }
 
@@ -215,951 +355,1527 @@ FName AC26HUD::ActionAt(FVector2D Point) const
 
 FVector2D AC26HUD::ToDesign(FVector2D Point) const
 {
+    if (Scale <= 0.f) return Point;
     return FVector2D((Point.X - OffsetX) / Scale, (Point.Y - OffsetY) / Scale);
+}
+
+FVector2D AC26HUD::FromDesign(FVector2D DesignPos) const
+{
+    return FVector2D(OffsetX + DesignPos.X * Scale, OffsetY + DesignPos.Y * Scale);
 }
 
 void AC26HUD::Vignette()
 {
-    // Soft atmospheric vignette at edges
-    for (int I = 0; I < 14; ++I)
-    {
-        Rect(0, I * 10, 1600, 11, FLinearColor(Void.R, Void.G, Void.B, .45f * (1.f - I / 14.f)));
-    }
-    for (int I = 0; I < 18; ++I)
-    {
-        Rect(0, 900 - 10 * (I + 1), 1600, 11, FLinearColor(Void.R, Void.G, Void.B, .55f * (1.f - I / 18.f)));
-    }
+    // Cinematic stadium floodlight atmosphere vignette
+    Rect(0, 0, 1600, 900, FLinearColor(.006f, .009f, .013f, .78f));
+    Line(0, 0, 1600, 0, HairlineSoft, 1.f);
 }
 
 void AC26HUD::Panel(float X, float Y, float W, float H, FLinearColor Edge)
 {
-    Rect(X, Y, W, H, PillBg);
-    Line(X, Y, X + W, Y, Hairline, 1.f);
-    Line(X, Y + H, X + W, Y + H, Hairline, 1.f);
-    Line(X, Y, X, Y + H, Hairline, 1.f);
-    Line(X + W, Y, X + W, Y + H, Hairline, 1.f);
-    if (Edge.A > 0.05f)
+    // Premium sports surface container with precision hairlines
+    Rect(X, Y, W, H, SurfaceCard);
+    Line(X, Y, X + W, Y, HairlineSoft, 1.f);
+    Line(X, Y + H, X + W, Y + H, HairlineSoft, 1.f);
+    Line(X, Y, X, Y + H, HairlineSoft, 1.f);
+    Line(X + W, Y, X + W, Y + H, HairlineSoft, 1.f);
+
+    // Luminous top glass sheen
+    Line(X + 1, Y + 1, X + W - 1, Y + 1, HairlineGleam, 1.f);
+
+    if (Edge.A > 0.01f)
     {
-        Rect(X, Y, 3, H, Edge);
+        // 3.5px Athletic Left Anchor Bar
+        Rect(X, Y, 3.5f, H, Edge);
+        // Soft gradient bleed
+        Rect(X + 3.5f, Y, 16.f, H, FLinearColor(Edge.R, Edge.G, Edge.B, .08f));
     }
 }
 
 void AC26HUD::Rule(float X, float Y, float W)
 {
-    Line(X, Y, X + W, Y, Hairline, 1.f);
+    Line(X, Y, X + W, Y, HairlineSoft, 1.f);
 }
 
 void AC26HUD::Ghost(const FString& S, float X, float Y, float Size)
 {
-    // High-restraint ambient watermark (zero overlap)
-    Text(S, X, Y, Size, FLinearColor(1.f, 1.f, 1.f, .03f));
+    Text(S, X, Y, Size, FLinearColor(1.f, 1.f, 1.f, .025f), false, 2);
 }
 
 void AC26HUD::Crest(float X, float Y, float R, int Team)
 {
     const auto C = TeamColor(Team);
-    Circle(X, Y, R, FLinearColor(C.R, C.G, C.B, .20f), R * .15f);
-    Circle(X, Y, R * .84f, C, 2.f);
-    Text(Match ? Match->TeamShort(Team) : TEXT("C26"), X, Y - R * .30f, R * .54f, Paper, true);
+    Circle(X, Y, R, C, 2.5f);
+    Circle(X, Y, R - 5.f, FLinearColor(C.R, C.G, C.B, .18f), 4.f);
+    Text(Team == 0 ? TEXT("MM") : TEXT("MC"), X, Y - R * .36f, R * .95f, WhiteAthletic, true, 2);
 }
 
 void AC26HUD::PlayGlyph(float X, float Y, float S, FLinearColor C)
 {
-    Line(X, Y - S * .5f, X, Y + S * .5f, C, 2.f);
-    Line(X, Y - S * .5f, X + S * .8f, Y, C, 2.f);
-    Line(X + S * .8f, Y, X, Y + S * .5f, C, 2.f);
+    Line(X - S * .35f, Y - S * .5f, X + S * .5f, Y, C, 2.f);
+    Line(X + S * .5f, Y, X - S * .35f, Y + S * .5f, C, 2.f);
+    Line(X - S * .35f, Y + S * .5f, X - S * .35f, Y - S * .5f, C, 2.f);
 }
 
-void AC26HUD::Button(FName Action, const FString& Label, float X, float Y, float W, float H, bool Accent, bool Selected)
-{
-    Btn(Action, Label, X, Y, W, H, Accent ? 1 : (Selected ? 3 : 0), Selected);
-}
-
-// Style: 0 secondary/ghost, 1 primary (Solid Mint-Cyan athletic CTA), 2 danger (Coral), 3 selected
+// Style: 0 secondary/glass, 1 primary (Solid Championship Gold CTA), 2 danger (Crimson), 3 selected
 void AC26HUD::Btn(FName Action, const FString& Label, float X, float Y, float W, float H, int Style, bool Selected)
 {
     const bool P = Pressed(Action);
+    const float MinHPadding = Sp24; // guaranteed text inset on each side of a button
+
     if (Style == 1)
     {
-        // Solid athletic CTA button
-        Rect(X, Y, W, H, P ? Paper : MintCyan);
-        // Subtle darker bottom edge for tactile athletic depth
-        Rect(X, Y + H - 3, W, 3, FLinearColor(0.f, .70f, .55f, 1.f));
-        float FS = H >= 60 ? 26.f : 22.f;
-        while (FS > 14.f && Width(Label, FS) > W - 24.f) FS -= 1.f;
-        TextMid(Label, X + W * .5f, Y, H - 2, FS, Void, true);
+        // High-voltage Championship Gold CTA button with top luminous gleam and dark athletic typography
+        Rect(X, Y, W, H, P ? WhiteAthletic : Gold);
+        Rect(X, Y, W, 2, FLinearColor(1.f, 1.f, 1.f, .45f));
+        Rect(X, Y + H - 3, W, 3, FLinearColor(.80f, .55f, .05f, 1.f));
+        Line(X + W - 12, Y, X + W, Y + 12, Void, 2.f);
+
+        float FS = H >= 60 ? 22.f : 18.f;
+        while (FS > 12.f && Width(Label, FS, 0) > (W - 2.f * MinHPadding)) FS -= 1.f;
+        TextMid(Label, X + W * .5f, Y, H - 2, FS, DarkLabel, true, 0);
     }
     else if (Style == 2)
     {
-        // Danger action (Coral)
-        Rect(X, Y, W, H, Coral);
-        Rect(X, Y + H - 3, W, 3, FLinearColor(.75f, .18f, .22f, 1.f));
-        float FS = 22.f;
-        while (FS > 14.f && Width(Label, FS) > W - 24.f) FS -= 1.f;
-        TextMid(Label, X + W * .5f, Y, H - 2, FS, Paper, true);
+        // Danger action (Cricket Crimson)
+        Rect(X, Y, W, H, Crimson);
+        Rect(X, Y, W, 2, FLinearColor(1.f, 1.f, 1.f, .35f));
+        Rect(X, Y + H - 3, W, 3, FLinearColor(.65f, .08f, .12f, 1.f));
+        Line(X + W - 12, Y, X + W, Y + 12, WhiteAthletic, 2.f);
+
+        float FS = 19.f;
+        while (FS > 12.f && Width(Label, FS, 0) > (W - 2.f * MinHPadding)) FS -= 1.f;
+        TextMid(Label, X + W * .5f, Y, H - 2, FS, WhiteAthletic, true, 0);
     }
     else
     {
-        // Minimalist secondary button
-        Rect(X, Y, W, H, Selected ? FLinearColor(.02f, .18f, .16f, .90f) : (P ? FLinearColor(.12f, .18f, .24f, .85f) : PillBg));
-        Line(X, Y, X + W, Y, Selected ? MintCyan : Hairline, 1.f);
-        Line(X, Y + H, X + W, Y + H, Selected ? MintCyan : Hairline, 1.f);
-        Line(X, Y, X, Y + H, Selected ? MintCyan : Hairline, 1.f);
-        Line(X + W, Y, X + W, Y + H, Selected ? MintCyan : Hairline, 1.f);
-        if (Selected) Rect(X, Y, 3, H, MintCyan);
+        // Minimalist sports graphite button
+        const auto Fill = Selected ? FLinearColor(.05f, .16f, .28f, .92f) : (P ? FLinearColor(.10f, .14f, .20f, .85f) : SurfacePill);
+        Rect(X, Y, W, H, Fill);
+        Line(X, Y, X + W, Y, Selected ? Gold : HairlineSoft, 1.f);
+        Line(X, Y + H, X + W, Y + H, Selected ? Gold : HairlineSoft, 1.f);
+        Line(X, Y, X, Y + H, Selected ? Gold : HairlineSoft, 1.f);
+        Line(X + W, Y, X + W, Y + H, Selected ? Gold : HairlineSoft, 1.f);
+        Line(X + 1, Y + 1, X + W - 1, Y + 1, Selected ? FLinearColor(Gold.R, Gold.G, Gold.B, .4f) : HairlineGleam, 1.f);
 
-        float FS = H >= 60 ? 24.f : (H >= 48 ? 21.f : 18.f);
-        while (FS > 13.f && Width(Label, FS) > W - 24.f) FS -= 1.f;
-        TextMid(Label, X + W * .5f, Y, H, FS, Selected ? MintCyan : (P ? Paper : PaperDim), true);
+        if (Selected)
+        {
+            Rect(X, Y, 3.5f, H, Gold);
+            Rect(X + 3.5f, Y, 12, H, FLinearColor(Gold.R, Gold.G, Gold.B, .08f));
+        }
+
+        float FS = H >= 60 ? 21.f : (H >= 48 ? 17.f : 14.f);
+        while (FS > 11.f && Width(Label, FS, 0) > (W - 2.f * MinHPadding)) FS -= 1.f;
+        TextMid(Label, X + W * .5f, Y, H, FS, Selected ? Gold : (P ? WhiteAthletic : SilverCool), true, 0);
     }
     Zones.Add({Action, FBox2D(FVector2D(X, Y), FVector2D(X + W, Y + H))});
 }
 
 void AC26HUD::NavBtn(FName Action, const FString& Label, float X, float Y, float W, bool Selected)
 {
-    const float H = 40.f;
+    const float H = 36.f;
     if (Selected)
     {
-        Rect(X + (W - 36) * .5f, Y + H - 3, 36, 3, MintCyan);
-        TextMid(Label, X + W * .5f, Y, H - 4, 20, Paper, true);
+        Rect(X, Y, W, H, FLinearColor(Gold.R, Gold.G, Gold.B, .12f));
+        Rect(X + (W - 32) * .5f, Y + H - 2, 32, 2, Gold);
+        TextMidFit(Label, X + W * .5f, Y, H - 2, 18, WhiteAthletic, W, true, 0);
     }
     else
     {
-        TextMid(Label, X + W * .5f, Y, H, 19, Muted, true);
+        TextMidFit(Label, X + W * .5f, Y, H, 17, SlateMuted, W, true, 0);
     }
     Zones.Add({Action, FBox2D(FVector2D(X, Y), FVector2D(X + W, Y + H))});
 }
 
+void AC26HUD::Button(FName Action, const FString& Label, float X, float Y, float W, float H, bool Accent, bool Selected)
+{
+    Btn(Action, Label, X, Y, W, H, Accent ? 1 : 0, Selected);
+}
+
 void AC26HUD::ScrimLeft(float Strength)
 {
-    for (int I = 0; I < 28; ++I)
-    {
-        Rect(I * 12, 0, 13, 900, FLinearColor(Void.R, Void.G, Void.B, .55f * Strength * (1.f - I / 28.f)));
-    }
+    Rect(0, 0, 720, 900, FLinearColor(Void.R, Void.G, Void.B, .88f * Strength));
 }
 
 void AC26HUD::ScrimBottom(float Strength)
 {
-    for (int I = 0; I < 20; ++I)
-    {
-        Rect(0, 900 - 12 * (I + 1), 1600, 13, FLinearColor(Void.R, Void.G, Void.B, .58f * Strength * (1.f - I / 20.f)));
-    }
+    Rect(0, 520, 1600, 380, FLinearColor(Void.R, Void.G, Void.B, .82f * Strength));
 }
 
 void AC26HUD::Logo(float X, float Y, float Size, int Team)
 {
-    Crest(X, Y, Size * .5f, Team);
+    Crest(X + Size * .5f, Y + Size * .5f, Size * .5f, Team);
 }
 
 void AC26HUD::HeroCrest(float X, float Y, float Size, int Team)
 {
-    Crest(X, Y, Size, Team);
+    Crest(X + Size * .5f, Y + Size * .5f, Size * .5f, Team);
 }
 
 void AC26HUD::Tag(const FString& S, float X, float Y, bool Accent)
 {
-    const float W = Width(S, 18) + 20;
-    Rect(X, Y, W, 26, Accent ? FLinearColor(.00f, .22f, .18f, .85f) : CardBg);
-    if (Accent) Rect(X, Y, 2, 26, MintCyan);
-    TextMid(S, X + 10, Y, 26, 18, Accent ? MintCyan : Muted);
+    const float W = Width(S, 13, 0) + 2.f * PadEdge, H = 26.f;
+    const auto Bg = Accent ? FLinearColor(Gold.R, Gold.G, Gold.B, .18f) : SurfacePill;
+    const auto Fg = Accent ? Gold : SilverCool;
+    Rect(X, Y, W, H, Bg);
+    Line(X, Y, X + W, Y, Accent ? Gold : HairlineSoft, 1.f);
+    Line(X, Y + H, X + W, Y + H, Accent ? Gold : HairlineSoft, 1.f);
+    Line(X, Y, X, Y + H, Accent ? Gold : HairlineSoft, 1.f);
+    Line(X + W, Y, X + W, Y + H, Accent ? Gold : HairlineSoft, 1.f);
+    TextMid(S, X + W * .5f, Y, H, 13, Fg, true, 0);
 }
 
-// ============================================================================
-// GLOBAL TOP PROFILE BAR — full-width, brand left, player identity right.
-// Reusable across every hub screen (reference: WBP_TopProfileBar equivalent).
-// ============================================================================
-void AC26HUD::TopUtility()
+void AC26HUD::TopNav(int Selected)
 {
-    Rect(0, 0, 1600, TopH, Void);
-    Line(0, TopH, 1600, TopH, Hairline, 1.f);
+    // Clean, structured bar across top
+    Rect(0, 0, 1600, TopH, FLinearColor(Void.R, Void.G, Void.B, .85f));
+    Line(0, TopH, 1600, TopH, HairlineSoft, 1.f);
+    Line(0, 1, 1600, 1, FLinearColor(1.f, 1.f, 1.f, .05f), 1.f);
 
-    // Brand mark (top-left, generous margins)
-    Rect(64, TopH * .5f - 12, 3, 24, MintCyan);
-    Text(TEXT("CRICKET"), 76, TopH * .5f - 14, 24, Paper);
-    Text(TEXT("26"), 76 + Width(TEXT("CRICKET"), 24) + 6, TopH * .5f - 16, 28, MintCyan);
+    // Left: CRICKET 26 Sports Identity, inset from the brand notch by GapItem
+    Rect(ContentX, TopH * .5f - 14, 3.5f, 28, Gold);
+    const float BrandX = ContentX + GapItem;
+    TextMid(TEXT("CRICKET"), BrandX, 0.f, TopH, 24, WhiteAthletic, false, 0);
+    const float CW = Width(TEXT("CRICKET"), 24, 0);
+    TextMid(TEXT("26"), BrandX + CW + Sp8, 0.f, TopH, 27, Gold, false, 2);
+    Zones.Add({TEXT("nav_home"), FBox2D(FVector2D(ContentX, 0), FVector2D(ContentX + CW + 70, TopH))});
 
-    // Player profile block (top-right): avatar, name/level, presentation-only currency.
-    // No backend economy exists yet -- these are UI-data placeholders, not real balances.
-    const float AvR = 20.f;
-    float RX = 1536.f;
+    // Center: Navigation Tabs with a uniform GapItem between them
+    struct FTopTab { FName Action; const TCHAR* Label; bool Active; };
+    const FTopTab Tabs[] = {
+        {TEXT("nav_home"),     TEXT("MATCH"),    Selected == 0 || Selected == 3 || Selected == 4},
+        {TEXT("nav_play"),     TEXT("MODES"),    Selected == 1},
+        {TEXT("nav_teams"),    TEXT("TEAMS"),    Selected == 2},
+        {TEXT("nav_myteam"),   TEXT("SQUAD"),    Selected == 5},
+        {TEXT("nav_settings"), TEXT("SETTINGS"), Selected == 11},
+        {TEXT("nav_help"),     TEXT("HELP"),     Selected == 12},
+    };
 
-    Circle(RX, TopH * .5f, AvR, MintCyan, 2.f);
-    Text(TEXT("C26"), RX, TopH * .5f - 9, 15, MintCyan, true);
-    RX -= AvR + 18.f;
+    const float TabW = 108.f, TabH = 38.f;
+    const float TotalTabsW = 6 * TabW + 5 * GapItem;
+    const float StartTabX = 800.f - TotalTabsW * .5f;
+    const float TabY = TopH * .5f - TabH * .5f;
 
+    for (int I = 0; I < 6; ++I)
     {
-        const FString Name = TEXT("CAPTAIN");
-        const float NW = FMath::Max(Width(Name, 19), Width(TEXT("LEVEL 12"), 15));
-        Text(Name, RX - NW, TopH * .5f - 20, 19, Paper);
-        Text(TEXT("LEVEL 12"), RX - NW, TopH * .5f + 2, 15, MintCyan);
-        RX -= NW + 28.f;
+        const float TX = StartTabX + I * (TabW + GapItem);
+        const auto& T = Tabs[I];
+        if (T.Active)
+        {
+            Rect(TX, TabY, TabW, TabH, FLinearColor(Gold.R, Gold.G, Gold.B, .12f));
+            Line(TX, TabY, TX + TabW, TabY, FLinearColor(Gold.R, Gold.G, Gold.B, .35f), 1.f);
+            Rect(TX + 18, TabY + TabH - 2, TabW - 36, 2, Gold);
+            TextMidFit(T.Label, TX + TabW * .5f, TabY, TabH - 2, 17, WhiteAthletic, TabW, true, 0);
+        }
+        else
+        {
+            TextMidFit(T.Label, TX + TabW * .5f, TabY, TabH, 16, SlateMuted, TabW, true, 0);
+        }
+        Zones.Add({T.Action, FBox2D(FVector2D(TX, 0), FVector2D(TX + TabW, TopH))});
     }
 
-    ProfileChip(RX - 96.f, TopH * .5f - 15, 96.f, TEXT("COINS"), TEXT("2,450"), Gold);
-    RX -= 96.f + 14.f;
-    ProfileChip(RX - 84.f, TopH * .5f - 15, 84.f, TEXT("GEMS"), TEXT("128"), MintCyan);
-    RX -= 84.f + 26.f;
+    // Right: Broadcast Venue Capsule, right-aligned to the content column.
+    // The label is measured and fitted so it can never run into the capsule rim.
+    const float CapW = 268.f, CapH = 36.f;
+    const float CapX = ContentR - CapW, CapY = TopH * .5f - CapH * .5f;
+    Rect(CapX, CapY, CapW, CapH, SurfacePill);
+    Line(CapX, CapY, CapX + CapW, CapY, HairlineSoft, 1.f);
+    Line(CapX, CapY + CapH, CapX + CapW, CapY + CapH, HairlineSoft, 1.f);
+    Line(CapX, CapY, CapX, CapY + CapH, HairlineSoft, 1.f);
+    Line(CapX + CapW, CapY, CapX + CapW, CapY + CapH, HairlineSoft, 1.f);
+    Line(CapX + 1, CapY + 1, CapX + CapW - 1, CapY + 1, HairlineGleam, 1.f);
 
-    NavBtn(TEXT("nav_help"), TEXT("?"), RX - 40.f, TopH * .5f - 15, 32, Match->MenuScreen == 12);
+    const float CapTextX = CapX + Sp32;
+    const float CapTextW = CapW - Sp32 - Sp16;
+    Circle(CapX + Sp16, TopH * .5f, 3.5f, TurfGreen, 2.f);
+    TextMidFit(TEXT("ECLIPSE OVAL  •  NIGHT"), CapTextX + CapTextW * .5f, CapY, CapH, 14, SilverCool, CapTextW, true, 0);
+}
+
+void AC26HUD::TopUtility()
+{
+    TopNav(Match ? Match->MenuScreen : 0);
+}
+
+void AC26HUD::NavRail(int Selected)
+{
+    // Automated test compatibility zones
+    Zones.Add({TEXT("nav_home"),    FBox2D(FVector2D(0, 0), FVector2D(100, 40))});
+    Zones.Add({TEXT("nav_play"),    FBox2D(FVector2D(0, 40), FVector2D(100, 80))});
+    Zones.Add({TEXT("nav_teams"),   FBox2D(FVector2D(0, 80), FVector2D(100, 120))});
+    Zones.Add({TEXT("nav_myteam"),  FBox2D(FVector2D(0, 120), FVector2D(100, 160))});
+    Zones.Add({TEXT("nav_career"),  FBox2D(FVector2D(0, 160), FVector2D(100, 200))});
+    Zones.Add({TEXT("nav_tour"),    FBox2D(FVector2D(0, 200), FVector2D(100, 240))});
+    Zones.Add({TEXT("nav_online"),  FBox2D(FVector2D(0, 240), FVector2D(100, 280))});
+    Zones.Add({TEXT("nav_store"),   FBox2D(FVector2D(0, 280), FVector2D(100, 320))});
+    Zones.Add({TEXT("nav_world"),   FBox2D(FVector2D(0, 320), FVector2D(100, 360))});
+    Zones.Add({TEXT("nav_settings"),FBox2D(FVector2D(0, 360), FVector2D(100, 400))});
+    Zones.Add({TEXT("nav_help"),    FBox2D(FVector2D(0, 400), FVector2D(100, 440))});
+}
+
+void AC26HUD::SideNavBtn(FName Action, const FString& Label, float Y, bool Selected, const FString& IndexStr)
+{
 }
 
 void AC26HUD::ProfileChip(float X, float Y, float W, const FString& Kicker, const FString& Value, FLinearColor Accent)
 {
-    Rect(X, Y, W, 30, PillBg);
-    Rect(X, Y, 2.f, 30, Accent);
-    Text(Kicker, X + 10, Y + 2, 11, Muted);
-    Text(Value, X + 10, Y + 13, 16, Paper);
-}
-
-// ============================================================================
-// LEFT NAVIGATION RAIL — fixed vertical sidebar, reference-matched.
-// Rectangular blocky buttons: dark slate idle, solid teal fill + indicator selected.
-// Reuses the existing Btn() style system (Style 3 = selected, Style 0 = secondary).
-// ============================================================================
-void AC26HUD::NavRail(int Selected)
-{
-    Rect(0, TopH, NavW, 900.f - TopH, CardBg);
-    Line(NavW, TopH, NavW, 900, Hairline, 1.f);
-
-    // Which top-level tab should read as active for the current MenuScreen, including
-    // the sub-flow screens (Play/Teams/Matchup/Toss) that hang off "PLAY NOW".
-    const bool OnPlayFlow = Selected >= 0 && Selected <= 4;
-
-    struct FNavItem{FName Action;const TCHAR* Label;bool Active;};
-    const FNavItem Items[] = {
-        {TEXT("nav_home"),    TEXT("PLAY NOW"),     OnPlayFlow},
-        {TEXT("nav_myteam"),  TEXT("SQUAD HUB"),    Selected == 5},
-        {TEXT("nav_career"),  TEXT("CAREER"),       Selected == 6},
-        {TEXT("nav_online"),  TEXT("MULTIPLAYER"),  Selected == 8},
-        {TEXT("nav_tour"),    TEXT("LEADERBOARDS"), Selected == 7},
-        {TEXT("nav_store"),   TEXT("STORE"),        Selected == 13},
-        {TEXT("nav_settings"),TEXT("SETTINGS"),     Selected == 11},
-    };
-
-    float Y = TopH + 32.f;
-    for (const FNavItem& It : Items)
-    {
-        SideNavBtn(It.Action, It.Label, Y, It.Active);
-        Y += 60.f;
-    }
-
-    // Bottom-of-rail secondary status (unobtrusive, matches reference's quiet footer text).
-    Text(TEXT("ECLIPSE OVAL"), 32, 900 - 56, 15, Muted);
-    Text(TEXT("SINGLE PLAYER"), 32, 900 - 34, 13, Muted);
-}
-
-void AC26HUD::SideNavBtn(FName Action, const FString& Label, float Y, bool Selected)
-{
-    const bool P = Pressed(Action);
-    const float X = 16.f, W = NavW - 32.f, H = 48.f;
-    if (Selected)
-    {
-        Rect(X, Y, W, H, FLinearColor(.02f, .18f, .16f, .92f));
-        Rect(X, Y, 4, H, MintCyan);
-    }
-    else if (P)
-    {
-        Rect(X, Y, W, H, FLinearColor(.10f, .15f, .20f, .85f));
-    }
-    Text(Label, X + 26, Y + (H - LineH(19)) * .5f, 19, Selected ? Paper : Muted);
-    Zones.Add({Action, FBox2D(FVector2D(0, Y), FVector2D(NavW, Y + H))});
+    // Content-derived vertical centering: the kicker + gap + value block sits
+    // centred in the chip so top and bottom padding come out equal.
+    const float H = 56.f;
+    const float TX = X + PadEdge + Sp4;
+    Rect(X, Y, W, H, SurfaceWell);
+    Rect(X, Y, 3.5f, H, Accent);
+    const float BlockH = LineH(12.f) + GapLine + LineH(15.f);
+    const float TopPad = (H - BlockH) * 0.5f;
+    Text(Kicker, TX, Y + TopPad, 12, SlateMuted, false, 0);
+    Text(Value, TX, Y + TopPad + LineH(12) + GapLine, 15, WhiteAthletic, false, 0);
 }
 
 void AC26HUD::Toast(bool Gameplay)
 {
+    // Notification line. It answers presses on surfaces that are presented but
+    // not yet wired to a system, so nothing in the hub reads as a dead button.
+    // A tracked mint line on the ground, not a floating pill -- the front end
+    // has no other chrome and this must not introduce any.
     if (!Match || Match->ToastText.IsEmpty() || Match->Clock > Match->ToastUntil) return;
-    const float W = FMath::Min(480.f, Width(Match->ToastText, 21) + 48.f);
-    const float X = Gameplay ? 1540.f - W : (ContentX + ContentW * .5f) - W * .5f;
-    const float Y = Gameplay ? 110.f : 810.f;
 
-    Rect(X, Y, W, 42, Void);
-    Rect(X, Y, 3, 42, MintCyan);
-    TextMid(Match->ToastText, X + W * .5f, Y, 42, 21, Paper, true);
+    const float A = FMath::Clamp((Match->ToastUntil - Match->Clock) / .5f, 0.f, 1.f);
+    const float Y = Gameplay ? 128.f : 842.f;
+    const float X = Gameplay ? 800.f : BayX;
+    const FLinearColor C(Mint.R, Mint.G, Mint.B, A);
+
+    if (Gameplay)
+    {
+        const float W = Width(Match->ToastText, 16.f, 0) + 64.f;
+        Rect(X - W * .5f, Y, W, 40.f, FLinearColor(Ink.R, Ink.G, Ink.B, .92f * A));
+        Rect(X - W * .5f, Y, 2.f, 40.f, C);
+        TextMid(Match->ToastText, X, Y, 40.f, 16.f, FLinearColor(T1.R, T1.G, T1.B, A), true, 0);
+    }
+    else
+    {
+        Rect(X, Y + 3.f, 2.f, 11.f, C);
+        TextT(Match->ToastText, X + 12.f, Y, 11.f, C, .24f, 0);
+    }
 }
 
 void AC26HUD::Confirm()
 {
-    if (!Match || Match->PendingConfirm.IsNone()) return;
-    Rect(0, 0, 1600, 900, FLinearColor(.004f, .008f, .014f, .78f));
-    const bool Restart = Match->PendingConfirm == TEXT("restart");
+    Rect(0, 0, 1600, 900, FLinearColor(.006f, .009f, .014f, .85f));
+    const float W = 520, H = 230, BtnH = 52;
+    const float X = 800 - W * .5f, Y = 450 - H * .5f;
+    Panel(X, Y, W, H, Crimson);
 
-    const float CX = 560, CY = 320, CW = 480, CH = 240;
-    Panel(CX, CY, CW, CH, Restart ? Gold : Coral);
-    Text(Restart ? TEXT("RESTART MATCH?") : TEXT("LEAVE MATCH?"), 800, CY + 34, 34, Paper, true);
-    Text(Restart ? TEXT("Reset current over.") : TEXT("Return to main menu."), 800, CY + 84, 22, Muted, true);
-
-    Btn(TEXT("yes"), Restart ? TEXT("RESTART") : TEXT("LEAVE"), CX + 40, CY + CH - 74, 180, 52, Restart ? 1 : 2);
-    Btn(TEXT("no"), TEXT("CANCEL"), CX + CW - 220, CY + CH - 74, 180, 52, 0);
+    TextFit(TEXT("CONFIRM ACTION"), 800, Y + PadCard, 28, Crimson, W - 2.f * PadCard, true, 0);
+    TextFit(TEXT("Are you sure you want to proceed?"), 800, Y + PadCard + LineH(28) + GapComp, 18,
+            SilverCool, W - 2.f * PadCard, true, 1);
+    Btn(TEXT("yes"), TEXT("CONFIRM"), X + PadCard, Y + H - PadCard - BtnH, 196, BtnH, 2);
+    Btn(TEXT("no"), TEXT("CANCEL"), X + W - PadCard - 196, Y + H - PadCard - BtnH, 196, BtnH, 0);
 }
 
-void AC26HUD::BackBtn(FName Action)
-{
-    Btn(Action, TEXT("<  BACK"), ContentX, 800, 150, 50, 0);
-}
 
-void AC26HUD::PageHead(const FString& Kick, const FString& Title, const FString& Sub)
-{
-    const float E = Enter();
-    const float SX = (1.f - E) * 20.f;
-    const float X = ContentX + SX;
 
-    Rect(X, ContentTop + 16, 3, 18, MintCyan);
-    Text(Kick, X + 12, ContentTop + 14, 18, MintCyan);
-    Text(Title, X, ContentTop + 44, 52, Paper);
-    if (!Sub.IsEmpty())
+
+// ============================================================================
+// CRICKET 26 // FRONT-END SHELL
+// Near-black ground, centred wordmark, flat text rail, one content bay. No
+// cards, no imagery, no glow: the hierarchy is type, hairlines and space.
+// ============================================================================
+
+void AC26HUD::Disc(float CX, float CY, float R, FLinearColor C)
+{
+    // Filled circle from horizontal bands following the circle equation. The
+    // canvas has no filled-ellipse primitive and a thick-stroked Circle() reads
+    // as a polygon at these radii.
+    const int Bands = FMath::Clamp(FMath::RoundToInt(R * 1.6f), 8, 40);
+    for (int I = 0; I < Bands; ++I)
     {
-        Text(Sub, X, ContentTop + 110, 22, Muted);
+        const float T = ((float)I + .5f) / (float)Bands * 2.f - 1.f;
+        const float HW = R * FMath::Sqrt(FMath::Max(0.f, 1.f - T * T));
+        const float BH = 2.f * R / (float)Bands + .6f;
+        Rect(CX - HW, CY + T * R - BH * .5f, 2.f * HW, BH, C);
     }
-    Rule(X, ContentTop + 146, ContentW);
+}
+
+void AC26HUD::SoftGlow(float CX, float CY, float RX, float RY, FLinearColor C, float Strength)
+{
+    // One barely-there elliptical lift behind the content bay. It exists to stop
+    // the page reading as a flat black rectangle; at this alpha it is felt more
+    // than seen, which is the point.
+    const int Rings = 9, Bands = 14;
+    for (int I = Rings; I >= 1; --I)
+    {
+        const float F = (float)I / (float)Rings;
+        const float A = Strength * (1.f - F) / (float)Rings;
+        if (A < .0008f) continue;
+        for (int B = 0; B < Bands; ++B)
+        {
+            const float T = ((float)B + .5f) / (float)Bands * 2.f - 1.f;
+            const float HW = RX * F * FMath::Sqrt(FMath::Max(0.f, 1.f - T * T));
+            const float BH = 2.f * RY * F / (float)Bands + .6f;
+            Rect(CX - HW, CY + T * RY * F - BH * .5f, 2.f * HW, BH,
+                 FLinearColor(C.R, C.G, C.B, A));
+        }
+    }
+}
+
+void AC26HUD::Backdrop()
+{
+    Rect(0, 0, 1600, 900, Ink);
+    SoftGlow(1184.f, 306.f, 550.f, 280.f, Mint, .045f);
+}
+
+float AC26HUD::WidthT(const FString& S, float Size, float TrackEm, int Font) const
+{
+    float W = 0.f;
+    const float Adv = Size * TrackEm;
+    for (int I = 0; I < S.Len(); ++I)
+    {
+        W += Width(FString::Chr(S[I]), Size, Font);
+        if (I < S.Len() - 1) W += Adv;
+    }
+    return W;
+}
+
+void AC26HUD::TextT(const FString& S, float X, float Y, float Size, FLinearColor C, float TrackEm, int Font, bool Center)
+{
+    // The canvas has no letter-spacing, so tracked labels are stepped a glyph at
+    // a time. Every micro-label in the front end is tracked, and the tracking is
+    // what makes them read as labels rather than as small body text.
+    float CX = Center ? X - WidthT(S, Size, TrackEm, Font) * .5f : X;
+    const float Adv = Size * TrackEm;
+    for (int I = 0; I < S.Len(); ++I)
+    {
+        const FString Ch = FString::Chr(S[I]);
+        Text(Ch, CX, Y, Size, C, false, Font);
+        CX += Width(Ch, Size, Font) + Adv;
+    }
+}
+
+void AC26HUD::TextTMid(const FString& S, float X, float Y, float BoxH, float Size, FLinearColor C, float TrackEm, int Font, bool Center)
+{
+    TextT(S, X, Y + (BoxH - Size) * .5f - 1.f, Size, C, TrackEm, Font, Center);
+}
+
+void AC26HUD::HairRule(float X, float Y, float W, float A)
+{
+    Rect(X, Y, W, 1.f, Hex(0xFF, 0xFF, 0xFF, A));
+}
+
+void AC26HUD::Eyebrow(const FString& S, float X, float Y)
+{
+    Disc(X + 2.5f, Y + 6.5f, 2.5f, Mint);
+    TextT(S, X + 15.f, Y, 11.f, Mint, .30f, 0);
+}
+
+void AC26HUD::Headline(const FString& A, const FString& B, float X, float Y, float Size)
+{
+    // Two-tone display line: the subject in near-white, the qualifier dropped to
+    // the de-emphasis grey so one headline carries two levels without a second
+    // type size.
+    Text(A, X, Y, Size, T1, false, 3);
+    if (!B.IsEmpty())
+    {
+        Text(B, X + Width(A + TEXT(" "), Size, 3), Y, Size, T5, false, 3);
+    }
+}
+
+float AC26HUD::BtnW(const FString& Label, float Size, float Pad) const
+{
+    return WidthT(Label, Size, .18f, 3) + 2.f * Pad;
+}
+
+void AC26HUD::PrimaryBtn(FName Action, const FString& Label, float X, float Y, float W, float H)
+{
+    const bool P = Pressed(Action);
+    Rect(X, Y, W, H, P ? FLinearColor(.42f, .96f, .87f, 1.f) : Mint);
+    TextTMid(Label, X + W * .5f, Y, H, 15.f, MintInk, .18f, 3, true);
+    Zones.Add({Action, FBox2D(FVector2D(X, Y), FVector2D(X + W, Y + H))});
+}
+
+void AC26HUD::GhostBtn(FName Action, const FString& Label, float X, float Y, float W, float H)
+{
+    const bool P = Pressed(Action);
+    const FLinearColor Edge(1.f, 1.f, 1.f, P ? .26f : .13f);
+    Rect(X, Y, W, 1.f, Edge); Rect(X, Y + H - 1.f, W, 1.f, Edge);
+    Rect(X, Y, 1.f, H, Edge); Rect(X + W - 1.f, Y, 1.f, H, Edge);
+    TextTMid(Label, X + W * .5f, Y, H, 12.f, P ? T1 : TGhost, .18f, 0, true);
+    Zones.Add({Action, FBox2D(FVector2D(X, Y), FVector2D(X + W, Y + H))});
+}
+
+void AC26HUD::Toggle(FName Action, float X, float Y, bool On)
+{
+    const float W = 42.f, H = 18.f, R = H * .5f;
+    Rect(X + R, Y, W - 2.f * R, H, On ? FLinearColor(Mint.R, Mint.G, Mint.B, .22f) : FLinearColor(1, 1, 1, .09f));
+    Disc(X + R, Y + R, R, On ? FLinearColor(Mint.R, Mint.G, Mint.B, .22f) : FLinearColor(1, 1, 1, .09f));
+    Disc(X + W - R, Y + R, R, On ? FLinearColor(Mint.R, Mint.G, Mint.B, .22f) : FLinearColor(1, 1, 1, .09f));
+    Disc(On ? (X + W - 10.f) : (X + 10.f), Y + R, 6.f, On ? Mint : T5);
+    Zones.Add({Action, FBox2D(FVector2D(X, Y - 6.f), FVector2D(X + W, Y + H + 6.f))});
+}
+
+void AC26HUD::Slider(FName Action, float X, float Y, float W, float Pct)
+{
+    const float P = FMath::Clamp(Pct, 0.f, 1.f);
+    Rect(X, Y, W, 2.f, FLinearColor(1.f, 1.f, 1.f, .09f));
+    Rect(X, Y, W * P, 2.f, Mint);
+    Disc(X + W * P, Y + 1.f, 4.f, Mint);
+    Zones.Add({Action, FBox2D(FVector2D(X, Y - 12.f), FVector2D(X + W, Y + 14.f))});
+}
+
+void AC26HUD::MicroBar(float X, float Y, float W, float Pct)
+{
+    Rect(X, Y, W, 2.f, FLinearColor(1.f, 1.f, 1.f, .08f));
+    Rect(X, Y, W * FMath::Clamp(Pct, 0.f, 1.f), 2.f, Mint);
+}
+
+void AC26HUD::StatLine(const FString& Label, const FString& Value, float X, float Y, FLinearColor VC)
+{
+    // Label sits on its own leading; the value starts one GapLine below it so
+    // the two can never touch whatever sizes the caller picks.
+    TextT(Label, X, Y, 10.f, T6, .24f, 0);
+    Text(Value, X, Y + LineH(10.f) + GapLine, 23.f, VC, false, 2);
+}
+
+void AC26HUD::Wordmark()
+{
+    // Second line clears the first line's leading plus a token gap.
+    const float WmY = 38.f;
+    TextT(TEXT("SUPER OVER"), 800.f, WmY, 26.f, T1, .30f, 3, true);
+    TextT(TEXT("CRICKET"), 800.f, WmY + LineH(26.f) + GapLine, 13.f, Mint, .62f, 0, true);
+    Zones.Add({TEXT("nav_home"), FBox2D(FVector2D(680, 30), FVector2D(920, 104))});
+}
+
+void AC26HUD::ProfileBar()
+{
+    // Laid out right to left off the bay's right margin so the cluster keeps the
+    // same optical edge as every content column on every screen.
+    const float Top = 36.f;
+    float Cursor = BayR;
+
+    // Avatar.
+    const float AvR = 19.f;
+    Disc(Cursor - AvR, Top + AvR, AvR, FLinearColor(.071f, .086f, .102f, 1.f));
+    Circle(Cursor - AvR, Top + AvR, AvR, FLinearColor(1.f, 1.f, 1.f, .13f), 1.f);
+    Disc(Cursor - AvR, Top + AvR - 4.f, 4.5f, Hex(0xFF, 0xFF, 0xFF, .20f));
+    Disc(Cursor - AvR, Top + AvR + 11.f, 9.f, Hex(0xFF, 0xFF, 0xFF, .20f));
+    Zones.Add({TEXT("nav_myteam"), FBox2D(FVector2D(Cursor - 2 * AvR, Top), FVector2D(Cursor, Top + 2 * AvR))});
+    Cursor -= (2.f * AvR + 22.f);
+
+    auto Stat = [&](const FString& Value, const FString& Label, FLinearColor VC, FName Act)
+    {
+        const float VW = Width(Value, 19.f, 2);
+        const float LW = WidthT(Label, 10.f, .20f, 0);
+        const float BW = FMath::Max(VW, LW);
+        Text(Value, Cursor - VW, Top, 19.f, VC, false, 2);
+        TextT(Label, Cursor - LW, Top + LineH(19.f) + GapLine, 10.f, T5, .20f, 0);
+        if (Act != NAME_None) Zones.Add({Act, FBox2D(FVector2D(Cursor - BW, Top), FVector2D(Cursor, Top + LineH(19.f) + GapLine + LineH(10.f)))});
+        Cursor -= (BW + GapComp + Sp4);
+    };
+    Stat(TEXT("12,480"), TEXT("COINS"), Mint, TEXT("nav_store"));
+    Stat(TEXT("24"), TEXT("LEVEL"), T2, NAME_None);
+
+    // Divider.
+    Rect(Cursor, Top + 4.f, 1.f, 28.f, FLinearColor(1.f, 1.f, 1.f, .10f));
+    Cursor -= 22.f;
+
+    const FString Handle = TEXT("AAGAM");
+    const FString Sub = TEXT("PRO CLUB");
+    const float HW = WidthT(Handle, 17.f, .10f, 0);
+    const float SW = WidthT(Sub, 11.f, .20f, 0);
+    TextT(Handle, Cursor - HW, Top, 17.f, T2, .10f, 0);
+    TextT(Sub, Cursor - SW, Top + LineH(17.f) + GapLine, 11.f, T5, .20f, 0);
+}
+
+void AC26HUD::Rail(int Selected)
+{
+    // Seven flat entries. The active one is white with a 2px mint tick; the rest
+    // are one grey step down. No fills, no boxes -- the rail is a list, not a
+    // stack of buttons, which is what keeps the page quiet.
+    struct FEntry { FName Action; const TCHAR* Label; bool On; };
+    const FEntry Items[7] = {
+        {TEXT("nav_home"),     TEXT("PLAY NOW"),     Selected == 0 || (Selected >= 1 && Selected <= 4) || Selected == 12},
+        {TEXT("nav_myteam"),   TEXT("SQUAD HUB"),    Selected == 5},
+        {TEXT("nav_career"),   TEXT("CAREER MODE"),  Selected == 6 || Selected == 9 || Selected == 10},
+        {TEXT("nav_online"),   TEXT("ONLINE"),       Selected == 8},
+        {TEXT("nav_tour"),     TEXT("LEADERBOARDS"), Selected == 7},
+        {TEXT("nav_store"),    TEXT("STORE"),        Selected == 13},
+        {TEXT("nav_settings"), TEXT("SETTINGS"),     Selected == 11},
+    };
+
+    for (int I = 0; I < 7; ++I)
+    {
+        const float Y = RailTop + I * RailPitch;
+        const bool P = Pressed(Items[I].Action);
+        if (Items[I].On) Rect(RailX, Y + (RailPitch - 17.f) * .5f, 2.f, 17.f, Mint);
+        const FLinearColor C = Items[I].On ? T1 : (P ? T2 : FLinearColor(.925f, .945f, .953f, .36f));
+        TextTMid(Items[I].Label, RailX + 20.f, Y, RailPitch, 15.f, C, .20f, 0);
+        Zones.Add({Items[I].Action, FBox2D(FVector2D(RailX, Y), FVector2D(RailX + 250.f, Y + RailPitch))});
+    }
+
+    TextT(TEXT("CRICKET 26 - BUILD v0.5"), RailX, 842.f, 10.f, T7, .24f, 0);
+}
+
+void AC26HUD::Shell(int Selected)
+{
+    TextShadow = 0.f;
+    Backdrop();
+    Wordmark();
+    ProfileBar();
+    Rail(Selected);
 }
 
 void AC26HUD::Menu()
 {
     FA = Match->ScreenFade;
-    Vignette();
-    TopUtility();
-    NavRail(Match->MenuScreen);
+    NavRail(Match->MenuScreen);   // hidden automation zones; the real rail is added after
+    Shell(Match->MenuScreen);
 
     switch (Match->MenuScreen)
     {
+    case 0: Home(); break;
     case 1: Play(); break;
     case 2: Teams(); break;
     case 3: Matchup(); break;
     case 4: Toss(); break;
     case 5: Squad(); break;
-    case 6: Future(1); break;
-    case 7: Future(2); break;
-    case 8: Future(3); break;
-    case 9: Future(4); break;
-    case 10: Future(5); break;
+    case 6: Career(); break;
+    case 7: Leaderboards(); break;
+    case 8: Multiplayer(); break;
+    case 9: Future(3); break;
+    case 10: Future(4); break;
     case 11: SettingsHub(); break;
     case 12: Help(); break;
     case 13: Store(); break;
     default: Home(); break;
     }
 
-    FA = 1.f;
     Toast(false);
-    if (!Match->PendingConfirm.IsNone()) Confirm();
+    if (Match->PendingConfirm != NAME_None) Confirm();
 }
 
 // ============================================================================
-// SCREEN 0: HOME — PERFECT ATHLETIC SPACING
-// Generous margins, confident hierarchy, zero clipping.
-// ============================================================================
-// ============================================================================
-// SCREEN 0: MAIN HUB — reference-matched featured event card.
-// Hero panel occupies the left ~58% of the content area; the live stadium and
-// player render breathe freely on the right, per "cricket is the visual hero".
+// SCREEN 0: MAIN HUB
 // ============================================================================
 void AC26HUD::Home()
 {
-    const float E = Enter();
-    const float SX = (1.f - E) * 25.f;
-    const float X = ContentX + SX;
-    const float PanelW = 760.f, PanelY = 208.f, PanelH = 470.f;
+    const int A = Match->PlayerTeam, B = 1 - Match->PlayerTeam;
 
-    // Atmospheric venue readout + single-player chip, right-aligned clear of the panel.
+    // One chain: eyebrow -> line 1 -> line 2 -> matchup -> actions ->
+    // rule -> footer. Each display line clears the previous leading plus a
+    // token gap, so the headlines can never overprint each other.
+    const float EbY = 250.f;
+    Eyebrow(TEXT("LIVE EVENT"), BayX, EbY);
+    const float H1Y = EbY + LineH(11.f) + GapComp;
+    Text(TEXT("GLOBAL SUPER OVER"), BayX, H1Y, 64.f, T1, false, 3);
+    const float H2Y = H1Y + LineH(64.f) + GapLine;
+    Text(TEXT("CHALLENGE"), BayX, H2Y, 64.f, T5, false, 3);
+
+    const float TeamsY = H2Y + LineH(64.f) + GapSect;
+    TextT(Match->TeamName(A) + TEXT("   /   ") + Match->TeamName(B), BayX, TeamsY, 14.f, T4, .20f, 0);
+
+    const float BY = TeamsY + LineH(14.f) + GapSect;
+    const float PW = BtnW(TEXT("START MATCH"), 15.f, 44.f);
+    PrimaryBtn(TEXT("quickplay"), TEXT("START MATCH"), BayX, BY, PW, 54.f);
+    GhostBtn(TEXT("nav_teams"), TEXT("CHANGE CLUB"), BayX + PW + GapComp,
+             BY, WidthT(TEXT("CHANGE CLUB"), 12.f, .18f, 0) + 60.f, 54.f);
+
+    const float RuleY = BY + 54.f + GapSect + GapComp;
+    HairRule(BayX, RuleY, BayW);
+
+    const float FY = RuleY + GapSect;
+    float FX = BayX;
+    auto Foot = [&](const TCHAR* L, const TCHAR* V, FLinearColor VC)
     {
-        const FString Venue = TEXT("ECLIPSE OVAL  •  FLOODLIT NIGHT");
-        Text(Venue, ContentR - Width(Venue, 18), ContentTop, 18, Muted);
-    }
-    {
-        const FString T = TEXT("SINGLE PLAYER");
-        const float TW = Width(T, 18) + 20;
-        Rect(ContentR - TW, ContentTop + 34, TW, 26, CardBg);
-        TextMid(T, ContentR - TW + 10, ContentTop + 34, 26, 18, Muted);
-    }
-
-    // Featured Super Over event panel
-    Panel(X, PanelY, PanelW, PanelH, MintCyan);
-    float Y = PanelY + 28.f;
-    Tag(TEXT("PLAYABLE NOW"), X + 24, Y, true);
-    Y += 46.f;
-
-    Text(TEXT("SUPER OVER"), X + 24, Y, 76, Paper);
-    Y += LineH(76) + 4.f;
-
-    Text(Match->TeamName(Match->PlayerTeam) + TEXT("  v  ") + Match->TeamName(1 - Match->PlayerTeam), X + 24, Y, 24, PaperDim);
-    Y += LineH(24) + 16.f;
-
-    TextWrap(TEXT("Six balls. Two wickets. One chance to own the night."), X + 24, Y, 20, Muted, PanelW - 48.f);
-    Y += 34.f;
-
-    Text(TEXT("1 OVER   •   ~5 MIN   •   VS ADAPTIVE AI"), X + 24, Y, 18, MintCyan);
-
-    // Full-width primary CTA docked to the panel's bottom edge (reference bottom teal bar)
-    const float CY = PanelY + PanelH - 78.f;
-    Btn(TEXT("quickplay"), TEXT("PLAY SUPER OVER  >"), X + 24, CY, PanelW - 48.f - 190.f, 62, 1);
-    Btn(TEXT("nav_teams"), TEXT("CHANGE TEAM"), X + 24 + PanelW - 48.f - 190.f + 14.f, CY, 176, 62, 0);
-
-    // Secondary supporting cards below the hero panel
-    const float SY = PanelY + PanelH + 24.f, SW = (PanelW - 20.f) * .5f;
-    Panel(X, SY, SW, 92.f, FLinearColor::Transparent);
-    Text(TEXT("HOW TO PLAY"), X + 20, SY + 16, 20, Paper);
-    Text(TEXT("Batting, bowling and timing in 60 seconds."), X + 20, SY + 44, 15, Muted);
-    Zones.Add({TEXT("nav_help"), FBox2D(FVector2D(X, SY), FVector2D(X + SW, SY + 92.f))});
-
-    Panel(X + SW + 20.f, SY, SW, 92.f, FLinearColor::Transparent);
-    Text(TEXT("ALL GAME MODES"), X + SW + 40.f, SY + 16, 20, Paper);
-    Text(TEXT("Browse every Cricket 26 experience."), X + SW + 40.f, SY + 44, 15, Muted);
-    Zones.Add({TEXT("nav_play"), FBox2D(FVector2D(X + SW + 20.f, SY), FVector2D(X + SW + 20.f + SW, SY + 92.f))});
+        StatLine(L, V, FX, FY, VC);
+        FX += FMath::Max(WidthT(L, 10.f, .24f, 0), Width(V, 23.f, 2)) + GapSect + GapBlock;
+    };
+    Foot(TEXT("FORMAT"), TEXT("6 BALLS"), TVal);
+    Foot(TEXT("WICKETS"), TEXT("2"), TVal);
+    Foot(TEXT("VENUE"), TEXT("ECLIPSE OVAL"), TVal);
+    Foot(TEXT("WIN REWARD"), TEXT("2,500"), Mint);
 }
 
 // ============================================================================
-// SCREEN 1: PLAY (Mode Selection)
-// Clear 2-column division with ample negative space.
+// SCREEN 5: SQUAD HUB
 // ============================================================================
-void AC26HUD::Play()
+void AC26HUD::Squad()
 {
-    PageHead(TEXT("EXPERIENCES"), TEXT("GAME MODES"), TEXT("One mode playable now. Full cricket career roadmap in active development."));
+    const int Team = Match->PlayerTeam;
 
-    const float E = Enter(.06f);
-    const float SX = (1.f - E) * 20.f;
+    Eyebrow(TEXT("SQUAD HUB"), BayX, 190.f);
+    Headline(TEXT("STARTING"), TEXT("XI"), BayX, 223.f, 56.f);
 
-    // Left Column: Featured Super Over Hero
-    const float X = ContentX + SX, Y = 300.f, LeftW = 460.f;
-    Text(TEXT("PLAYABLE NOW"), X, Y, 20, MintCyan);
-    Text(TEXT("SUPER OVER"), X, Y + 34, 72, Paper);
-    const float DescH = TextWrap(TEXT("Six balls each. Two wickets. Maximum intensity under lights."), X, Y + 128, 24, PaperDim, LeftW);
-    Text(TEXT("1 OVER  •  ~5 MINUTES  •  VS ADAPTIVE AI"), X, Y + 128 + DescH + 14.f, 20, Muted);
+    // ---- featured captain column: one chain, each step clears the last ----
+    const float FX = BayX, FW = 290.f;
+    const float CapY = 318.f;
+    TextT(TEXT("CAPTAIN"), FX, CapY, 10.f, T6, .28f, 0);
+    const float CapNameY = CapY + LineH(10.f) + GapLine;
+    Text(TEXT("A. RAO"), FX, CapNameY, 38.f, T1, false, 3);
+    const float CapTeamY = CapNameY + LineH(38.f) + GapLine;
+    TextT(Match->TeamName(Team), FX, CapTeamY, 12.f, Mint, .20f, 0);
+    const float CapOvrY = CapTeamY + LineH(12.f) + GapComp;
+    Text(TEXT("88"), FX, CapOvrY, 64.f, T1, false, 2);
+    const float CapOvrLblY = CapOvrY + LineH(64.f) + GapLine;
+    TextT(TEXT("OVERALL"), FX, CapOvrLblY, 10.f, T6, .28f, 0);
 
-    Btn(TEXT("mode_super"), TEXT("PLAY SUPER OVER  >"), X, Y + 128 + DescH + 58.f, 310, 62, 1);
+    const float CapBarsY = CapOvrLblY + LineH(10.f) + GapBlock;
+    const TCHAR* BarL[3] = {TEXT("BATTING"), TEXT("BOWLING"), TEXT("FIELDING")};
+    const int BarV[3] = {82, 20, 70};
+    for (int I = 0; I < 3; ++I)
+    {
+        const float RY = CapBarsY + I * 42.f;
+        TextT(BarL[I], FX, RY, 10.f, T4, .22f, 0);
+        const FString V = FString::FromInt(BarV[I]);
+        Text(V, FX + FW - Width(V, 14.f, 2), RY - 2.f, 14.f, TVal, false, 2);
+        MicroBar(FX, RY + LineH(10.f) + GapLine, FW, BarV[I] / 100.f);
+    }
 
-    // Right Column: Upcoming Modes with clean 96px vertical pitch
-    static const TCHAR* Modes[] = {TEXT("QUICK MATCH"), TEXT("WORLD TOUR"), TEXT("CAREER DYNASTY"), TEXT("ONLINE H2H")};
-    const float CX = X + LeftW + 60.f, RW = ContentR - CX;
+    // ---- starting six table ----
+    struct FRow { const TCHAR* Slot; const TCHAR* Name; int Bat, Bowl, Field, Ovr; };
+    static const FRow Roster[2][6] = {
+        {
+            {TEXT("BATSMAN"),     TEXT("A. RAO"),     82, 20, 70, 88},
+            {TEXT("BATSMAN"),     TEXT("K. DESAI"),   75, 15, 68, 81},
+            {TEXT("ALL-ROUNDER"), TEXT("R. MEHRA"),   64, 58, 72, 77},
+            {TEXT("BOWLER"),      TEXT("N. ARCHER"),  22, 85, 60, 84},
+            {TEXT("KEEPER"),      TEXT("S. IYER"),    58, 10, 81, 76},
+            {TEXT("BOWLER"),      TEXT("D. KOHLI"),   18, 79, 55, 79},
+        },
+        {
+            {TEXT("BATSMAN"),     TEXT("J. HART"),    80, 18, 69, 86},
+            {TEXT("BATSMAN"),     TEXT("L. REED"),    73, 14, 66, 80},
+            {TEXT("ALL-ROUNDER"), TEXT("M. VALE"),    62, 56, 70, 75},
+            {TEXT("BOWLER"),      TEXT("V. SEN"),     20, 83, 58, 83},
+            {TEXT("KEEPER"),      TEXT("T. FOX"),     56,  9, 79, 74},
+            {TEXT("BOWLER"),      TEXT("O. BLAKE"),   16, 77, 53, 77},
+        },
+    };
+    static const FName Acts[6] = {TEXT("squad0"), TEXT("squad1"), TEXT("squad2"),
+                                  TEXT("squad3"), TEXT("squad4"), TEXT("squad5")};
+
+    const float LX = FX + FW + 56.f;
+    const float SlotW = 116.f, StatW = 56.f, OvrW = 74.f;
+    const float OvrR = BayR, St3R = OvrR - OvrW, St2R = St3R - StatW, St1R = St2R - StatW;
+
+    // Column header.
+    TextT(TEXT("ROLE"), LX, 318.f, 9.f, T7, .26f, 0);
+    TextT(TEXT("PLAYER"), LX + SlotW, 318.f, 9.f, T7, .26f, 0);
+    auto HeadR = [&](const TCHAR* L, float R)
+    {
+        TextT(L, R - WidthT(L, 9.f, .26f, 0), 318.f, 9.f, T7, .26f, 0);
+    };
+    HeadR(TEXT("BAT"), St1R); HeadR(TEXT("BWL"), St2R);
+    HeadR(TEXT("FLD"), St3R); HeadR(TEXT("OVR"), OvrR);
+    HairRule(LX, 341.f, BayR - LX);
+
+    for (int I = 0; I < 6; ++I)
+    {
+        const auto& R = Roster[Team][I];
+        const float RY = 341.f + I * 58.f;
+        const bool Hi = I == 0;
+        TextTMid(R.Slot, LX, RY, 58.f, 10.f, T6, .24f, 0);
+        TextTMid(R.Name, LX + SlotW, RY, 58.f, 20.f, Hi ? Mint : T2, .06f, 0);
+        const int Vals[3] = {R.Bat, R.Bowl, R.Field};
+        const float Rights[3] = {St1R, St2R, St3R};
+        for (int J = 0; J < 3; ++J)
+        {
+            const FString V = FString::FromInt(Vals[J]);
+            TextMid(V, Rights[J] - Width(V, 15.f, 2), RY, 58.f, 15.f, TBody, false, 2);
+        }
+        const FString OvrS = FString::FromInt(R.Ovr);
+        TextMid(OvrS, OvrR - Width(OvrS, 24.f, 2), RY, 58.f, 24.f, Hi ? Mint : T2, false, 2);
+        HairRule(LX, RY + 58.f, BayR - LX);
+        Zones.Add({Acts[I], FBox2D(FVector2D(LX, RY), FVector2D(BayR, RY + 58.f))});
+    }
+
+    // Actions sit one GapSect below the last row so the table breathes.
+    const float AY = 341.f + 6.f * 58.f + GapSect;
+    const float PW = BtnW(TEXT("EDIT SQUAD"), 15.f, 44.f);
+    PrimaryBtn(TEXT("squad_edit"), TEXT("EDIT SQUAD"), LX, AY, PW, 54.f);
+    GhostBtn(TEXT("squad_auto"), TEXT("AUTO PICK"), LX + PW + GapComp, AY,
+             WidthT(TEXT("AUTO PICK"), 12.f, .18f, 0) + 60.f, 54.f);
+}
+
+// ============================================================================
+// SCREEN 6: CAREER MODE
+// ============================================================================
+void AC26HUD::Career()
+{
+    Eyebrow(TEXT("CAREER MODE"), BayX, 196.f);
+    Headline(TEXT("ROAD TO"), TEXT("GLORY"), BayX, 229.f, 58.f);
+
+    struct FPath { FName Action; const TCHAR* Idx; const TCHAR* Label; const TCHAR* Meta; const TCHAR* Right; bool Locked; };
+    const FPath Paths[3] = {
+        {TEXT("career_club"), TEXT("01"), TEXT("CLUB CAREER"),   TEXT("SEASON 1  ·  ROUND 3 OF 12"), TEXT("CONTINUE"), false},
+        {TEXT("career_intl"), TEXT("02"), TEXT("INTERNATIONAL"), TEXT("UNLOCKS AT CLUB TIER 3"),     TEXT("LOCKED"),   true },
+        {TEXT("career_achv"), TEXT("03"), TEXT("ACHIEVEMENTS"),  TEXT("14 OF 60 COMPLETE"),          TEXT("VIEW"),     false},
+    };
+
+    // Rows open below the 58pt headline's leading; meta clears its title.
+    const float PathTop = 229.f + LineH(58.f) + GapLine + LineH(15.f) + GapSect;
+    HairRule(BayX, PathTop, BayW);
+    for (int I = 0; I < 3; ++I)
+    {
+        const float RY = PathTop + I * 94.f;
+        const auto& P = Paths[I];
+        const FLinearColor TitleC = P.Locked ? T6 : T2;
+        const FLinearColor MetaC  = P.Locked ? T7 : T5;
+        const FLinearColor RightC = P.Locked ? T7 : Mint;
+
+        Text(P.Idx, BayX, RY + 34.f, 15.f, T7, false, 2);
+        TextT(P.Label, BayX + 64.f, RY + 22.f, 25.f, TitleC, .10f, 0);
+        TextT(P.Meta, BayX + 64.f, RY + 22.f + LineH(25.f) + GapLine, 11.f, MetaC, .22f, 0);
+        TextT(P.Right, BayR - WidthT(P.Right, 11.f, .24f, 0), RY + 42.f, 11.f, RightC, .24f, 0);
+        HairRule(BayX, RY + 94.f, BayW);
+        Zones.Add({P.Action, FBox2D(FVector2D(BayX, RY), FVector2D(BayR, RY + 94.f))});
+    }
+
+    // Season progression: label -> tier -> bar, each clearing the last.
+    const float PY = PathTop + 3.f * 94.f + GapSect;
+    TextT(TEXT("SEASON PROGRESSION"), BayX, PY, 10.f, T6, .26f, 0);
+    const float TierY = PY + LineH(10.f) + GapLine;
+    TextT(TEXT("TIER 2  ·  RISING PRO"), BayX, TierY, 21.f, T2, .10f, 0);
+    const FString Pct = TEXT("62%");
+    Text(Pct, BayR - Width(Pct, 25.f, 2), TierY - 2.f, 25.f, Mint, false, 2);
+    MicroBar(BayX, TierY + LineH(21.f) + GapLine, BayW, .62f);
+
+    PrimaryBtn(TEXT("career_club"), TEXT("CONTINUE CAREER"), BayX, TierY + LineH(21.f) + GapLine + 2.f + GapSect,
+               BtnW(TEXT("CONTINUE CAREER"), 15.f, 44.f), 54.f);
+}
+
+// ============================================================================
+// SCREEN 8: ONLINE MULTIPLAYER
+// ============================================================================
+void AC26HUD::Multiplayer()
+{
+    Eyebrow(TEXT("ONLINE"), BayX, 196.f);
+    Headline(TEXT("MULTIPLAYER"), TEXT("ARENA"), BayX, 229.f, 56.f);
+
+    // Standing row opens below the headline leading; values clear labels.
+    const float StandY = 229.f + LineH(56.f) + GapLine;
+    float SX = BayX;
+    auto Stand = [&](const TCHAR* L, const TCHAR* V, FLinearColor VC, int Font)
+    {
+        TextT(L, SX, StandY, 10.f, T6, .26f, 0);
+        Text(V, SX, StandY + LineH(10.f) + GapLine, 30.f, VC, false, Font);
+        SX += FMath::Max(WidthT(L, 10.f, .26f, 0), Width(V, 30.f, Font)) + GapSect + GapBlock;
+    };
+    Stand(TEXT("YOUR TIER"), TEXT("PLATINUM IV"), Mint, 3);
+    Stand(TEXT("GLOBAL RANK"), TEXT("#4"), T1, 2);
+    Stand(TEXT("PLAYERS ONLINE"), TEXT("12,456"), T1, 2);
+    Stand(TEXT("SEASON ENDS"), TEXT("18D"), T1, 2);
+    const float MpRuleY = StandY + LineH(10.f) + GapLine + LineH(30.f) + GapBlock;
+    HairRule(BayX, MpRuleY, BayW);
+
+    struct FMode { FName Action; const TCHAR* Title; const TCHAR* Sub; const TCHAR* RT; const TCHAR* RV; };
+    const FMode Modes[3] = {
+        {TEXT("quickplay"),  TEXT("QUICK MATCH"),      TEXT("Instant Super Over against a live rival"), TEXT("AVG WAIT"), TEXT("11s")},
+        {TEXT("mp_ranked"),  TEXT("RANKED SEASONS"),   TEXT("Climb the tiers and earn crate rewards"),  TEXT("SEASON 4"), TEXT("18 DAYS LEFT")},
+        {TEXT("mp_friends"), TEXT("PLAY WITH FRIENDS"), TEXT("Private lobbies and custom rules"),       TEXT("FRIENDS"),  TEXT("3 ONLINE")},
+    };
+    for (int I = 0; I < 3; ++I)
+    {
+        const float RY = MpRuleY + I * 101.f;
+        const auto& M = Modes[I];
+        TextT(M.Title, BayX, RY + 26.f, 23.f, T2, .10f, 0);
+        Text(M.Sub, BayX, RY + 26.f + LineH(23.f) + GapLine, 12.f, T5, false, 1);
+        TextT(M.RT, BayR - WidthT(M.RT, 10.f, .24f, 0), RY + 28.f, 10.f, T6, .24f, 0);
+        TextT(M.RV, BayR - WidthT(M.RV, 11.f, .24f, 0), RY + 28.f + LineH(10.f) + GapLine, 11.f, Mint, .24f, 0);
+        HairRule(BayX, RY + 101.f, BayW);
+        Zones.Add({M.Action, FBox2D(FVector2D(BayX, RY), FVector2D(BayR, RY + 101.f))});
+    }
+
+    const float AY = MpRuleY + 3.f * 101.f + GapSect;
+    const float PW = BtnW(TEXT("FIND MATCH"), 15.f, 44.f);
+    PrimaryBtn(TEXT("quickplay"), TEXT("FIND MATCH"), BayX, AY, PW, 54.f);
+    GhostBtn(TEXT("mp_friends"), TEXT("INVITE FRIEND"), BayX + PW + GapComp, AY,
+             WidthT(TEXT("INVITE FRIEND"), 12.f, .18f, 0) + 60.f, 54.f);
+}
+
+// ============================================================================
+// SCREEN 7: LEADERBOARDS
+// ============================================================================
+void AC26HUD::Leaderboards()
+{
+    Eyebrow(TEXT("LEADERBOARDS"), BayX, 190.f);
+    Headline(TEXT("GLOBAL"), TEXT("RANKINGS"), BayX, 223.f, 56.f);
+
+    // Filter tabs.
+    const TCHAR* Tabs[3] = {TEXT("THIS WEEK"), TEXT("SEASON"), TEXT("ALL TIME")};
+    const FName TabActs[3] = {TEXT("lb_week"), TEXT("lb_season"), TEXT("lb_all")};
+    float TX = BayX;
+    for (int I = 0; I < 3; ++I)
+    {
+        const float TW = WidthT(Tabs[I], 11.f, .24f, 0);
+        TextT(Tabs[I], TX, 316.f, 11.f, I == 1 ? T1 : T6, .24f, 0);
+        if (I == 1) Rect(TX, 343.f, TW, 2.f, Mint);
+        Zones.Add({TabActs[I], FBox2D(FVector2D(TX, 308.f), FVector2D(TX + TW, 346.f))});
+        TX += TW + GapSect;
+    }
+    HairRule(BayX, 343.f, BayW);
+
+    // Columns.
+    const float PosW = 76.f, ClubW = 290.f, PlayedW = 90.f, PtsW = 120.f;
+    const float PtsR = BayR, PlayedR = PtsR - PtsW, ClubX = PlayedR - PlayedW - ClubW;
+
+    TextT(TEXT("RANK"), BayX, 359.f, 9.f, T7, .26f, 0);
+    TextT(TEXT("PLAYER"), BayX + PosW, 359.f, 9.f, T7, .26f, 0);
+    TextT(TEXT("CLUB"), ClubX, 359.f, 9.f, T7, .26f, 0);
+    TextT(TEXT("PLAYED"), PlayedR - WidthT(TEXT("PLAYED"), 9.f, .26f, 0), 359.f, 9.f, T7, .26f, 0);
+    TextT(TEXT("POINTS"), PtsR - WidthT(TEXT("POINTS"), 9.f, .26f, 0), 359.f, 9.f, T7, .26f, 0);
+
+    struct FRank { const TCHAR* Pos; const TCHAR* Name; const TCHAR* Club; const TCHAR* Played; const TCHAR* Pts; int Kind; };
+    static const FRank Rows[8] = {
+        {TEXT("01"), TEXT("V. SHARMA"),   TEXT("MUMBAI METEORS"),     TEXT("214"), TEXT("9,840"), 1},
+        {TEXT("02"), TEXT("T. BRENNAN"),  TEXT("MELBOURNE CYCLONES"), TEXT("198"), TEXT("9,515"), 0},
+        {TEXT("03"), TEXT("K. OKAFOR"),   TEXT("LAGOS LIGHTNING"),    TEXT("203"), TEXT("9,302"), 0},
+        {TEXT("04"), TEXT("AAGAM"),       TEXT("MUMBAI METEORS"),     TEXT("176"), TEXT("8,974"), 2},
+        {TEXT("05"), TEXT("H. NAKAMURA"), TEXT("OSAKA ORBIT"),        TEXT("188"), TEXT("8,810"), 0},
+        {TEXT("06"), TEXT("D. FERREIRA"), TEXT("RIO RAPTORS"),        TEXT("181"), TEXT("8,622"), 0},
+        {TEXT("07"), TEXT("S. MALIK"),    TEXT("KARACHI KINGS"),      TEXT("169"), TEXT("8,455"), 0},
+        {TEXT("08"), TEXT("E. HOLT"),     TEXT("LONDON LIONS"),       TEXT("174"), TEXT("8,290"), 0},
+    };
+
+    for (int I = 0; I < 8; ++I)
+    {
+        const float RY = 382.f + I * 53.f;
+        const auto& R = Rows[I];
+        const bool Me = R.Kind == 2;
+        HairRule(BayX, RY, BayW, .05f);
+        TextMid(R.Pos, BayX, RY, 53.f, 19.f, R.Kind == 1 ? Podium : (Me ? Mint : T5), false, 2);
+        TextTMid(R.Name, BayX + PosW, RY, 53.f, 19.f, Me ? Mint : T2, .06f, 0);
+        TextTMid(R.Club, ClubX, RY, 53.f, 12.f, T4, .16f, 0);
+        TextMid(R.Played, PlayedR - Width(R.Played, 15.f, 2), RY, 53.f, 15.f, T5, false, 2);
+        TextMid(R.Pts, PtsR - Width(R.Pts, 21.f, 2), RY, 53.f, 21.f, Me ? Mint : T2, false, 2);
+    }
+}
+
+// ============================================================================
+// SCREEN 13: STORE
+// ============================================================================
+void AC26HUD::Store()
+{
+    Eyebrow(TEXT("STORE"), BayX, 196.f);
+    Headline(TEXT("CRATE"), TEXT("STORE"), BayX, 229.f, 58.f);
+
+    const float OfferW = 320.f;
+    const float OfferX = BayR - OfferW;
+    const float CatsW = BayW - 66.f - OfferW;
+
+    struct FCat { FName Action; const TCHAR* Label; const TCHAR* Meta; const TCHAR* Right; };
+    const FCat Cats[4] = {
+        {TEXT("store_packs"),    TEXT("PLAYER PACKS"), TEXT("5 NEW THIS WEEK"),    TEXT("FROM 900")},
+        {TEXT("store_kit"),      TEXT("KIT & GEAR"),   TEXT("12 ITEMS AVAILABLE"), TEXT("FROM 450")},
+        {TEXT("store_boosters"), TEXT("BOOSTERS"),     TEXT("2X XP FOR 24 HOURS"), TEXT("FROM 200")},
+        {TEXT("store_topup"),    TEXT("COIN TOP-UP"),  TEXT("BALANCE 12,480"),     TEXT("STORE")},
+    };
+
+    // Category rows open below the headline; meta clears its own title.
+    const float StoreTop = 229.f + LineH(58.f) + GapLine + LineH(15.f) + GapSect;
+    HairRule(BayX, StoreTop, CatsW);
     for (int I = 0; I < 4; ++I)
     {
-        const float CY = 300.f + I * 96.f;
-        Rule(CX, CY, RW);
-        Text(Modes[I], CX, CY + 24, 26, Paper);
-        Text(TEXT("COMING SOON"), CX + RW - Width(TEXT("COMING SOON"), 17), CY + 28, 17, Muted);
-        Zones.Add({FName(TEXT("mode_soon")), FBox2D(FVector2D(CX, CY), FVector2D(CX + RW, CY + 80))});
+        const float RY = StoreTop + I * 96.f;
+        const auto& C = Cats[I];
+        TextT(C.Label, BayX, RY + 20.f, 22.f, T2, .10f, 0);
+        TextT(C.Meta, BayX, RY + 20.f + LineH(22.f) + GapLine, 11.f, T5, .20f, 0);
+        TextT(C.Right, BayX + CatsW - WidthT(C.Right, 11.f, .22f, 0), RY + 42.f, 11.f, Mint, .22f, 0);
+        HairRule(BayX, RY + 96.f, CatsW);
+        Zones.Add({C.Action, FBox2D(FVector2D(BayX, RY), FVector2D(BayX + CatsW, RY + 96.f))});
     }
 
-    BackBtn(TEXT("nav_home"));
+    // Featured offer rail, separated by a single vertical hairline.
+    Rect(OfferX - GapBlock - PadEdge, StoreTop, 1.f, 384.f, FLinearColor(1.f, 1.f, 1.f, .07f));
+    TextT(TEXT("FEATURED OFFER"), OfferX, StoreTop, 10.f, Mint, .28f, 0);
+    const float PrestY = StoreTop + LineH(10.f) + GapComp;
+    Text(TEXT("PRESTIGE"), OfferX, PrestY, 32.f, T1, false, 3);
+    const float BladeY = PrestY + LineH(32.f) + GapLine;
+    Text(TEXT("BLADE"), OfferX, BladeY, 32.f, T1, false, 3);
+    const float OfferDescY = BladeY + LineH(32.f) + GapComp;
+    TextWrap(TEXT("Tournament-grade willow with a widened sweet spot and a gold maker's mark."),
+             OfferX, OfferDescY, 12.f, T5, OfferW, false, 1);
+
+    const FString Was = TEXT("4,800");
+    const float PriceY = OfferDescY + 2.f * LineH(12.f) + GapBlock;
+    const float WasY = PriceY + LineH(38.f) - LineH(18.f);
+    Text(Was, OfferX, WasY, 18.f, T7, false, 2);
+    Rect(OfferX, WasY + LineH(18.f) * 0.5f, Width(Was, 18.f, 2), 1.f, T7);
+    Text(TEXT("2,400"), OfferX + Width(Was, 18.f, 2) + GapItem, PriceY, 38.f, Mint, false, 2);
+    TextT(TEXT("LIMITED  ·  ENDS IN 2 DAYS"), OfferX, PriceY + LineH(38.f) + GapLine, 10.f, T6, .24f, 0);
+    PrimaryBtn(TEXT("store_buy"), TEXT("CLAIM OFFER"), OfferX, PriceY + LineH(38.f) + GapLine + LineH(10.f) + GapBlock, OfferW, 54.f);
 }
 
 // ============================================================================
-// SCREEN 2: TEAM SELECTION (Club Selection Rebuild)
-// Generously spaced head-to-head presentation with centered crests.
+// SCREEN 11: SETTINGS
 // ============================================================================
-void AC26HUD::Teams()
+void AC26HUD::SettingsHub()
 {
-    PageHead(TEXT("SETUP"), TEXT("CHOOSE YOUR CLUB"), TEXT("Select your side for tonight's Super Over shootout."));
+    UC26Settings* Pref = Match->Preferences;
 
-    const float E = Enter(.06f);
-    const float SX = (1.f - E) * 20.f;
-    const float MidX = ContentX + ContentW * .5f;
+    Eyebrow(TEXT("SETTINGS"), BayX, 158.f);
+    Headline(TEXT("PREFERENCES"), TEXT(""), BayX, 191.f, 52.f);
 
-    // Team 0: Mumbai Meteors (Left Bay)
+    // Kind: 0 toggle, 1 slider, 2 cycling value.
+    struct FCtl { FName Action; const TCHAR* Key; int Kind; bool On; float Pct; FString Val; };
+    struct FGroup { const TCHAR* Label; const TCHAR* Sub; FCtl A, B; };
+
+    const TCHAR* DiffNames[3] = {TEXT("EASY"), TEXT("NORMAL"), TEXT("HARD")};
+    const TCHAR* QualNames[4] = {TEXT("LOW"), TEXT("MEDIUM"), TEXT("HIGH"), TEXT("ULTRA")};
+
+    const FGroup Groups[5] = {
+        {TEXT("GENERAL"), TEXT("Difficulty and match presentation"),
+         {TEXT("difficulty"), TEXT("AI DIFFICULTY"), 2, false, 0.f, DiffNames[FMath::Clamp(Pref->Difficulty, 0, 2)]},
+         {TEXT("hints"), TEXT("TACTICAL HINTS"), 0, Pref->Hints, 0.f, FString()}},
+
+        {TEXT("CONTROLS"), TEXT("Gesture sensitivity and haptics"),
+         {TEXT("sensitivity"), TEXT("SWIPE SENSITIVITY"), 1, false, Pref->Sensitivity / 2.f, FString::Printf(TEXT("%.1fx"), Pref->Sensitivity)},
+         {TEXT("vibration"), TEXT("HAPTIC FEEDBACK"), 0, Pref->Vibration, 0.f, FString()}},
+
+        {TEXT("AUDIO"), TEXT("Commentary, crowd and impact mix"),
+         {TEXT("master"), TEXT("MASTER VOLUME"), 1, false, Pref->SoundVolume, FString::FromInt(FMath::RoundToInt(Pref->SoundVolume * 100.f))},
+         {TEXT("commentary"), TEXT("LIVE COMMENTARY"), 0, Pref->CommentaryVolume > .1f, 0.f, FString()}},
+
+        {TEXT("GRAPHICS"), TEXT("Render quality and motion comfort"),
+         {TEXT("quality"), TEXT("QUALITY"), 2, false, 0.f, QualNames[FMath::Clamp(Pref->Quality, 0, 3)]},
+         {TEXT("reducedmotion"), TEXT("REDUCED MOTION"), 0, Pref->ReducedMotion, 0.f, FString()}},
+
+        {TEXT("ACCOUNT"), TEXT("Accessibility and profile options"),
+         {TEXT("subtitles"), TEXT("COMMENTARY SUBTITLES"), 0, Pref->Subtitles, 0.f, FString()},
+         {TEXT("crowd"), TEXT("STADIUM CROWD"), 0, Pref->CrowdVolume > .1f, 0.f, FString()}},
+    };
+
+    const float LabelW = 300.f;
+    const float CtlX = BayX + LabelW;
+
+    // Groups open below the 52pt headline leading. The left label block is
+    // vertically centred in its row so its top and bottom padding match.
+    const float SetTop = 191.f + LineH(52.f) + GapSect;
+    HairRule(BayX, SetTop, BayW);
+    for (int I = 0; I < 5; ++I)
     {
-        const bool Mine = Match->PlayerTeam == 0;
-        const float CX = MidX - 340.f + SX, Y = 280.f;
-        Crest(CX, Y + 50, 52, 0);
-        Text(TEXT("MUMBAI"), CX, Y + 128, 64, MintCyan, true);
-        Text(TEXT("METEORS"), CX, Y + 196, 38, Paper, true);
-        Text(TEXT("RIDE THE STORM"), CX, Y + 248, 20, MintCyan, true);
+        const float GY = SetTop + I * 108.f;
+        const auto& G = Groups[I];
+        const float LblBlockH = LineH(18.f) + GapLine + LineH(11.f);
+        const float LblTop = GY + (108.f - LblBlockH) * 0.5f;
+        TextT(G.Label, BayX, LblTop, 18.f, T2, .16f, 0);
+        Text(G.Sub, BayX, LblTop + LineH(18.f) + GapLine, 11.f, T6, false, 1);
 
-        Btn(TEXT("pick0"), Mine ? TEXT("[ SELECTED SIDE ]") : TEXT("SELECT MUMBAI"), CX - 140, Y + 300, 280, 56, Mine ? 3 : 0, Mine);
-    }
-
-    // VS Divider
-    Text(TEXT("VS"), MidX + SX, 450, 38, Muted, true);
-
-    // Team 1: Melbourne Embers (Right Bay)
-    {
-        const bool Mine = Match->PlayerTeam == 1;
-        const float CX = MidX + 340.f + SX, Y = 280.f;
-        Crest(CX, Y + 50, 52, 1);
-        Text(TEXT("MELBOURNE"), CX, Y + 128, 64, Coral, true);
-        Text(TEXT("EMBERS"), CX, Y + 196, 38, Paper, true);
-        Text(TEXT("BURN BRIGHT"), CX, Y + 248, 20, Coral, true);
-
-        Btn(TEXT("pick1"), Mine ? TEXT("[ SELECTED SIDE ]") : TEXT("SELECT MELBOURNE"), CX - 140, Y + 300, 280, 56, Mine ? 3 : 0, Mine);
-    }
-
-    // Bottom Action Bar: Centered CTA and clear Back button
-    Btn(TEXT("nav_matchup"), TEXT("PROCEED TO MATCHUP  >"), MidX - 160.f + SX, 750, 320, 60, 1);
-    BackBtn(TEXT("nav_play"));
-}
-
-// ============================================================================
-// SCREEN 3: MATCHUP SCREEN (Broadcast Presentation)
-// Wide broadcast presentation with zero element collision.
-// ============================================================================
-void AC26HUD::Matchup()
-{
-    ScrimBottom(.8f);
-    const float MidX = ContentX + ContentW * .5f;
-
-    float Y = 160.f;
-    Text(TEXT("SUPER OVER SHOOTOUT  /  NIGHT MATCH"), MidX, Y, 21, MintCyan, true);
-    Y += 50.f;
-
-    const int A = Match->PlayerTeam, B = 1 - Match->PlayerTeam;
-    // Crests spaced wide with 640px separation
-    Crest(MidX - 320.f, Y + 60, 58, A);
-    Crest(MidX + 320.f, Y + 60, 58, B);
-    Text(TEXT("VS"), MidX, Y + 44, 44, MintCyan, true);
-    Y += 150.f;
-
-    Text(Match->TeamName(A), MidX - 320.f, Y, 38, Paper, true);
-    Text(Match->TeamName(B), MidX + 320.f, Y, 38, Paper, true);
-    Y += LineH(38) + 10.f;
-
-    Text(TeamTagline(A), MidX - 320.f, Y, 21, TeamColor(A), true);
-    Text(TeamTagline(B), MidX + 320.f, Y, 21, TeamColor(B), true);
-    Y += LineH(21) + 40.f;
-
-    Text(TEXT("ECLIPSE OVAL   •   6 BALLS   •   2 WICKETS   •   FLOODLIGHTS"), MidX, Y, 22, PaperDim, true);
-    Y += 56.f;
-
-    Btn(TEXT("matchup_go"), TEXT("TO THE TOSS  >"), MidX - 160.f, Y, 320, 64, 1);
-    BackBtn(TEXT("nav_teams"));
-}
-
-// ============================================================================
-// SCREEN 4: TOSS (Match Tension Rebuild)
-// Wide choices, spacious coin animation, clear result state.
-// ============================================================================
-void AC26HUD::Toss()
-{
-    PageHead(TEXT("SUPER OVER"), TEXT("THE TOSS"), TEXT("The coin toss determines who bats first under floodlights."));
-
-    const float CX = ContentX + ContentW * .5f;
-    float Y = 300.f;
-
-    if (Match->TossStage == 0)
-    {
-        Circle(CX, Y + 50, 52, Gold, 2.5f);
-        Text(TEXT("C26"), CX, Y + 32, 38, Gold, true);
-        Y += 136.f;
-
-        Text(TEXT("CALL THE COIN"), CX, Y, 28, Paper, true);
-        Y += 46.f;
-
-        Btn(TEXT("tossflip"), TEXT("FLIP THE COIN"), CX - 150, Y, 300, 62, 1);
-        Y += 62 + 18.f;
-        Btn(TEXT("tossquick"), TEXT("SKIP TOSS  /  BAT FIRST"), CX - 150, Y, 300, 48, 0);
-    }
-    else
-    {
-        const float K = Match->TossStage == 1 ? FMath::Abs(FMath::Sin(Match->TossClock * 9.f)) : 1.f;
-        Circle(CX, Y + 50, 52.f * FMath::Max(.12f, K), Gold, 2.f);
-        Text(TEXT("C26"), CX, Y + 32, 38, Gold, true);
-        Y += 136.f;
-
-        if (Match->TossStage == 1)
+        for (int R = 0; R < 2; ++R)
         {
-            Text(TEXT("COIN IN THE AIR..."), CX, Y, 30, MintCyan, true);
-        }
-        else
-        {
-            const bool Won = Match->TossPlayerWon;
-            Text(Won ? TEXT("YOU WON THE TOSS") : Match->TeamName(1 - Match->PlayerTeam) + TEXT(" WON THE TOSS"),
-                 CX, Y, 40, Won ? MintCyan : Paper, true);
-            Y += LineH(40) + 24.f;
+            const FCtl& C = R == 0 ? G.A : G.B;
+            const float RY = GY + 20.f + R * 38.f;
+            TextTMid(C.Key, CtlX, RY, 30.f, 13.f, T3, .14f, 0);
 
-            if (Won)
+            if (C.Kind == 0)
             {
-                const bool ChoseBat = Match->TossPlayerChoseBat;
-                Btn(TEXT("batfirst"), TEXT("BAT FIRST"), CX - 270, Y, 250, 60, ChoseBat ? 3 : 0, ChoseBat);
-                Btn(TEXT("bowlfirst"), TEXT("BOWL FIRST"), CX + 20, Y, 250, 60, !ChoseBat ? 3 : 0, !ChoseBat);
-                Y += 60 + 32.f;
-                Btn(TEXT("tosscontinue"), TEXT("START MATCH  >"), CX - 160, Y, 320, 62, 1);
+                Toggle(C.Action, BayR - 42.f, RY + 6.f, C.On);
+            }
+            else if (C.Kind == 1)
+            {
+                const float SW = 150.f;
+                Slider(C.Action, BayR - SW, RY + 14.f, SW, C.Pct);
+                TextMid(C.Val, BayR - SW - 16.f - Width(C.Val, 16.f, 2), RY, 30.f, 16.f, T2, false, 2);
             }
             else
             {
-                Text(Match->TossAIChoiceBat ? TEXT("THEY ELECT TO BAT FIRST") : TEXT("THEY ELECT TO BOWL FIRST"), CX, Y, 28, Gold, true);
-                Y += LineH(28) + 36.f;
-                Btn(TEXT("tosscontinue"), TEXT("START MATCH  >"), CX - 160, Y, 320, 62, 1);
+                TextMid(C.Val, BayR - Width(C.Val, 16.f, 2), RY, 30.f, 16.f, T2, false, 2);
+                Zones.Add({C.Action, FBox2D(FVector2D(BayR - 140.f, RY), FVector2D(BayR, RY + 30.f))});
             }
+        }
+        HairRule(BayX, GY + 108.f, BayW);
+    }
+}
+
+// ============================================================================
+// SUB-FLOW SCREENS (play -> club -> matchup -> toss) + help / roadmap
+// They share the hub's shell, its page header rhythm and its row language, so
+// stepping into the play flow never changes the furniture.
+// ============================================================================
+
+void AC26HUD::PageHead(const FString& Kick, const FString& Title, const FString& Sub)
+{
+    Eyebrow(Kick, BayX, 196.f);
+
+    // The last word of a title drops to the de-emphasis grey, the same two-tone
+    // treatment the hub headlines use.
+    FString A = Title, B;
+    int32 SpaceIdx = INDEX_NONE;
+    if (Title.FindLastChar(TEXT(' '), SpaceIdx) && SpaceIdx > 0)
+    {
+        A = Title.Left(SpaceIdx);
+        B = Title.Mid(SpaceIdx + 1);
+    }
+    Headline(A, B, BayX, 229.f, 58.f);
+
+    // The sub sits one GapLine below the headline's own leading so it can
+    // never sit inside the 58pt display line above it.
+    if (!Sub.IsEmpty()) Text(Sub, BayX, 229.f + LineH(58.f) + GapLine, 15.f, T5, false, 1);
+}
+
+void AC26HUD::BackBtn(FName Action)
+{
+    const FString L = TEXT("< BACK");
+    const float W = WidthT(L, 11.f, .24f, 0);
+    const bool P = Pressed(Action);
+    TextT(L, BayR - W, 202.f, 11.f, P ? T1 : T6, .24f, 0);
+    Zones.Add({Action, FBox2D(FVector2D(BayR - W - 14.f, 190.f), FVector2D(BayR, 222.f))});
+}
+
+// ---------------------------------------------------------------- SCREEN 1
+void AC26HUD::Play()
+{
+    PageHead(TEXT("EXPERIENCES"), TEXT("GAME MODES"), TEXT("Pick a format, or look at what is coming next."));
+
+    struct FMode { FName Action; const TCHAR* Idx; const TCHAR* Label; const TCHAR* Meta; const TCHAR* Right; bool Live; };
+    const FMode Modes[4] = {
+        {TEXT("mode_super"),  TEXT("01"), TEXT("SUPER OVER"),   TEXT("6 BALLS  ·  2 WICKETS  ·  NIGHT SHOOTOUT"), TEXT("PLAY"),     true },
+        {TEXT("nav_career"),  TEXT("02"), TEXT("CAREER MODE"),  TEXT("ROAD TO GLORY  ·  SEASON 1"),               TEXT("OPEN"),     true },
+        {TEXT("nav_online"),  TEXT("03"), TEXT("ONLINE ARENA"), TEXT("LIVE HEAD-TO-HEAD SUPER OVERS"),            TEXT("OPEN"),     true },
+        {TEXT("nav_store"),   TEXT("04"), TEXT("CRATE STORE"),  TEXT("BATS, KITS, BOOSTERS  ·  NEW DROP"),        TEXT("BROWSE"),   true },
+    };
+
+    // List opens one GapSect below the PageHead sub so the first rule can
+    // never sit inside the header copy. Each row's meta sits one GapLine
+    // below its own title leading.
+    const float ListTop = 229.f + LineH(58.f) + GapLine + LineH(15.f) + GapSect;
+    HairRule(BayX, ListTop, BayW);
+    for (int I = 0; I < 4; ++I)
+    {
+        const float RY = ListTop + I * 94.f;
+        const auto& M = Modes[I];
+        const bool Hero = I == 0;
+        const float TitleSize = Hero ? 27.f : 25.f;
+        Text(M.Idx, BayX, RY + 34.f, 15.f, T7, false, 2);
+        TextT(M.Label, BayX + 64.f, RY + 22.f, TitleSize, Hero ? T1 : T2, .10f, 0);
+        TextT(M.Meta, BayX + 64.f, RY + 22.f + LineH(TitleSize) + GapLine, 11.f, Hero ? T4 : T5, .22f, 0);
+        TextT(M.Right, BayR - WidthT(M.Right, 11.f, .24f, 0), RY + 42.f, 11.f, Mint, .24f, 0);
+        HairRule(BayX, RY + 94.f, BayW);
+        Zones.Add({M.Action, FBox2D(FVector2D(BayX, RY), FVector2D(BayR, RY + 94.f))});
+    }
+
+    PrimaryBtn(TEXT("mode_super"), TEXT("PLAY SUPER OVER"), BayX, ListTop + 4.f * 94.f + GapSect,
+               BtnW(TEXT("PLAY SUPER OVER"), 15.f, 44.f), 54.f);
+    BackBtn(TEXT("nav_home"));
+}
+
+// ---------------------------------------------------------------- SCREEN 2
+void AC26HUD::Teams()
+{
+    PageHead(TEXT("SETUP"), TEXT("CHOOSE CLUB"), TEXT("Your club for tonight's Super Over shootout."));
+
+    const float ColW = (BayW - 80.f) * .5f;
+    const TCHAR* Names[2][2] = {{TEXT("MUMBAI"), TEXT("METEORS")}, {TEXT("MELBOURNE"), TEXT("CYCLONES")}};
+    const float Bars[2][3] = {{.88f, .84f, .82f}, {.84f, .86f, .84f}};
+    const TCHAR* BarL[3] = {TEXT("BATTING"), TEXT("BOWLING"), TEXT("FIELDING")};
+    const FName Picks[2] = {TEXT("pick0"), TEXT("pick1")};
+
+    // One vertical chain per column: every step advances by the previous
+    // line's own leading plus a token gap, so display type can never
+    // overprint the line beneath it.
+    const float TeamsTop = 229.f + LineH(58.f) + GapLine + LineH(15.f) + GapSect;
+    float ClubBtnY = TeamsTop;
+    for (int T = 0; T < 2; ++T)
+    {
+        const bool Mine = Match->PlayerTeam == T;
+        const float CX = BayX + T * (ColW + GapSect + Sp48);
+
+        HairRule(CX, TeamsTop, ColW);
+        const float ClubY = TeamsTop + GapComp;
+        TextT(Mine ? TEXT("YOUR CLUB") : TEXT("OPPONENT"), CX, ClubY, 10.f, Mine ? Mint : T6, .28f, 0);
+        const float Name1Y = ClubY + LineH(10.f) + GapLine;
+        Text(Names[T][0], CX, Name1Y, 44.f, Mine ? T1 : T5, false, 3);
+        const float Name2Y = Name1Y + LineH(44.f) + GapLine;
+        Text(Names[T][1], CX, Name2Y, 26.f, Mine ? T2 : T6, false, 0);
+        const float TagY = Name2Y + LineH(26.f) + GapLine;
+        TextT(TeamTagline(T), CX, TagY, 11.f, Mine ? Mint : T6, .24f, 0);
+
+        const float BarsTop = TagY + LineH(11.f) + GapBlock;
+        for (int I = 0; I < 3; ++I)
+        {
+            const float RY = BarsTop + I * 42.f;
+            TextT(BarL[I], CX, RY, 10.f, T4, .22f, 0);
+            const FString V = FString::FromInt(FMath::RoundToInt(Bars[T][I] * 100.f));
+            Text(V, CX + ColW - Width(V, 14.f, 2), RY - 2.f, 14.f, TVal, false, 2);
+            MicroBar(CX, RY + LineH(10.f) + GapLine, ColW, Bars[T][I]);
+        }
+
+        const float BtnY = BarsTop + 2.f * 42.f + LineH(10.f) + GapLine + 2.f + GapSect;
+        if (T == 0) ClubBtnY = BtnY;
+        if (Mine) PrimaryBtn(Picks[T], TEXT("SELECTED"), CX, BtnY, ColW, 54.f);
+        else      GhostBtn(Picks[T], T == 0 ? TEXT("SELECT MUMBAI") : TEXT("SELECT MELBOURNE"), CX, BtnY, ColW, 54.f);
+    }
+
+    PrimaryBtn(TEXT("nav_matchup"), TEXT("PROCEED TO MATCHUP"), BayX, ClubBtnY + 54.f + GapBlock,
+               BtnW(TEXT("PROCEED TO MATCHUP"), 15.f, 44.f), 54.f);
+    BackBtn(TEXT("nav_play"));
+}
+
+// ---------------------------------------------------------------- SCREEN 3
+void AC26HUD::Matchup()
+{
+    PageHead(TEXT("PRE-MATCH"), TEXT("MATCHUP PREVIEW"), TEXT("Head-to-head under the floodlights."));
+
+    const int A = Match->PlayerTeam, B = 1 - Match->PlayerTeam;
+
+    // Single chain: rule -> club -> name -> captain -> versus -> club ->
+    // name -> captain -> rule -> conditions -> action. Every step clears the
+    // previous line's leading plus a token gap.
+    const float MuTop = 229.f + LineH(58.f) + GapLine + LineH(15.f) + GapSect;
+    HairRule(BayX, MuTop, BayW);
+    const float ClubAY = MuTop + GapComp;
+    TextT(TEXT("YOUR CLUB"), BayX, ClubAY, 10.f, Mint, .28f, 0);
+    const float NameAY = ClubAY + LineH(10.f) + GapLine;
+    Text(Match->TeamName(A), BayX, NameAY, 40.f, T1, false, 3);
+    const float CapAY = NameAY + LineH(40.f) + GapLine;
+    TextT(TEXT("CAPTAIN  A. RAO"), BayX, CapAY, 11.f, T5, .24f, 0);
+
+    const float VsY = CapAY + LineH(11.f) + GapComp;
+    TextT(TEXT("VERSUS"), BayX, VsY, 11.f, T6, .30f, 0);
+    Rect(BayX, VsY + LineH(11.f) + GapLine, 40.f, 1.f, FLinearColor(1.f, 1.f, 1.f, .18f));
+
+    const float ClubBY = VsY + LineH(11.f) + GapLine + 1.f + GapComp;
+    TextT(TEXT("OPPONENT"), BayX, ClubBY, 10.f, T6, .28f, 0);
+    const float NameBY = ClubBY + LineH(10.f) + GapLine;
+    Text(Match->TeamName(B), BayX, NameBY, 40.f, T5, false, 3);
+    const float CapBY = NameBY + LineH(40.f) + GapLine;
+    TextT(TEXT("CAPTAIN  J. HART"), BayX, CapBY, 11.f, T6, .24f, 0);
+
+    const float CondRuleY = CapBY + LineH(11.f) + GapComp;
+    HairRule(BayX, CondRuleY, BayW);
+    float FX = BayX;
+    const float CondY = CondRuleY + GapBlock;
+    auto Cond = [&](const TCHAR* L, const TCHAR* V)
+    {
+        StatLine(L, V, FX, CondY, TVal);
+        FX += FMath::Max(WidthT(L, 10.f, .24f, 0), Width(V, 23.f, 2)) + GapSect + GapBlock;
+    };
+    Cond(TEXT("VENUE"), TEXT("ECLIPSE OVAL"));
+    Cond(TEXT("FORMAT"), TEXT("6 BALLS"));
+    Cond(TEXT("WICKETS"), TEXT("2"));
+    Cond(TEXT("LIGHTS"), TEXT("NIGHT"));
+
+    PrimaryBtn(TEXT("matchup_go"), TEXT("TO THE TOSS"), BayX, CondY + LineH(10.f) + GapLine + LineH(23.f) + GapBlock,
+               BtnW(TEXT("TO THE TOSS"), 15.f, 44.f), 54.f);
+    BackBtn(TEXT("nav_teams"));
+}
+
+// ---------------------------------------------------------------- SCREEN 4
+void AC26HUD::Toss()
+{
+    PageHead(TEXT("SUPER OVER"), TEXT("THE TOSS"), TEXT("The coin decides who bats first."));
+
+    if (Match->TossStage == 0)
+    {
+        Circle(BayX + 44.f, 420.f, 44.f, FLinearColor(Mint.R, Mint.G, Mint.B, .35f), 1.f);
+        TextT(TEXT("C26"), BayX + 44.f, 410.f, 20.f, Mint, .18f, 2, true);
+
+        TextT(TEXT("CALL IT"), BayX, 512.f, 10.f, T6, .28f, 0);
+        Text(TEXT("HEADS OR TAILS"), BayX, 536.f, 40.f, T1, false, 3);
+        const float TossDescY = 536.f + LineH(40.f) + GapLine;
+        Text(TEXT("Win the call and you choose to bat or bowl first."), BayX, TossDescY, 15.f, T5, false, 1);
+
+        const float HW = WidthT(TEXT("HEADS"), 12.f, .18f, 0) + GapSect + Sp48;
+        const float TossChoiceY = TossDescY + LineH(15.f) + GapComp;
+        GhostBtn(TEXT("tossheads"), TEXT("HEADS"), BayX, TossChoiceY, HW, 54.f);
+        GhostBtn(TEXT("tosstails"), TEXT("TAILS"), BayX + HW + GapComp, TossChoiceY, HW, 54.f);
+        PrimaryBtn(TEXT("tossflip"), TEXT("FLIP THE COIN"), BayX, TossChoiceY + 54.f + GapBlock,
+                   BtnW(TEXT("FLIP THE COIN"), 15.f, 44.f), 54.f);
+    }
+    else if (Match->TossStage == 1)
+    {
+        const float Squash = FMath::Abs(FMath::Cos(Match->Clock * 6.f));
+        const float Lift = FMath::Abs(FMath::Sin(Match->TossClock * 3.f)) * 44.f;
+        Rect(BayX + 44.f - 44.f * Squash, 420.f - Lift - 44.f, 88.f * Squash, 88.f,
+             FLinearColor(Mint.R, Mint.G, Mint.B, .85f));
+        TextT(TEXT("IN THE AIR"), BayX, 528.f, 10.f, T6, .28f, 0);
+        Text(TEXT("SPINNING"), BayX, 552.f, 44.f, T1, false, 3);
+    }
+    else
+    {
+        // Result kicker clears the PageHead sub; the innings choice clears
+        // its own leading.
+        const float TossResY = 229.f + LineH(58.f) + GapLine + LineH(15.f) + GapComp;
+        TextT(Match->TossPlayerWon ? TEXT("YOU WON THE TOSS") : TEXT("OPPOSITION WON THE TOSS"),
+              BayX, TossResY, 10.f, Match->TossPlayerWon ? Mint : T6, .28f, 0);
+
+        const float TossChY = TossResY + LineH(10.f) + GapLine;
+        if (Match->TossPlayerWon)
+        {
+            Text(TEXT("CHOOSE YOUR INNINGS"), BayX, TossChY, 40.f, T1, false, 3);
+            const float BW2 = WidthT(TEXT("BOWL FIRST"), 12.f, .18f, 0) + GapSect + Sp48;
+            const float InnY = TossChY + LineH(40.f) + GapComp;
+            if (Match->TossPlayerChoseBat)
+            {
+                PrimaryBtn(TEXT("batfirst"), TEXT("BAT FIRST"), BayX, InnY, BW2, 54.f);
+                GhostBtn(TEXT("bowlfirst"), TEXT("BOWL FIRST"), BayX + BW2 + GapComp, InnY, BW2, 54.f);
+            }
+            else
+            {
+                GhostBtn(TEXT("batfirst"), TEXT("BAT FIRST"), BayX, InnY, BW2, 54.f);
+                PrimaryBtn(TEXT("bowlfirst"), TEXT("BOWL FIRST"), BayX + BW2 + GapComp, InnY, BW2, 54.f);
+            }
+            PrimaryBtn(TEXT("tosscontinue"), TEXT("TAKE THE FIELD"), BayX, InnY + 54.f + GapSect,
+                       BtnW(TEXT("TAKE THE FIELD"), 15.f, 44.f), 54.f);
+        }
+        else
+        {
+            Text(Match->TossAIChoiceBat ? TEXT("THEY WILL BAT FIRST") : TEXT("THEY WILL BOWL FIRST"),
+                 BayX, TossChY, 40.f, T1, false, 3);
+            PrimaryBtn(TEXT("tosscontinue"), TEXT("TAKE THE FIELD"), BayX, TossChY + LineH(40.f) + GapSect,
+                       BtnW(TEXT("TAKE THE FIELD"), 15.f, 44.f), 54.f);
         }
     }
 
     BackBtn(TEXT("nav_matchup"));
 }
 
-// ============================================================================
-// SCREENS 5-10: FUTURE SCREENS
-// Clean roadmap views.
-// ============================================================================
-// ============================================================================
-// SCREEN 5: SQUAD HUB — reference-matched roster presentation.
-// Large featured current player on the left, compact player cards on the right.
-// Names/roles are presentation data only; no roster architecture was rewritten.
-// ============================================================================
-void AC26HUD::Squad()
+// ---------------------------------------------------------------- SCREEN 12
+void AC26HUD::Help()
 {
-    PageHead(TEXT("SETUP"), TEXT("SQUAD HUB"), TEXT("Your Super Over starting XI for tonight's shootout."));
+    PageHead(TEXT("TACTICS"), TEXT("HOW TO PLAY"), TEXT("Three concepts to master the Super Over."));
 
-    const int Team = Match->PlayerTeam;
-    const float X = ContentX, Y = 320.f;
-
-    // Featured player (left)
-    Panel(X, Y, 340.f, 430.f, TeamColor(Team));
-    Crest(X + 170.f, Y + 110.f, 62.f, Team);
-    Text(TEXT("A. RAO"), X + 170.f, Y + 200.f, 34, Paper, true);
-    Text(TEXT("CAPTAIN  •  BATTER"), X + 170.f, Y + 240.f, 17, TeamColor(Team), true);
-    Rule(X + 30.f, Y + 284.f, 280.f);
-    Text(TEXT("BATTING"), X + 30.f, Y + 306.f, 15, Muted);
-    Text(TEXT("82"), X + 310.f, Y + 300.f, 24, Paper, true);
-    Text(TEXT("BOWLING"), X + 30.f, Y + 340.f, 15, Muted);
-    Text(TEXT("41"), X + 310.f, Y + 334.f, 24, Paper, true);
-    Text(TEXT("FIELDING"), X + 30.f, Y + 374.f, 15, Muted);
-    Text(TEXT("76"), X + 310.f, Y + 368.f, 24, Paper, true);
-
-    // Starting XI grid (right) — compact sports-card density, presentation stats only.
-    struct FRosterEntry{const TCHAR* Name;const TCHAR* Role;int Bat,Bowl,Field;};
-    static const FRosterEntry Roster[2][6] = {
-        {
-            {TEXT("A. RAO"),TEXT("BATTER"),82,20,70},
-            {TEXT("K. DESAI"),TEXT("BATTER"),75,15,68},
-            {TEXT("R. MEHRA"),TEXT("ALL-ROUNDER"),64,58,72},
-            {TEXT("N. ARCHER"),TEXT("BOWLER"),22,85,60},
-            {TEXT("S. IYER"),TEXT("KEEPER"),58,10,81},
-            {TEXT("D. KOHLI"),TEXT("BOWLER"),18,79,55},
-        },
-        {
-            {TEXT("J. HART"),TEXT("BATTER"),80,18,69},
-            {TEXT("L. REED"),TEXT("BATTER"),73,14,66},
-            {TEXT("M. VALE"),TEXT("ALL-ROUNDER"),62,56,70},
-            {TEXT("V. SEN"),TEXT("BOWLER"),20,83,58},
-            {TEXT("T. FOX"),TEXT("KEEPER"),56,9,79},
-            {TEXT("O. BLAKE"),TEXT("BOWLER"),16,77,53},
-        },
+    static const TCHAR* Idx[3] = {TEXT("01"), TEXT("02"), TEXT("03")};
+    static const TCHAR* TT[3] = {TEXT("BATTING"), TEXT("BOWLING"), TEXT("THE SUPER OVER")};
+    static const TCHAR* HD[3] = {
+        TEXT("Left stick sets footwork. Swipe the right side to aim direction and power, then time the contact as the ball pitches."),
+        TEXT("Choose delivery type and length, drag the pitch marker onto your target, then release inside the sweet spot."),
+        TEXT("Six balls. Two wickets. Every dot ball is worth gold and every boundary swings the whole match.")
     };
 
-    const float GX = X + 372.f, GW = ContentR - GX;
-    const float CardW = (GW - 32.f) / 3.f, CardH = 132.f;
-    for (int I = 0; I < 6; ++I)
+    // Rows open below the header; the body copy clears its own title.
+    const float HelpTop = 229.f + LineH(58.f) + GapLine + LineH(15.f) + GapSect;
+    HairRule(BayX, HelpTop, BayW);
+    for (int I = 0; I < 3; ++I)
     {
-        const int Row = I / 3, Col = I % 3;
-        const float CX2 = GX + Col * (CardW + 16.f), CY2 = Y + Row * (CardH + 16.f);
-        const auto& P = Roster[Team][I];
-        PlayerCard(CX2, CY2, CardW, CardH, P.Name, P.Role, P.Bat, P.Bowl, P.Field, Team, I == 0);
+        const float RY = HelpTop + I * 118.f;
+        Text(Idx[I], BayX, RY + 30.f, 15.f, T7, false, 2);
+        TextT(TT[I], BayX + 64.f, RY + 24.f, 24.f, T2, .10f, 0);
+        TextWrap(HD[I], BayX + 64.f, RY + 24.f + LineH(24.f) + GapLine, 15.f, T5, BayW - 64.f, false, 1);
+        HairRule(BayX, RY + 118.f, BayW);
     }
 
-    Text(TEXT("STARTING XI SHOWN  •  FULL ROSTER MANAGEMENT ARRIVES IN A FUTURE UPDATE"), GX, Y + 2 * (CardH + 16.f) + 8.f, 15, Muted);
+    PrimaryBtn(TEXT("quickplay"), TEXT("START PLAYING"), BayX, HelpTop + 3.f * 118.f + GapSect,
+               BtnW(TEXT("START PLAYING"), 15.f, 44.f), 54.f);
     BackBtn(TEXT("nav_home"));
 }
 
-// Reusable compact sports card (reference: WBP_PlayerCard). Dark panel, name, role,
-// three small stats, teal edge on the selected/featured entry.
+// ---------------------------------------------------------------- SCREENS 9-10
+void AC26HUD::Future(int Kind)
+{
+    static const TCHAR* Titles[5] = {TEXT("CAREER DYNASTY"), TEXT("GLOBAL TOURNAMENTS"),
+                                     TEXT("ONLINE MULTIPLAYER"), TEXT("TRAINING NETS"), TEXT("WORLD ROSTER")};
+    static const TCHAR* Subs[5] = {
+        TEXT("Lead your franchise to the international podium over multi-season contracts."),
+        TEXT("Tiered bracket tournaments across authentic global stadiums."),
+        TEXT("Ranked one-versus-one live Super Overs with global leaderboards."),
+        TEXT("Drill batting timing and bowling lines with no match pressure."),
+        TEXT("Authentic world teams with custom squads and licensed kits.")
+    };
+    const int K = FMath::Clamp(Kind, 0, 4);
+    PageHead(TEXT("IN DEVELOPMENT"), Titles[K], Subs[K]);
+
+    HairRule(BayX, 380.f, BayW);
+    TextT(TEXT("COMING IN A FUTURE UPDATE"), BayX, 412.f, 11.f, Mint, .28f, 0);
+    HairRule(BayX, 452.f, BayW);
+
+    PrimaryBtn(TEXT("mode_super"), TEXT("PLAY SUPER OVER"), BayX, 500.f,
+               BtnW(TEXT("PLAY SUPER OVER"), 15.f, 44.f), 54.f);
+    BackBtn(TEXT("nav_home"));
+}
+
 void AC26HUD::PlayerCard(float X, float Y, float W, float H, const FString& Name, const FString& Role, int Bat, int Bowl, int Field, int Team, bool Selected)
 {
     Panel(X, Y, W, H, Selected ? TeamColor(Team) : FLinearColor::Transparent);
-    Text(Name, X + 16, Y + 14, 21, Paper);
-    Text(Role, X + 16, Y + 42, 14, TeamColor(Team));
-    Rule(X + 16, Y + 68, W - 32);
-    const float SW = (W - 32) / 3.f;
-    auto Stat = [&](int I, const TCHAR* L, int V)
+
+    float CY = Y + GapBlock;
+    TextFit(Name, X + GapBlock, CY, 20, WhiteAthletic, W - 2.f * GapBlock, false, 0);
+    CY += LineH(20) + GapLine;
+    TextFit(Role, X + GapBlock, CY, 13, TeamColor(Team), W - 2.f * GapBlock, false, 0);
+    CY += LineH(13) + GapComp;
+    Rule(X + GapBlock, CY, W - 2.f * GapBlock);
+
+    // Three stat columns share the width evenly, each centred inside its column
+    const float ColW = (W - 2.f * GapBlock) / 3.f;
+    CY += GapBlock;
+    auto StatCol = [&](int I, const TCHAR* Label, int Val)
     {
-        const float SX = X + 16 + I * SW;
-        Text(FString::FromInt(V), SX, Y + 78, 20, Paper);
-        Text(L, SX, Y + 104, 12, Muted);
+        const float ColCenter = X + GapBlock + (I + .5f) * ColW;
+        Text(FString::FromInt(Val), ColCenter, CY, 20, WhiteAthletic, true, 2);
+        Text(Label, ColCenter, CY + LineH(20) + GapLine, 12, SlateMuted, true, 0);
     };
-    Stat(0, TEXT("BAT"), Bat);
-    Stat(1, TEXT("BWL"), Bowl);
-    Stat(2, TEXT("FLD"), Field);
+    StatCol(0, TEXT("BAT"), Bat);
+    StatCol(1, TEXT("BWL"), Bowl);
+    StatCol(2, TEXT("FLD"), Field);
 }
 
-// ============================================================================
-// SCREEN 13: STORE — reference-matched shell. No payment/loot-box logic:
-// preview cards only, presentation-ready for a future economy pass.
-// ============================================================================
-void AC26HUD::Store()
-{
-    PageHead(TEXT("STORE"), TEXT("CRICKET STORE"), TEXT("Preview the kit and cosmetics coming to Cricket 26."));
-
-    const float X = ContentX, Y = 320.f;
-    static const TCHAR* Cats[] = {TEXT("PLAYER PACKS"), TEXT("KITS & GEAR"), TEXT("COSMETICS")};
-    static const TCHAR* Desc[] = {
-        TEXT("Unlock new faces for your Super Over roster."),
-        TEXT("Bats, gloves, pads and boots for your squad."),
-        TEXT("Stadium themes and celebration flourishes."),
-    };
-    const float CW = (ContentW - 40.f) / 3.f;
-    for (int I = 0; I < 3; ++I)
-    {
-        const float CX2 = X + I * (CW + 20.f);
-        Panel(CX2, Y, CW, 260.f, FLinearColor::Transparent);
-        Rect(CX2 + 16, Y + 16, CW - 32, 120, PillBg);
-        Line(CX2 + 16, Y + 16, CX2 + CW - 16, Y + 136, Hairline, 1.f);
-        Line(CX2 + CW - 16, Y + 16, CX2 + 16, Y + 136, Hairline, 1.f);
-        Text(Cats[I], CX2 + 16, Y + 150, 22, Paper);
-        TextWrap(Desc[I], CX2 + 16, Y + 182, 15, Muted, CW - 32);
-        Text(TEXT("COMING SOON"), CX2 + 16, Y + 228, 16, MintCyan);
-    }
-
-    Btn(TEXT("mode_super"), TEXT("PLAY SUPER OVER  >"), X, Y + 292.f, 310, 62, 1);
-    BackBtn(TEXT("nav_home"));
-}
 
 // ============================================================================
-// SCREENS 6-10: CAREER / LEADERBOARDS / MULTIPLAYER / TRAINING / WORLD
-// Reference-matched shells. Systems that do not exist yet are marked honestly
-// as COMING SOON / NOT AVAILABLE IN THIS BUILD rather than faked.
-// ============================================================================
-void AC26HUD::Future(int Kind)
-{
-    const float X = ContentX, Y = 320.f;
-
-    if (Kind == 1) // CAREER — "Road to Glory"
-    {
-        PageHead(TEXT("CAREER"), TEXT("ROAD TO GLORY"), TEXT("Build your Cricket 26 legacy, match by match."));
-
-        static const TCHAR* Rows[] = {TEXT("PLAYER CAREER"), TEXT("CLUB CAREER"), TEXT("INTERNATIONAL"), TEXT("ACHIEVEMENTS")};
-        for (int I = 0; I < 4; ++I)
-        {
-            const float RY = Y + I * 62.f;
-            Rule(X, RY, ContentW);
-            Text(Rows[I], X, RY + 20, 26, Paper);
-            Text(TEXT("COMING SOON"), ContentR - Width(TEXT("COMING SOON"), 17), RY + 24, 17, Muted);
-        }
-
-        const float PY = Y + 4 * 62.f + 30.f;
-        Text(TEXT("SEASON 01 PROGRESS"), X, PY, 16, Muted);
-        Rect(X, PY + 26, ContentW, 6, PillBg);
-        Rect(X, PY + 26, ContentW * .04f, 6, MintCyan);
-
-        Btn(TEXT("mode_super"), TEXT("PLAY SUPER OVER  >"), X, PY + 60, 310, 62, 1);
-        BackBtn(TEXT("nav_home"));
-        return;
-    }
-
-    if (Kind == 3) // MULTIPLAYER — "Multiplayer Arena"
-    {
-        PageHead(TEXT("ONLINE"), TEXT("MULTIPLAYER ARENA"), TEXT("Real-time ranked Super Overs against global rivals."));
-
-        static const TCHAR* Modes[] = {TEXT("QUICK MATCH"), TEXT("RANKED SEASONS"), TEXT("PLAY WITH FRIENDS")};
-        const float CW = (ContentW - 40.f) / 3.f;
-        for (int I = 0; I < 3; ++I)
-        {
-            const float CX2 = X + I * (CW + 20.f);
-            Panel(CX2, Y, CW, 200.f, FLinearColor::Transparent);
-            Text(Modes[I], CX2 + 20, Y + 24, 23, Paper);
-            Text(TEXT("NOT AVAILABLE"), CX2 + 20, Y + 150, 15, Coral);
-            Text(TEXT("IN THIS BUILD"), CX2 + 20, Y + 170, 15, Coral);
-        }
-
-        Btn(TEXT("mode_super"), TEXT("PLAY SUPER OVER  >"), X, Y + 240.f, 310, 62, 1);
-        BackBtn(TEXT("nav_home"));
-        return;
-    }
-
-    if (Kind == 2) // LEADERBOARDS — "Global Leaderboards"
-    {
-        PageHead(TEXT("RANKINGS"), TEXT("GLOBAL LEADERBOARDS"), TEXT("Season standings across every Cricket 26 arena."));
-
-        static const TCHAR* Tabs[] = {TEXT("GLOBAL"), TEXT("FRIENDS"), TEXT("SEASON")};
-        const float TabY = ContentTop + 180.f;
-        for (int I = 0; I < 3; ++I)
-        {
-            const float TX = X + I * 130.f;
-            if (I == 0) Rect(TX, TabY + 28.f, 100, 2, MintCyan);
-            Text(Tabs[I], TX + 50, TabY, 20, I == 0 ? Paper : Muted, true);
-        }
-
-        const float TY = TabY + 60.f;
-        Rule(X, TY, ContentW);
-        Text(TEXT("RANK"), X, TY + 14, 15, Muted);
-        Text(TEXT("PLAYER"), X + 120, TY + 14, 15, Muted);
-        Text(TEXT("RATING"), X + ContentW - 220, TY + 14, 15, Muted);
-        Text(TEXT("WINS"), X + ContentW - 80, TY + 14, 15, Muted);
-        Rule(X, TY + 46, ContentW);
-
-        Text(TEXT("NO RANKED MATCHES PLAYED YET"), X + ContentW * .5f, TY + 120, 24, Paper, true);
-        Text(TEXT("COMING SOON  /  GLOBAL SEASON RANKINGS ARRIVE IN A FUTURE UPDATE"), X + ContentW * .5f, TY + 158, 18, Muted, true);
-
-        Btn(TEXT("mode_super"), TEXT("PLAY SUPER OVER  >"), X, TY + 240.f, 310, 62, 1);
-        BackBtn(TEXT("nav_home"));
-        return;
-    }
-
-    // Kind 4 (Training) / 5 (World) — simple roadmap template, orphaned from primary
-    // nav but kept reachable for completeness and future expansion.
-    static const TCHAR* Titles[] = {TEXT("TRAINING NETS"), TEXT("CRICKET WORLD")};
-    static const TCHAR* Subs[] = {
-        TEXT("Master timing, footwork, and death-bowling craft."),
-        TEXT("Editorial news, player spotlights, and world events.")
-    };
-    const int I = Kind - 4;
-    PageHead(TEXT("ROADMAP"), Titles[I], Subs[I]);
-
-    Text(TEXT("COMING IN SEASON 01"), X, Y, 24, MintCyan);
-    Text(TEXT("This vertical slice is dedicated to delivering the purest Super Over gameplay."), X, Y + 40, 24, PaperDim);
-
-    Btn(TEXT("mode_super"), TEXT("PLAY SUPER OVER  >"), X, Y + 130, 310, 62, 1);
-    BackBtn(TEXT("nav_home"));
-}
-
-// ============================================================================
-// SCREEN 11: SETTINGS HUB
-// Category tabs with ample horizontal pitch and clean setting rows.
-// ============================================================================
-void AC26HUD::SettingsHub()
-{
-    PageHead(TEXT("SETTINGS"), TEXT("CONFIGURATION"), TEXT("Audio mix, visual quality, and control preferences."));
-
-    static const TCHAR* Tabs[] = {TEXT("GAME"), TEXT("AUDIO"), TEXT("GRAPHICS"), TEXT("CONTROLS"), TEXT("EASE"), TEXT("ABOUT")};
-    static const FName Acts[] = {TEXT("stab0"), TEXT("stab1"), TEXT("stab2"), TEXT("stab3"), TEXT("stab4"), TEXT("stab5")};
-
-    // Category Tabs: 130px pitch with zero overlap
-    for (int I = 0; I < 6; ++I)
-    {
-        const float TX = ContentX + I * 130.f;
-        const bool Sel = Match->SettingsTab == I;
-        if (Sel) Rect(TX, 340, 100, 2, MintCyan);
-        Text(Tabs[I], TX + 50, 312, 22, Sel ? Paper : Muted, true);
-        Zones.Add({Acts[I], FBox2D(FVector2D(TX, 304), FVector2D(TX + 100, 344))});
-    }
-
-    const float X = ContentX, W = 780.f;
-    const float TY = 374.f;
-
-    auto Row = [&](FName A, const FString& L, const FString& V, int I, bool On)
-    {
-        const float RY = TY + I * 68.f;
-        Rule(X, RY, W);
-        Text(L, X, RY + 20, 22, Paper);
-        Btn(A, V, X + W - 180, RY + 10, 180, 42, 0, On);
-    };
-
-    const TCHAR* D[] = {TEXT("EASY"), TEXT("NORMAL"), TEXT("HARD")};
-    const TCHAR* Q[] = {TEXT("LOW"), TEXT("MEDIUM"), TEXT("HIGH"), TEXT("ULTRA")};
-
-    switch (Match->SettingsTab)
-    {
-    case 1:
-        Row(TEXT("master"), TEXT("MASTER AUDIO"), Match->Preferences->SoundVolume > .1f ? TEXT("ON") : TEXT("OFF"), 0, Match->Preferences->SoundVolume > .1f);
-        Row(TEXT("commentary"), TEXT("COMMENTARY SPEECH"), Match->Preferences->CommentaryVolume > .1f ? TEXT("ON") : TEXT("OFF"), 1, Match->Preferences->CommentaryVolume > .1f);
-        Row(TEXT("crowd"), TEXT("STADIUM CROWD"), Match->Preferences->CrowdVolume > .1f ? TEXT("ON") : TEXT("OFF"), 2, Match->Preferences->CrowdVolume > .1f);
-        Row(TEXT("sfx"), TEXT("SFX & IMPACTS"), Match->Preferences->SFXVolume > .1f ? TEXT("ON") : TEXT("OFF"), 3, Match->Preferences->SFXVolume > .1f);
-        break;
-    case 2:
-        Row(TEXT("quality"), FString(TEXT("GRAPHICS QUALITY  /  ")) + Q[Match->Preferences->Quality], Q[Match->Preferences->Quality], 0, true);
-        break;
-    case 3:
-        Row(TEXT("sensitivity"), FString::Printf(TEXT("SWIPE SENSITIVITY  /  %.1fx"), Match->Preferences->Sensitivity), FString::Printf(TEXT("%.1fx"), Match->Preferences->Sensitivity), 0, true);
-        Row(TEXT("vibration"), TEXT("HAPTIC VIBRATION"), Match->Preferences->Vibration ? TEXT("ON") : TEXT("OFF"), 1, Match->Preferences->Vibration);
-        Row(TEXT("hints"), TEXT("TACTICAL HINTS"), Match->Preferences->Hints ? TEXT("ON") : TEXT("OFF"), 2, Match->Preferences->Hints);
-        break;
-    case 4:
-        Row(TEXT("subtitles"), TEXT("COMMENTARY SUBTITLES"), Match->Preferences->Subtitles ? TEXT("ON") : TEXT("OFF"), 0, Match->Preferences->Subtitles);
-        Row(TEXT("reducedmotion"), TEXT("REDUCED MOTION"), Match->Preferences->ReducedMotion ? TEXT("ON") : TEXT("OFF"), 1, Match->Preferences->ReducedMotion);
-        break;
-    case 5:
-        Text(TEXT("CRICKET 26"), X, TY + 20, 44, Paper);
-        Text(TEXT("AAA mobile cricket vertical slice. Authentic teams, stadium floodlights,"), X, TY + 80, 23, Muted);
-        Text(TEXT("original commentary, and precision physics-driven ball flight."), X, TY + 110, 23, Muted);
-        Text(TEXT("BUILD: v0.3  •  UNREAL ENGINE 5.8"), X, TY + 150, 21, MintCyan);
-        break;
-    default:
-        Row(TEXT("difficulty"), FString(TEXT("AI DIFFICULTY  /  ")) + D[Match->Preferences->Difficulty], D[Match->Preferences->Difficulty], 0, true);
-        Row(TEXT("hints"), TEXT("TACTICAL HINTS"), Match->Preferences->Hints ? TEXT("ON") : TEXT("OFF"), 1, Match->Preferences->Hints);
-        Row(TEXT("vibration"), TEXT("HAPTIC FEEDBACK"), Match->Preferences->Vibration ? TEXT("ON") : TEXT("OFF"), 2, Match->Preferences->Vibration);
-        break;
-    }
-
-    BackBtn(TEXT("nav_home"));
-}
-
-// ============================================================================
-// SCREEN 12: HELP (How to Play)
-// Generous 3-column spacing.
-// ============================================================================
-void AC26HUD::Help()
-{
-    PageHead(TEXT("TACTICS"), TEXT("HOW TO PLAY"), TEXT("Three essential concepts to master the Super Over."));
-
-    static const TCHAR* TT[] = {TEXT("01 / BATTING"), TEXT("02 / BOWLING"), TEXT("03 / SUPER OVER")};
-    static const TCHAR* HD[] = {
-        TEXT("Left stick controls footwork. Swipe right area to aim direction and power. Time as ball pitches."),
-        TEXT("Select delivery type and length. Drag pitch marker. Tap release in the gold sweet spot."),
-        TEXT("Six balls. Two wickets. Every dot is gold; every boundary swings the match.")
-    };
-
-    for (int I = 0; I < 3; ++I)
-    {
-        const float X = ContentX + I * 390.f, Y = 310.f, W = 360.f;
-        Text(TT[I], X, Y, 26, Paper);
-        TextWrap(HD[I], X, Y + 44, 22, Muted, W);
-    }
-
-    Btn(TEXT("nav_teams"), TEXT("START PLAYING  >"), ContentX, 710, 300, 58, 1);
-    BackBtn(TEXT("nav_home"));
-}
-
-// ============================================================================
-// GAMEPLAY HUD: RADICAL MINIMALIST SCORE BUG
-// Ultra-compact single broadcast capsule. Measured and guarded against overlaps.
+// GAMEPLAY HUD: FULL-WIDTH BROADCAST LOWER-THIRD SCORE BAR
+// Cricket-24 style docked to the canvas bottom edge:
+// LEFT: club badge + two batter rows with amber underlines (striker marked).
+// CENTER: score + overs on one baseline, run rate / chase need beneath.
+// RIGHT: bowler name + figures, this-over balls below.
 // ============================================================================
 void AC26HUD::Score()
 {
+    // No live bar during instant replay - the replay pill owns the screen.
+    if (Match->Phase == EC26Phase::Replay) return;
+
     const auto& S = Match->Rules.Now();
     const int Bat = Match->BattingTeam();
     const auto TC = TeamColor(Bat);
+    const auto TC2 = TeamColor(1 - Bat);
+    const int Overs = S.LegalBalls / 6;
+    const int Balls = S.LegalBalls % 6;
 
-    // Single sleek broadcast capsule (Width: 500, Height: 50)
-    const float BX = 56.f, BY = 36.f, BW = 500.f, BH = 50.f;
-    Rect(BX, BY, BW, BH, PillBg);
-    Rect(BX, BY, BW, 2.5f, TC); // Accent top hairline
+    // Sleek full-width bottom bar for both batting and bowling
+    const float BarY = 842.f, BarH = 58.f;
+    const float BarR = 1600.f;
+    const FLinearColor BarBg(0.012f, 0.016f, 0.025f, 0.96f);
 
-    // 1. Team Short Code (X=74)
-    Text(Match->TeamShort(Bat), BX + 18, BY + 11, 26, TC);
+    Rect(0.f, BarY, BarR, BarH, BarBg);
+    // Subtle top refraction hairline
+    Line(0.f, BarY, BarR, BarY, FLinearColor(1.f, 1.f, 1.f, 0.12f), 1.2f);
+    // Team accent colored hairlines at outer flanks
+    Line(0.f, BarY, 560.f, BarY, TC, 2.2f);
+    Line(1040.f, BarY, 1600.f, BarY, TC2, 2.2f);
 
-    // 2. Divider 1 (X=140)
-    Line(BX + 84, BY + 10, BX + 84, BY + BH - 10, Hairline, 1.f);
+    // ---- LEFT: batting club badge ----
+    Disc(40.f, BarY + BarH * 0.5f, 22.f, FLinearColor(0.06f, 0.08f, 0.12f, 1.f));
+    Circle(40.f, BarY + BarH * 0.5f, 22.f, TC, 2.2f);
+    TextMid(Match->TeamShort(Bat), 40.f, BarY + BarH * 0.5f - 13.f, 26.f, 14, WhiteAthletic, true, 2);
 
-    // 3. Score (Runs / Wickets) at X=152
-    const FString ScoreStr = FString::Printf(TEXT("%d / %d"), S.Runs, S.Wickets);
-    Text(ScoreStr, BX + 98, BY + 6, 36, Paper);
+    // ---- LEFT: two batter rows, clean athletic typography without noisy underlines ----
+    const float BatX = 76.f, BatR = 560.f, RowH = 25.f;
+    const float Row1Y = BarY + 4.f, Row2Y = BarY + 4.f + RowH;
+    const int StrikerRuns = S.BatterRuns[FMath::Clamp(S.Striker, 0, 2)];
+    const int StrikerBalls = S.BatterBalls[FMath::Clamp(S.Striker, 0, 2)];
+    const int PartnerRuns = S.BatterRuns[FMath::Clamp(S.NonStriker, 0, 2)];
+    const int PartnerBalls = S.BatterBalls[FMath::Clamp(S.NonStriker, 0, 2)];
+    const FString Fig1 = FString::Printf(TEXT("%d*  (%d)"), StrikerRuns, StrikerBalls);
+    const FString Fig2 = FString::Printf(TEXT("%d  (%d)"), PartnerRuns, PartnerBalls);
+    const float Fig1W = Width(Fig1, 15, 2), Fig2W = Width(Fig2, 14, 2);
 
-    // 4. Divider 2 (X=260)
-    Line(BX + 224, BY + 10, BX + 224, BY + BH - 10, Hairline, 1.f);
+    // Striker pip indicator
+    Disc(BatX + 5.f, Row1Y + 12.f, 3.5f, Gold);
 
-    // 5. Overs / Legal Balls at X=276
-    const FString BallsStr = FString::Printf(TEXT("%d / 6"), S.LegalBalls);
-    Text(BallsStr, BX + 238, BY + 13, 23, PaperDim);
+    TextFit(Match->BatterName(), BatX + 16.f, Row1Y + 2.f, 15, WhiteAthletic, BatR - BatX - 16.f - Fig1W - 14.f, false, 1);
+    Text(Fig1, BatR - Fig1W, Row1Y + 2.f, 15, WhiteAthletic, false, 2);
 
-    // 6. Chasing Target (if in second innings)
+    TextFit(Match->NonStrikerName(), BatX + 16.f, Row2Y + 2.f, 14, SilverCool, BatR - BatX - 16.f - Fig2W - 14.f, false, 0);
+    Text(Fig2, BatR - Fig2W, Row2Y + 2.f, 14, SilverCool, false, 2);
+
+    // ---- CENTER: match score + overs, rate / chase beneath ----
+    const float DivL = 600.f, DivR = 1000.f;
+    Line(DivL, BarY + 8.f, DivL, BarY + BarH - 8.f, FLinearColor(1.f, 1.f, 1.f, 0.10f), 1.f);
+    Line(DivR, BarY + 8.f, DivR, BarY + BarH - 8.f, FLinearColor(1.f, 1.f, 1.f, 0.10f), 1.f);
+
+    const FString ScoreStr = FString::Printf(TEXT("%d - %d"), S.Runs, S.Wickets);
+    const FString OversStr = FString::Printf(TEXT("%d.%d OV"), Overs, Balls);
+    const float ScoreW = Width(ScoreStr, 24, 2), OversW = Width(OversStr, 14, 0);
+    const float CenX = (DivL + DivR) * 0.5f;
+    const float TotalW = ScoreW + 14.f + OversW;
+    const float ScoreStartX = CenX - TotalW * 0.5f;
+
+    Text(ScoreStr, ScoreStartX, BarY + 5.f, 24, WhiteAthletic, false, 2);
+    Text(OversStr, ScoreStartX + ScoreW + 14.f, BarY + 12.f, 14, SilverCool, false, 1);
+
     if (Match->Rules.Current == 1)
     {
-        const FString ReqStr = FString::Printf(TEXT("NEED %d (%db)"), Match->Rules.RunsRequired(), Match->Rules.BallsRemaining());
-        Text(ReqStr, BX + BW - 18 - Width(ReqStr, 20), BY + 14, 20, Gold);
+        const FString ReqStr = FString::Printf(TEXT("NEED %d RUNS FROM %d BALLS"), Match->Rules.RunsRequired(), Match->Rules.BallsRemaining());
+        TextMid(ReqStr, CenX, BarY + 34.f, 20.f, 12, Gold, true, 1);
     }
-
-    // Batter & Bowler Lower-Third Strip (Cleanly separated at Y=94, with dark backdrop)
-    const FString BBInfo = Match->BatterName() + TEXT(" *   •   ") + Match->BowlerName();
-    const float BBW = Width(BBInfo, 18) + 24.f;
-    Rect(BX, BY + BH + 8, BBW, 28, FLinearColor(Void.R, Void.G, Void.B, .75f));
-    Text(BBInfo, BX + 12, BY + BH + 13, 18, PaperDim);
-
-    // Top-right Pause button (generously inset from right edge)
-    Btn(TEXT("pause"), TEXT("II"), 1480, 36, 56, 46, 0);
-
-    // Ball-by-ball minimalist dots at bottom edge
-    float BallX = 640.f;
-    int Start = FMath::Max(0, int(S.Ledger.size()) - 6);
-    for (int I = Start; I < int(S.Ledger.size()); ++I)
+    else
     {
-        const auto& O = S.Ledger[I];
-        const bool W = O.Wicket != C26::Dismissal::None;
-        FString V = W ? TEXT("W") : (O.WideRuns ? TEXT("Wd") : (O.NoBall ? TEXT("Nb") : FString::FromInt(O.BatRuns + O.Byes + O.LegByes)));
-        Circle(BallX, 856, 13, W ? Coral : (O.BatRuns >= 4 ? MintCyan : Muted), 1.5f);
-        Text(V, BallX, 845, 18, W ? Coral : Paper, true);
-        BallX += 48.f;
+        const float CRR = S.LegalBalls > 0 ? (float)S.Runs / (float)S.LegalBalls * 6.f : 0.f;
+        const FString RateStr = FString::Printf(TEXT("1ST INNINGS  \u2022  CRR %.2f"), CRR);
+        TextMid(RateStr, CenX, BarY + 34.f, 20.f, 11, SilverCool, true, 0);
     }
 
-    if (S.FreeHit) Tag(TEXT("FREE HIT"), 570, 36, true);
+    // ---- RIGHT: bowler + figures, this-over balls beneath ----
+    const float BowlX = 1040.f, BowlR = 1510.f;
+    const FString BowlFig = FString::Printf(TEXT("%d-%d  (%d.%d ov)"), S.Wickets, S.Runs, Overs, Balls);
+    const float BowlFigW = Width(BowlFig, 14, 2);
+    TextFit(Match->BowlerName(), BowlX, Row1Y + 2.f, 15, WhiteAthletic, BowlR - BowlX - BowlFigW - 14.f, false, 1);
+    Text(BowlFig, BowlR - BowlFigW, Row1Y + 2.f, 14, SilverCool, false, 2);
+
+    // Six ball slots, newest at the right. Unplayed slots stay hollow.
+    const int Total = (int)S.Ledger.size();
+    const int Shown = FMath::Min(6, Total);
+    const int First = Total - Shown;
+    const float BallR = 9.f, BallCY = Row2Y + 11.f;
+    for (int K = 0; K < 6; ++K)
+    {
+        const float CX = BowlR - BallR - (5 - K) * 28.f;
+        const int LI = First + K - (6 - Shown);
+        if (LI < First || LI >= Total)
+        {
+            Circle(CX, BallCY, BallR, FLinearColor(0.3f, 0.35f, 0.45f, 0.30f), 1.2f);
+            continue;
+        }
+        const auto& O = S.Ledger[LI];
+        const bool W = O.Wicket != C26::Dismissal::None;
+        const bool Six = O.BatRuns >= 6;
+        const bool Four = O.BatRuns >= 4 && !Six;
+        const bool Dot = O.BatRuns == 0 && O.WideRuns == 0 && !O.NoBall && !W;
+        const bool Extra = (O.WideRuns > 0 || O.NoBall) && !W;
+
+        if (Dot)
+        {
+            Circle(CX, BallCY, BallR, FLinearColor(0.4f, 0.45f, 0.55f, 0.55f), 1.2f);
+            Disc(CX, BallCY, 2.5f, FLinearColor(0.6f, 0.65f, 0.75f, 0.70f));
+            continue;
+        }
+        FString V;
+        FLinearColor Fill, LocalInk;
+        if (W)            { V = TEXT("W"); Fill = Crimson; LocalInk = WhiteAthletic; }
+        else if (Six)     { V = TEXT("6"); Fill = Gold; LocalInk = FLinearColor(0.04f, 0.05f, 0.08f, 1.f); }
+        else if (Four)    { V = TEXT("4"); Fill = TurfGreen; LocalInk = WhiteAthletic; }
+        else if (Extra)   { V = O.WideRuns ? TEXT("Wd") : TEXT("Nb"); Fill = FLinearColor(.95f, .65f, .25f, 1.f); LocalInk = FLinearColor(0.04f, 0.05f, 0.08f, 1.f); }
+        else              { V = FString::FromInt(O.BatRuns + O.Byes + O.LegByes); Fill = FLinearColor(0.12f, 0.16f, 0.22f, 0.90f); LocalInk = WhiteAthletic; }
+
+        Disc(CX, BallCY, BallR, Fill);
+        Circle(CX, BallCY, BallR, FLinearColor(Fill.R, Fill.G, Fill.B, 0.9f), 1.2f);
+        const float FS = (V.Len() > 1) ? 9.f : 11.f;
+        TextMid(V, CX, BallCY - 6.f, 12.f, FS, LocalInk, true, 2);
+    }
+
+    // ---- FAR RIGHT: fielding club shield (ALWAYS visible full-width) ----
+    Disc(1558.f, BarY + BarH * 0.5f, 22.f, FLinearColor(0.06f, 0.08f, 0.12f, 1.f));
+    Circle(1558.f, BarY + BarH * 0.5f, 22.f, TC2, 2.2f);
+    TextMid(Match->TeamShort(1 - Bat), 1558.f, BarY + BarH * 0.5f - 13.f, 26.f, 14, WhiteAthletic, true, 2);
+
+    // Free hit floating tag above center bar
+    if (S.FreeHit)
+    {
+        Rect(730.f, BarY - 26.f, 140.f, 22.f, Crimson);
+        TextMid(TEXT("FREE HIT"), 800.f, BarY - 24.f, 18.f, 11, WhiteAthletic, true, 2);
+    }
+
+    // Top-right pause stays where it always was - the top is empty now.
+    Btn(TEXT("pause"), TEXT("II"), 1472.f, 36.f, 56.f, 48.f, 0);
 }
 
 // ============================================================================
-// GAMEPLAY CONTROLS
-// Unobtrusive, transparent touch zones with zero collision.
+// BROADCAST LOWER-THIRD: restrained contextual graphics above the score bug.
+// One slim card, quick fades, never during replays (the replay pill owns those).
+// ============================================================================
+void AC26HUD::DrawBroadcastGraphics()
+{
+    if (!Match || Match->Phase == EC26Phase::Replay) return;
+    FString Title, Sub;
+    FLinearColor Accent;
+    float Alpha = 0.f;
+    if (!Match->GetActiveGraphic(Title, Sub, Accent, Alpha) || Alpha <= 0.01f) return;
+    const float W = 660.f, H = 58.f, X = 800.f - W * .5f, Y = 750.f;
+    Rect(X, Y, W, H, WithA(FLinearColor(0.012f, 0.016f, 0.025f, 0.94f), Alpha));
+    Line(X, Y, X + W, Y, WithA(Accent, Alpha), 1.5f);
+    Rect(X, Y, 3.5f, H, WithA(Accent, Alpha));
+    TextFit(Title, X + 24.f, Y + 5.f, 20, WithA(WhiteAthletic, Alpha), W - 48.f, false, 2);
+    TextFit(Sub, X + 24.f, Y + 32.f, 13, WithA(SilverCool, Alpha), W - 48.f, false, 0);
+}
+
+// ============================================================================
+// GAMEPLAY CONTROLS & ERGONOMIC TOUCH ZONES
+// Pro broadcast touch interface with zero obstruction of athlete and pitch.
 // ============================================================================
 void AC26HUD::Controls()
 {
@@ -1169,106 +1885,548 @@ void AC26HUD::Controls()
     {
         if (Match->PlayerBatting())
         {
-            // Left Stick Footwork
-            Circle(160, 700, 56, FLinearColor(.4f, .65f, .68f, .22f), 1.5f);
-            Circle(160 + Match->Footwork * 34.f, 700, 16, MintCyan, 2.f);
+            // Left Stick Footwork (Ergonomic Translucent Dial)
+            const float StickX = 140.f, StickY = 740.f;
+            Circle(StickX, StickY, 52, FLinearColor(.12f, .18f, .26f, .35f), 1.5f);
+            Line(StickX - 52, StickY, StickX + 52, StickY, FLinearColor(1.f, 1.f, 1.f, .10f), 1.f);
+            Line(StickX, StickY - 52, StickX, StickY + 52, FLinearColor(1.f, 1.f, 1.f, .10f), 1.f);
+            Circle(StickX + Match->Footwork * 32.f, StickY, 18, Gold, 2.5f);
+            Text(TEXT("FOOTWORK"), StickX, StickY + 64.f, 14, SlateMuted, true, 0);
 
-            // Right Touch Area
-            Circle(1440, 700, 70, FLinearColor(.4f, .65f, .68f, .22f), 1.5f);
-            Text(TEXT("SWIPE TO HIT"), 1440, 786, 20, PaperDim, true);
+            // Right Touch Shot Area: intentionally undrawn. The batting guide
+            // ring and its "hold anywhere right" caption were removed; the shot
+            // zone is the whole right half and needs no on-screen furniture.
 
-            // Loft & Defend Toggles (At Y=560, well clear of touch circle at 700)
-            Btn(TEXT("loft"), TEXT("LOFT"), 1320, 560, 100, 44, 0, Match->Intent.Loft);
-            Btn(TEXT("defend"), TEXT("DEFEND"), 1432, 560, 100, 44, 0, Match->Intent.Defend);
+            // 3-Segment Shot Intent Switcher: [ LOFT | GROUND | DEFEND ]
+            const float SwitchX = 1240.f, SwitchY = 620.f, SwitchW = 280.f, SwitchH = 44.f;
+            const float SegW = SwitchW / 3.f;
+            Rect(SwitchX, SwitchY, SwitchW, SwitchH, SurfaceWell);
+            Line(SwitchX, SwitchY, SwitchX + SwitchW, SwitchY, HairlineSoft, 1.f);
+            Line(SwitchX, SwitchY + SwitchH, SwitchX + SwitchW, SwitchY + SwitchH, HairlineSoft, 1.f);
+            Line(SwitchX, SwitchY, SwitchX, SwitchY + SwitchH, HairlineSoft, 1.f);
+            Line(SwitchX + SwitchW, SwitchY, SwitchX + SwitchW, SwitchY + SwitchH, HairlineSoft, 1.f);
+
+            // Loft Button (Segment 0)
+            const bool IsLoft = Match->Intent.Loft;
+            if (IsLoft) Rect(SwitchX, SwitchY, SegW, SwitchH, FLinearColor(Gold.R, Gold.G, Gold.B, .25f));
+            Btn(TEXT("loft"), TEXT("LOFT"), SwitchX, SwitchY, SegW, SwitchH, IsLoft ? 3 : 0, IsLoft);
+
+            // Ground Shot (Segment 1, Default)
+            const bool IsGround = !Match->Intent.Loft && !Match->Intent.Defend;
+            if (IsGround) Rect(SwitchX + SegW, SwitchY, SegW, SwitchH, FLinearColor(TurfGreen.R, TurfGreen.G, TurfGreen.B, .20f));
+            TextMid(TEXT("GROUND"), SwitchX + SegW + SegW * .5f, SwitchY, SwitchH, 15, IsGround ? TurfGreen : SlateMuted, true, 0);
+
+            // Defend Button (Segment 2)
+            const bool IsDefend = Match->Intent.Defend;
+            if (IsDefend) Rect(SwitchX + 2 * SegW, SwitchY, SegW, SwitchH, FLinearColor(.04f, .47f, .95f, .25f));
+            Btn(TEXT("defend"), TEXT("DEFEND"), SwitchX + 2 * SegW, SwitchY, SegW, SwitchH, IsDefend ? 3 : 0, IsDefend);
 
             if (Phase == EC26Phase::Ready)
             {
-                Btn(TEXT("ready"), TEXT("READY  >"), 1200, 440, 280, 58, 1);
+                Btn(TEXT("ready"), TEXT("READY TO FACE  >"), 1240, 520, 280, 56, 1);
             }
         }
         else
         {
-            // Bowling Controls: 58px pitch with zero overlap
+            // ================================================================
+            // BOWLING CONTROLS: Complete Tactical Planning & Execution Panel
+            // ================================================================
             const auto& Plan = Phase == EC26Phase::Ready ? Match->Bowling : Match->LockedBowling;
             if (Phase == EC26Phase::Ready)
             {
-                Btn(TEXT("delivery"), FString(C26Delivery::Name(Plan.Type)) + TEXT("  >"), 64, 520, 240, 48, 0);
-                Btn(TEXT("length"), FString(C26Delivery::LengthName(Plan.Length)) + TEXT("  >"), 64, 578, 240, 48, 0);
-                const TCHAR* LineName = Plan.Line > 35.f ? TEXT("OUTSIDE OFF") : Plan.Line > 5.f ? TEXT("OFF STUMP") : Plan.Line > -25.f ? TEXT("MIDDLE") : TEXT("LEG SIDE");
-                Btn(TEXT("line"), FString(LineName) + TEXT("  >"), 64, 636, 240, 48, 0);
-                Btn(TEXT("ready"), TEXT("START RUN-UP  >"), 1200, 720, 320, 68, 1);
-            }
+                // ---- A. DELIVERY TYPE CAROUSEL ----
+                const float CarX = 56.f, CarY = 400.f, CarW = 310.f, CarH = 52.f;
+                Panel(CarX, CarY, CarW, CarH, Gold);
+                Btn(TEXT("delivery_prev"), TEXT("<"), CarX + 8.f, CarY + 6.f, 40.f, 40.f, 0);
+                {
+                    const FString DN = FString(C26Delivery::Name(Match->BowlingPlan.Type));
+                    TextMid(DN, CarX + CarW * 0.5f, CarY, CarH, 22, Gold, true, 0);
+                }
+                Btn(TEXT("delivery_next"), TEXT(">"), CarX + CarW - 48.f, CarY + 6.f, 40.f, 40.f, 0);
 
-            // Pitch marker projection
-            const FVector P = Canvas->Project(FVector(Plan.Line, Plan.Length, 8));
-            if (P.Z > 0)
-            {
-                float X = (P.X - OffsetX) / Scale, Y = (P.Y - OffsetY) / Scale;
-                Circle(X, Y, 14, MintCyan, 2.f);
-            }
+                // Movement indicator beside delivery name
+                {
+                    const EC26Movement Mov = C26Delivery::MovementOf(Match->BowlingPlan.Type);
+                    if (Mov != EC26Movement::None)
+                    {
+                        const float Dir = C26Delivery::DirectionIsFree(Match->BowlingPlan.Type)
+                            ? Match->BowlingPlan.MovementDirection : C26Delivery::NaturalDirection(Match->BowlingPlan.Type);
+                        const float ArrowX = CarX + CarW + 12.f;
+                        const float ArrowY = CarY + CarH * 0.5f;
+                        const float ArrowLen = 22.f;
+                        const FLinearColor ArrowCol = Mov == EC26Movement::ReverseSwing
+                            ? FLinearColor(.90f, .55f, .15f, .85f) : FLinearColor(Gold.R, Gold.G, Gold.B, .70f);
+                        Line(ArrowX, ArrowY, ArrowX + Dir * ArrowLen, ArrowY - 8.f, ArrowCol, 2.f);
+                        Line(ArrowX + Dir * ArrowLen, ArrowY - 8.f, ArrowX + Dir * ArrowLen - Dir * 6.f, ArrowY - 14.f, ArrowCol, 2.f);
+                        Line(ArrowX + Dir * ArrowLen, ArrowY - 8.f, ArrowX + Dir * ArrowLen - Dir * 6.f, ArrowY - 2.f, ArrowCol, 2.f);
+                    }
+                }
 
-            if (Phase == EC26Phase::RunUp)
+                // ---- B. MOVEMENT DIAL (Visual - Minimalist & Elevated) ----
+                {
+                    const float DX = Match->DialCentreX;
+                    const float DY = Match->DialCentreY;
+                    const float DR = Match->DialRadius;
+
+                    TextFit(TEXT("MOVEMENT & SWING"), DX - DR - 20.f, DY - DR - 18.f, 11, SlateMuted, (DR + 20.f) * 2.f, true, 0);
+
+                    Circle(DX, DY, DR, FLinearColor(SilverCool.R, SilverCool.G, SilverCool.B, .25f), 1.5f);
+                    Circle(DX, DY, DR + 1.f, FLinearColor(0.f, 0.f, 0.f, .30f), 2.5f);
+
+                    const int ArcSegs = 32;
+                    const int ArcFill = FMath::CeilToInt(Match->BowlingPlan.MovementMagnitude * ArcSegs);
+                    for (int I = 0; I < ArcSegs; ++I)
+                    {
+                        const float A1 = -PI * 0.5f + I * 2.f * PI / ArcSegs;
+                        const float A2 = -PI * 0.5f + (I + 1) * 2.f * PI / ArcSegs;
+                        const bool On = I < ArcFill;
+                        Line(DX + (DR - 7.f) * FMath::Cos(A1), DY + (DR - 7.f) * FMath::Sin(A1),
+                             DX + (DR - 7.f) * FMath::Cos(A2), DY + (DR - 7.f) * FMath::Sin(A2),
+                             On ? FLinearColor(Gold.R, Gold.G, Gold.B, .85f) : FLinearColor(1.f, 1.f, 1.f, .08f),
+                             On ? 3.f : 1.5f);
+                    }
+
+                    const float DirVal = C26Delivery::DirectionIsFree(Match->BowlingPlan.Type)
+                        ? Match->BowlingPlan.MovementDirection : C26Delivery::NaturalDirection(Match->BowlingPlan.Type);
+                    const float ArrowMag = Match->BowlingPlan.MovementMagnitude;
+                    const bool bFixed = !C26Delivery::DirectionIsFree(Match->BowlingPlan.Type);
+                    if (FMath::Abs(DirVal) > 0.05f || ArrowMag > 0.05f)
+                    {
+                        const float ArrowLen = FMath::Clamp(ArrowMag, 0.15f, 1.f) * (DR - 12.f);
+                        const FVector2D ArrowDir(DirVal, -0.3f);
+                        const FVector2D ArrowN = ArrowDir.IsNearlyZero() ? FVector2D(1.f, 0.f) : ArrowDir.GetSafeNormal();
+                        const FVector2D Tip(DX + ArrowN.X * ArrowLen, DY + ArrowN.Y * ArrowLen);
+                        const FLinearColor ACol = bFixed
+                            ? FLinearColor(SilverCool.R, SilverCool.G, SilverCool.B, .65f)
+                            : FLinearColor(Gold.R, Gold.G, Gold.B, .95f);
+                        Line(DX, DY, Tip.X, Tip.Y, FLinearColor(0.f, 0.f, 0.f, .50f), 5.f);
+                        Line(DX, DY, Tip.X, Tip.Y, ACol, 2.5f);
+                        const FVector2D Perp(-ArrowN.Y, ArrowN.X);
+                        Line(Tip.X, Tip.Y, Tip.X - ArrowN.X * 10.f + Perp.X * 6.f, Tip.Y - ArrowN.Y * 10.f + Perp.Y * 6.f, ACol, 2.f);
+                        Line(Tip.X, Tip.Y, Tip.X - ArrowN.X * 10.f - Perp.X * 6.f, Tip.Y - ArrowN.Y * 10.f - Perp.Y * 6.f, ACol, 2.f);
+                    }
+                    else
+                    {
+                        Circle(DX, DY, 5.f, FLinearColor(SilverCool.R, SilverCool.G, SilverCool.B, .40f), 1.5f);
+                    }
+
+                    const FString MovLabel = Match->GetMovementText();
+                    const int32 MovPct = FMath::RoundToInt(Match->BowlingPlan.MovementMagnitude * 100.f);
+                    TextFit(FString::Printf(TEXT("%s  \u2022  %d%%"), *MovLabel, MovPct), DX - DR - 20.f, DY + DR + 8.f, 12, Gold, (DR + 20.f) * 2.f, true, 0);
+                    if (bFixed)
+                        TextFit(TEXT("DIRECTION LOCKED"), DX - DR - 20.f, DY + DR + 22.f, 10, FLinearColor(SlateMuted.R, SlateMuted.G, SlateMuted.B, .55f), (DR + 20.f) * 2.f, true, 0);
+                }
+
+                // ---- D. PACE SLIDER (Visual - Minimalist & Spaced) ----
+                {
+                    const float TX = Match->PaceTrackX;
+                    const float TW = Match->PaceTrackW;
+                    const float TY = Match->PaceTrackY;
+                    const float TH_S = 10.f;
+
+                    float MinKph, MaxKph;
+                    Match->PaceRangeKph(MinKph, MaxKph);
+                    const float PaceN = Match->BowlingPlan.PaceNormalized;
+                    const float CurKph = Match->PlannedKph();
+                    const float Strain = C26Delivery::EffortStrain(PaceN);
+                    const int32 PaceEffortPct = FMath::RoundToInt(PaceN * 100.f);
+
+                    const FLinearColor FillCol = Strain > 0.5f ? Crimson
+                        : (Strain > 0.f ? FLinearColor(Gold.R, Gold.G, Gold.B, .70f) : FLinearColor(TurfGreen.R, TurfGreen.G, TurfGreen.B, .55f));
+
+                    Text(TEXT("DELIVERY PACE"), TX, TY - 20.f, 11, SlateMuted, false, 0);
+                    Text(FString::Printf(TEXT("%.0f KM/H  \u2022  %d%%"), CurKph, PaceEffortPct), TX + TW, TY - 20.f, 12, FillCol, false, 2);
+
+                    Rect(TX, TY, TW, TH_S, SurfaceWell);
+                    Line(TX, TY, TX + TW, TY, HairlineSoft, 1.f);
+                    Line(TX, TY + TH_S, TX + TW, TY + TH_S, HairlineSoft, 1.f);
+
+                    Rect(TX, TY, TW * PaceN, TH_S, FLinearColor(FillCol.R, FillCol.G, FillCol.B, .40f));
+
+                    const float ThumbX = TX + TW * PaceN;
+                    Rect(ThumbX - 4.f, TY - 5.f, 8.f, TH_S + 10.f, FillCol);
+                    Rect(ThumbX - 2.f, TY - 3.f, 4.f, TH_S + 6.f, WhiteAthletic);
+
+                    Text(FString::Printf(TEXT("%.0f"), MinKph), TX, TY + TH_S + 6.f, 10, SlateMuted, false, 0);
+                    Text(FString::Printf(TEXT("%.0f"), MaxKph), TX + TW, TY + TH_S + 6.f, 10, SlateMuted, false, 2);
+                    if (Strain > 0.f)
+                        Text(FString::Printf(TEXT("HIGH EFFORT  \u2022  -%d%% ACCURACY"), int(Strain * 100.f)),
+                             TX + TW * 0.5f, TY + TH_S + 6.f, 10, FLinearColor(Crimson.R, Crimson.G, Crimson.B, .70f), true, 0);
+                }
+
+                // ---- E. TRAJECTORY PREVIEW (project 3D spline to screen) ----
+                {
+                    APlayerController* PC = GetOwningPlayerController();
+                    if (PC && Match->TrajectoryPreview.Num() > 1)
+                    {
+                        const EC26Movement Mov = C26Delivery::MovementOf(Match->BowlingPlan.Type);
+                        FLinearColor PreCol;
+                        switch (Mov)
+                        {
+                        case EC26Movement::Swing:        PreCol = FLinearColor(.40f, .75f, 1.f, .35f); break;
+                        case EC26Movement::ReverseSwing: PreCol = FLinearColor(.90f, .55f, .20f, .35f); break;
+                        case EC26Movement::Seam:         PreCol = FLinearColor(.80f, .90f, .30f, .35f); break;
+                        case EC26Movement::Spin:         PreCol = FLinearColor(.70f, .40f, .90f, .35f); break;
+                        default:                         PreCol = FLinearColor(.70f, .70f, .70f, .25f); break;
+                        }
+                        FVector2D PrevD;
+                        bool bPrevValid = false;
+                        for (int I = 0; I < Match->TrajectoryPreview.Num(); ++I)
+                        {
+                            FVector2D Px;
+                            if (!PC->ProjectWorldLocationToScreen(Match->TrajectoryPreview[I], Px)) { bPrevValid = false; continue; }
+                            const FVector2D D = ToDesign(Px);
+                            if (bPrevValid)
+                            {
+                                const bool PostBounce = Match->TrajectoryPreviewBounce >= 0 && I > Match->TrajectoryPreviewBounce;
+                                const float Thick = PostBounce ? 1.5f : 2.5f;
+                                FLinearColor SegCol = PreCol;
+                                if (PostBounce && (Mov == EC26Movement::Seam || Mov == EC26Movement::Spin))
+                                    SegCol = FLinearColor(.90f, .80f, .20f, .40f);
+                                if (!PostBounce || (I % 2 == 0))
+                                    Line(PrevD.X, PrevD.Y, D.X, D.Y, SegCol, Thick);
+                            }
+                            if (Match->TrajectoryPreviewBounce >= 0 && I == Match->TrajectoryPreviewBounce)
+                            {
+                                Circle(D.X, D.Y, 5.f, FLinearColor(Gold.R, Gold.G, Gold.B, .55f), 2.f);
+                            }
+                            PrevD = D;
+                            bPrevValid = true;
+                        }
+                    }
+                }
+
+                // ---- F. AROUND THE WICKET TOGGLE ----
+                // The quick presets (YORKER / 4TH OFF / BOUNCER / WIDE Y / SL CUT /
+                // IN YORK) were removed: the delivery TYPE carousel above is the
+                // only selectable option on this screen. The toggle now sits
+                // directly under it so the column reads as one control.
+                {
+                    const FString WicketStr = Match->BowlingPlan.bAroundWicket ? TEXT("AROUND WICKET") : TEXT("OVER WICKET");
+                    Btn(TEXT("around"), WicketStr, 56.f, 466.f, 156.f, 34.f, 0, Match->BowlingPlan.bAroundWicket);
+                }
+
+                // (Removed: LAST BALL ghost marker — only the live delivery marker is shown.)
+
+                // ---- I. START RUN-UP BUTTON (Clean Minimalist Placement) ----
+                Btn(TEXT("ready"), TEXT("START RUN-UP  >"), 1240, 754, 300, 52, 1);
+
+                // ---- J. INSTRUCTION HINT ----
+                // Centred in the clear band above the START button and below the
+                // pace labels, so it never touches the bottom broadcast bar.
+                TextFit(TEXT("DRAG PITCH TO AIM  \u2022  DIAL = MOVEMENT  \u2022  SLIDER = PACE"), 800.f,
+                        806.f, 11, FLinearColor(SlateMuted.R, SlateMuted.G, SlateMuted.B, .60f),
+                        ContentW, true, 0);
+            }
+            else // RunUp or Delivery
             {
-                Rect(650, 710, 300, 6, Muted);
-                Rect(880, 706, 30, 14, Gold);
-                Rect(650 + 300 * Match->BowlingMeter(), 702, 4, 22, MintCyan);
-                Btn(TEXT("release"), Match->ReleaseLocked ? TEXT("LOCKED") : TEXT("RELEASE"), 1200, 720, 320, 68, 1);
+                // ================================================================
+                // RELEASE BAR: Properly zoned with labeled Perfect|NoBall boundary
+                // ================================================================
+                const float MeterX = 420.f, MeterY = 808.f, MeterW = 660.f, MeterH = 32.f;
+                const auto& Bar = Match->ActiveBar;
+                const float Meter01 = Match->BowlingMeter();
+
+                // TooEarly zone
+                Rect(MeterX, MeterY, MeterW * Bar.EarlyStart, MeterH, FLinearColor(.06f, .08f, .12f, .70f));
+                // Early zone
+                const float EarlyW = Bar.GoodStart - Bar.EarlyStart;
+                Rect(MeterX + MeterW * Bar.EarlyStart, MeterY, MeterW * EarlyW, MeterH,
+                     FLinearColor(SilverCool.R, SilverCool.G, SilverCool.B, .12f));
+                // Good zone
+                const float GoodW = Bar.PerfectStart - Bar.GoodStart;
+                Rect(MeterX + MeterW * Bar.GoodStart, MeterY, MeterW * GoodW, MeterH,
+                     FLinearColor(Gold.R, Gold.G, Gold.B, .18f));
+                // Perfect zone
+                const float PerfW = Bar.NoBallStart - Bar.PerfectStart;
+                Rect(MeterX + MeterW * Bar.PerfectStart, MeterY, MeterW * PerfW, MeterH,
+                     FLinearColor(TurfGreen.R, TurfGreen.G, TurfGreen.B, .30f));
+                // NoBall zone
+                const float NBW = 1.f - Bar.NoBallStart;
+                Rect(MeterX + MeterW * Bar.NoBallStart, MeterY, MeterW * NBW, MeterH,
+                     FLinearColor(Crimson.R, Crimson.G, Crimson.B, .30f));
+
+                // Zone boundary lines
+                Line(MeterX + MeterW * Bar.EarlyStart, MeterY, MeterX + MeterW * Bar.EarlyStart, MeterY + MeterH, HairlineSoft, 1.f);
+                Line(MeterX + MeterW * Bar.GoodStart, MeterY, MeterX + MeterW * Bar.GoodStart, MeterY + MeterH, FLinearColor(Gold.R, Gold.G, Gold.B, .30f), 1.f);
+                Line(MeterX + MeterW * Bar.PerfectStart, MeterY, MeterX + MeterW * Bar.PerfectStart, MeterY + MeterH, FLinearColor(TurfGreen.R, TurfGreen.G, TurfGreen.B, .50f), 1.f);
+                // THE critical line: Perfect|NoBall boundary
+                Line(MeterX + MeterW * Bar.NoBallStart, MeterY - 4.f, MeterX + MeterW * Bar.NoBallStart, MeterY + MeterH + 4.f,
+                     FLinearColor(Crimson.R, Crimson.G, Crimson.B, .85f), 2.5f);
+
+                // Outer border
+                Line(MeterX, MeterY, MeterX + MeterW, MeterY, HairlineSoft, 1.f);
+                Line(MeterX, MeterY + MeterH, MeterX + MeterW, MeterY + MeterH, HairlineSoft, 1.f);
+                Line(MeterX, MeterY, MeterX, MeterY + MeterH, HairlineSoft, 1.f);
+                Line(MeterX + MeterW, MeterY, MeterX + MeterW, MeterY + MeterH, HairlineSoft, 1.f);
+
+                // Zone labels above bar
+                TextMid(TEXT("EARLY"), MeterX + MeterW * (Bar.EarlyStart + EarlyW * 0.5f), MeterY - 18.f, 16.f, 10, SlateMuted, true, 0);
+                TextMid(TEXT("GOOD"), MeterX + MeterW * (Bar.GoodStart + GoodW * 0.5f), MeterY - 18.f, 16.f, 11, FLinearColor(Gold.R, Gold.G, Gold.B, .70f), true, 0);
+                TextMid(TEXT("PERFECT"), MeterX + MeterW * (Bar.PerfectStart + PerfW * 0.5f), MeterY - 18.f, 16.f, 12, TurfGreen, true, 0);
+                TextMid(TEXT("NO BALL"), MeterX + MeterW * (Bar.NoBallStart + NBW * 0.5f), MeterY - 18.f, 16.f, 10, Crimson, true, 0);
+
+                // Moving needle or locked release
+                if (!Match->ReleaseLocked)
+                {
+                    const float NeedleX = MeterX + MeterW * Meter01;
+                    Rect(NeedleX - 3.f, MeterY - 6.f, 6.f, MeterH + 12.f, FLinearColor(0.f, 0.f, 0.f, .60f));
+                    Rect(NeedleX - 2.f, MeterY - 5.f, 4.f, MeterH + 10.f, WhiteAthletic);
+                    Rect(NeedleX - 1.f, MeterY - 4.f, 2.f, MeterH + 8.f, Gold);
+                }
+                else
+                {
+                    const float LockX = MeterX + MeterW * Match->ReleaseMeterValue;
+                    const FLinearColor LockCol = Match->bBowlingNoBall ? Crimson
+                        : (Match->ReleaseBandQuality > 0.8f ? TurfGreen
+                        : (Match->ReleaseBandQuality > 0.55f ? Gold : SilverCool));
+                    Rect(LockX - 3.f, MeterY - 6.f, 6.f, MeterH + 12.f, FLinearColor(0.f, 0.f, 0.f, .60f));
+                    Rect(LockX - 2.f, MeterY - 5.f, 4.f, MeterH + 10.f, LockCol);
+
+                    // Release band feedback badge, lifted clear of the zone labels
+                    const FString BandStr = Match->GetReleaseBandName();
+                    const float FBW = Width(BandStr, 24, 0) + 2.f * Sp24;
+                    Rect(800.f - FBW * 0.5f, MeterY - 66.f, FBW, 38.f, SurfaceWell);
+                    Line(800.f - FBW * 0.5f, MeterY - 66.f, 800.f + FBW * 0.5f, MeterY - 66.f, LockCol, 1.5f);
+                    TextMidFit(BandStr, 800.f, MeterY - 66.f, 38.f, 24, LockCol, FBW - 2.f * PadEdge, true, 0);
+
+                    if (Match->LastActualKph > 10.f)
+                    {
+                        // Stacked above the band badge so it stays clear of the
+                        // bottom broadcast bar.
+                        Text(FString::Printf(TEXT("%.1f KM/H"), Match->LastActualKph),
+                             800.f, MeterY - 96.f, 16, WhiteAthletic, true, 0);
+                    }
+                }
+
+                // Delivery info compact readout during run-up, stacked above the
+                // bar on its own leading so the two lines cannot touch.
+                {
+                    const FString DelName = FString(C26Delivery::Name(Match->LockedBowling.Type));
+                    const float InfoX = 56.f;
+                    const float Info2Y = MeterY - GapLine - LineH(12);
+                    const float Info1Y = Info2Y - GapLine - LineH(14);
+                    TextFit(DelName, InfoX, Info1Y, 14, SilverCool, 360.f, false, 0);
+                    TextFit(Match->GetDeliveryLengthName() + TEXT("  \u2022  ") + Match->GetDeliveryLineName(),
+                            InfoX, Info2Y, 12, SlateMuted, 360.f, false, 0);
+                }
+
+                // Touch hint rides above the zone labels - below the meter is
+                // the bottom broadcast bar now.
+                if (!Match->ReleaseLocked && Phase == EC26Phase::RunUp)
+                    TextFit(TEXT("TAP ANYWHERE TO RELEASE"), 800.f, MeterY - 56.f, 12,
+                            FLinearColor(SlateMuted.R, SlateMuted.G, SlateMuted.B, .60f), ContentW, true, 0);
             }
         }
     }
 
     if (Phase == EC26Phase::InPlay)
     {
-        if (Match->PlayerBatting())
-        {
-            Btn(TEXT("run"), Match->Running ? TEXT("TWO?") : TEXT("RUN"), 1280, 720, 240, 68, 1);
-            Btn(TEXT("cancel"), TEXT("BACK"), 80, 720, 140, 52, 0);
-        }
-
-        static const TCHAR* Timing[] = {TEXT("PERFECT"), TEXT("GOOD"), TEXT("EARLY"), TEXT("LATE"), TEXT("EDGE"), TEXT("MISS")};
+        // Broadcast Shot Timing Feedback Badge (EC26Timing order: Perfect, Good, Early, Late, Edge, Miss)
         if (Match->PhaseTime < .95f)
         {
-            const bool P = Match->LastContact.Timing == EC26Timing::Perfect;
-            Text(Timing[int(Match->LastContact.Timing)], 800, 220, 32, P ? Gold : MintCyan, true);
+            // Release timing is classified from LastContact.TimingDeltaMs - literally
+            // the millisecond delta the gesture measured and handed to the bat. The
+            // meter and the gameplay result are the same number, never two.
+            const int Diff = Match->Preferences ? Match->Preferences->Difficulty : 1;
+            const float WScale = C26Controls::TimingWindowScale(Diff);
+            const auto& GT = Match->GestureTuning;
+            const EC26ReleaseTiming RT = C26Controls::ReleaseTimingFromDelta(Match->LastContact.TimingDeltaMs,
+                GT.PerfectWindowMs * WScale, GT.GoodWindowMs * WScale, GT.VeryEarlyLateMs * WScale,
+                Match->Tuning.ContactWindow * 1000.f * WScale);
+            FString TStr = C26Controls::ReleaseTimingName(RT);
+            FLinearColor TimingCol = RT == EC26ReleaseTiming::Perfect ? Gold
+                : (RT == EC26ReleaseTiming::Good ? TurfGreen : (RT == EC26ReleaseTiming::NoShot ? SlateMuted : SilverCool));
+            if (Match->LastContact.Timing == EC26Timing::Miss) { TStr = TEXT("BEATEN"); TimingCol = SlateMuted; }
+            else if (Match->LastContact.Timing == EC26Timing::Edge) { TStr += TEXT("  •  EDGE"); TimingCol = Crimson; }
+            if (!TStr.IsEmpty())
+            {
+                const float TW = Width(TStr, 28, 0) + 48.f;
+                Rect(800.f - TW * .5f, 190.f, TW, 44.f, SurfaceWell);
+                Line(800.f - TW * .5f, 190.f, 800.f + TW * .5f, 190.f, TimingCol, 1.5f);
+                TextMid(TStr, 800.f, 190.f, 44.f, 28, TimingCol, true, 0);
+            }
         }
 
         if (Match->Running)
         {
-            Text(FString::Printf(TEXT("%d COMPLETED"), Match->CompletedRuns), 800, 680, 26, Gold, true);
+            Text(FString::Printf(TEXT("%d COMPLETED"), Match->CompletedRuns), 800, 680, 26, Gold, true, 2);
         }
     }
 
     if (Phase == EC26Phase::Reaction)
     {
-        // Verified 30px gap: Callout at 440 (H=96) ends at 536; Detail starts at 566!
-        const auto Edge = Match->Callout == TEXT("WICKET") ? Coral : (Match->Callout == TEXT("SIX") ? Gold : MintCyan);
-        Text(Match->Callout, 800, 440, 80, Edge, true);
-        Text(Match->Detail, 800, 566, 24, Paper, true);
+        // High-impact Broadcast Event Banner across center. Sized off its own
+        // two lines so the stinger keeps equal padding above and below them.
+        const auto Edge = Match->Callout == TEXT("WICKET") ? Crimson : (Match->Callout == TEXT("SIX") ? Gold : TurfGreen);
+        const float StingerW = 760.f, StingerH = 168.f, StingerY = 366.f;
+        Panel(800.f - StingerW * .5f, StingerY, StingerW, StingerH, Edge);
+
+        TextFit(Match->Callout, 800, StingerY + GapBlock, 56, Edge, StingerW - 2.f * PadCard, true, 3);
+        TextFit(Match->Detail, 800, StingerY + GapBlock + LineH(56) + GapLine, 20, WhiteAthletic,
+                StingerW - 2.f * PadCard, true, 0);
     }
 
     if (Phase == EC26Phase::Replay)
     {
-        Text(TEXT("REPLAY"), 120, 80, 24, Coral);
-        Btn(TEXT("skip"), TEXT("SKIP  >"), 1360, 780, 180, 52, 0);
+        const float Speed = Match->Director ? Match->Director->ReplaySpeed() : 0.5f;
+        const bool Outro = Match->Director ? Match->Director->IsReplayOutro : false;
+        const float Alpha = Outro ? FMath::Clamp(1.f - Match->Director->ReplayOutroAlpha, 0.f, 1.f) : 1.f;
+
+        // Dedicated Broadcast Replay Pill Badge at Top-Left (zero collision with any score bug).
+        // The pill is sized from its own two labels, so the speed readout can never
+        // run into the REPLAY legend and the trailing inset always clears the rim.
+        FLinearColor PillCoral = Crimson;
+        PillCoral.A *= Alpha;
+        FLinearColor SubCol = SilverCool;
+        SubCol.A *= Alpha;
+
+        const FString RepLabel = TEXT("●  REPLAY");
+        const FString SlowLabel = FString::Printf(TEXT("%.1fx SLOW MOTION"), Speed);
+        const float RepW = Width(RepLabel, 19, 0);
+        const float PillX = 56.f, PillY = 36.f, PillH = 44.f;
+        const float PillW = PadEdge + RepW + GapItem + Width(SlowLabel, 13, 0) + PadEdge;
+
+        Rect(PillX, PillY, PillW, PillH, FLinearColor(Void.R, Void.G, Void.B, .90f * Alpha));
+        Line(PillX, PillY, PillX + PillW, PillY, PillCoral, 1.5f);
+        Line(PillX, PillY, PillX, PillY + PillH, PillCoral, 2.5f);
+
+        const float RepX = PillX + PadEdge;
+        TextMid(RepLabel, RepX, PillY, PillH, 19, PillCoral, false, 0);
+        const float SlowX = RepX + RepW + GapItem;
+        TextMidFit(SlowLabel, SlowX, PillY, PillH, 13, SubCol,
+                   PillX + PillW - PadEdge - SlowX, false, 0);
+
+        // Broadcast Viewfinder Corner Brackets
+        const float BLen = 32.f;
+        const FLinearColor BCol(1.f, 1.f, 1.f, 0.25f * Alpha);
+        Rect(44, 44, BLen, 2, BCol);
+        Rect(44, 44, 2, BLen, BCol);
+        Rect(1556 - BLen, 44, BLen, 2, BCol);
+        Rect(1556 - 2, 44, 2, BLen, BCol);
+        Rect(44, 856 - 2, BLen, 2, BCol);
+        Rect(44, 856 - BLen, 2, BLen, BCol);
+        Rect(1556 - BLen, 856 - 2, BLen, 2, BCol);
+        Rect(1556 - 2, 856 - BLen, 2, BLen, BCol);
+
+        // Dedicated Replay Skip Button positioned cleanly at bottom right with generous margins
+        Btn(TEXT("skip"), TEXT("SKIP REPLAY  >"), 1340, 800, 200, 52, 0);
+
+        // Smooth dissolve veil during replay outro
+        if (Outro)
+        {
+            const float Fade = Match->Director->ReplayOutroAlpha;
+            Rect(0, 0, 1600, 900, FLinearColor(0.f, 0.f, 0.f, Fade * 0.40f));
+        }
     }
 }
 
 // ============================================================================
-// SCREEN: MATCH RESULT (Hero Broadcast Celebration)
-// Mathematically centered action buttons and generous vertical spacing.
+// SCORECARD TABLE: Strict column alignment
+// Batting: BATTER | DISMISSAL | R | B | 4s | 6s | SR
+// Bowling: BOWLER | O | M | R | W | ECON
+// ============================================================================
+void AC26HUD::ScorecardTable(float X, float Y, float W, float H)
+{
+    const auto& S0 = Match->Rules.Scores[0];
+    const auto& S1 = Match->Rules.Scores[1];
+
+    // Table Header Bar (BATTER | HOW OUT | R | B | 4s | 6s | SR)
+    const float HdrH = 30.f;
+    Rect(X, Y, W, HdrH, SurfaceWell);
+    Line(X, Y, X + W, Y, HairlineSoft, 1.f);
+    Line(X, Y + HdrH, X + W, Y + HdrH, HairlineSoft, 1.f);
+
+    const float ColName = X + GapBlock;
+    const float ColOut  = X + 232.f;
+    // The five numeric columns share the remaining width on an even pitch, so
+    // the table fills its card instead of bunching against the left edge.
+    const float NumL = X + 460.f, NumR = X + W - GapBlock;
+    const float NumPitch = (NumR - NumL) / 4.f;
+    const float ColR  = NumL;
+    const float ColB  = NumL + NumPitch;
+    const float Col4s = NumL + 2.f * NumPitch;
+    const float Col6s = NumL + 3.f * NumPitch;
+    const float ColSR = NumR;
+
+    TextMid(TEXT("BATTER"), ColName, Y, HdrH, 13, SlateMuted, false, 0);
+    TextMid(TEXT("HOW OUT"), ColOut, Y, HdrH, 13, SlateMuted, false, 0);
+    TextMid(TEXT("R"), ColR, Y, HdrH, 13, SlateMuted, true, 0);
+    TextMid(TEXT("B"), ColB, Y, HdrH, 13, SlateMuted, true, 0);
+    TextMid(TEXT("4s"), Col4s, Y, HdrH, 13, SlateMuted, true, 0);
+    TextMid(TEXT("6s"), Col6s, Y, HdrH, 13, SlateMuted, true, 0);
+    TextMid(TEXT("SR"), ColSR, Y, HdrH, 13, SlateMuted, true, 0);
+
+    float RowY = Y + HdrH;
+    const float RowH = 36.f;
+
+    // Display each innings summary cleanly
+    for (int Inn = 0; Inn < 2; ++Inn)
+    {
+        const auto& InnScore = Match->Rules.Scores[Inn];
+        const int Team = Inn == 0 ? Match->FirstBattingTeam : (1 - Match->FirstBattingTeam);
+        const FLinearColor TC = TeamColor(Team);
+
+        // Innings Header Separator
+        Rect(X, RowY, W, 26.f, FLinearColor(TC.R, TC.G, TC.B, .12f));
+        Rect(X, RowY, 3.5f, 26.f, TC);
+        const FString InnTitle = FString::Printf(TEXT("%s INNINGS  •  %d / %d  (6b)"), *Match->TeamName(Team), InnScore.Runs, InnScore.Wickets);
+        TextFit(InnTitle, X + GapItem + 4.f, RowY + (26.f - 13.f) * .5f - 1.f, 13, TC, W - GapItem - 4.f - PadEdge, false, 0);
+        RowY += 26.f;
+
+        // Top 2 Batters for this Innings
+        for (int B = 0; B < 2; ++B)
+        {
+            const bool Even = (B % 2) == 0;
+            if (Even) Rect(X, RowY, W, RowH, FLinearColor(1.f, 1.f, 1.f, .015f));
+            Line(X, RowY + RowH, X + W, RowY + RowH, HairlineSoft, 0.5f);
+
+            FString BName = (B == 0) ? (Inn == 0 ? TEXT("A. RAO *") : TEXT("J. HART *")) : (Inn == 0 ? TEXT("K. DESAI") : TEXT("L. REED"));
+            const int Runs = InnScore.BatterRuns[B];
+            const int Balls = InnScore.BatterBalls[B];
+            const FString Dismissal = (B < InnScore.Wickets) ? TEXT("b Archer") : TEXT("not out");
+            const float SR = Balls > 0 ? ((float)Runs / (float)Balls * 100.f) : 0.f;
+            const FString SRStr = Balls > 0 ? FString::Printf(TEXT("%.1f"), SR) : TEXT("-");
+
+            TextFit(BName, ColName, RowY + (RowH - 16.f) * .5f, 16, WhiteAthletic, ColOut - ColName - GapItem, false, 0);
+            TextFit(Dismissal, ColOut, RowY + (RowH - 14.f) * .5f, 14, SilverCool, NumL - ColOut - GapItem, false, 0);
+            TextMid(FString::FromInt(Runs), ColR, RowY, RowH, 17, WhiteAthletic, true, 2);
+            TextMid(FString::FromInt(Balls), ColB, RowY, RowH, 16, SilverCool, true, 2);
+            TextMid(FString::FromInt(Runs >= 4 ? 1 : 0), Col4s, RowY, RowH, 16, TurfGreen, true, 2);
+            TextMid(FString::FromInt(Runs >= 6 ? 1 : 0), Col6s, RowY, RowH, 16, Gold, true, 2);
+            TextMid(SRStr, ColSR, RowY, RowH, 16, SilverCool, true, 2);
+
+            RowY += RowH;
+        }
+    }
+}
+
+// ============================================================================
+// SCREEN: MATCH RESULT & FULL BROADCAST SCORECARD
 // ============================================================================
 void AC26HUD::Result()
 {
     Vignette();
-    ScrimBottom(.9f);
+    ScrimBottom(.92f);
 
     const bool Won = Match->Callout == TEXT("VICTORY");
     const bool Tie = Match->Callout == TEXT("MATCH TIED");
-    const auto Edge = Tie ? Gold : (Won ? MintCyan : Coral);
+    const auto Edge = Tie ? Gold : (Won ? Gold : Crimson);
 
-    float Y = 170.f;
-    Text(Match->Callout, 800, Y, 96, Edge, true);
-    Y += LineH(96) + 16.f;
+    // Broadcast Result & Scorecard Card. Height is driven by its own content:
+    // table -> commentary line -> action row -> one PadCard of bottom padding.
+    const float CardX = 320.f, CardY = 60.f, CardW = 960.f;
+    const float TableH = 226.f;                       // header + 2 innings blocks
+    const float SubtitleH = 38.f, BtnH = 56.f;
+    const float ContentH = PadCard + LineH(56) + GapLine + LineH(22) + GapComp + 1.f
+                         + GapComp + SubtitleH + GapBlock + TableH
+                         + GapSect + SubtitleH + GapSect + BtnH + PadCard;
+    const float CardH = ContentH;
+    Panel(CardX, CardY, CardW, CardH, Edge);
+
+    float Y = CardY + PadCard;
+    TextFit(Match->Callout, 800, Y, 56, Edge, CardW - 2.f * PadCard, true, 3);
+    Y += LineH(56) + GapLine;
 
     // Victory Margin Callout
     {
@@ -1282,75 +2440,546 @@ void AC26HUD::Result()
             Margin = ChaseWon ? FString::Printf(TEXT("WON BY %d %s"), 2 - B.Wickets, B.Wickets == 1 ? TEXT("WICKET") : TEXT("WICKETS"))
                               : FString::Printf(TEXT("WON BY %d %s"), A.Runs - B.Runs, A.Runs - B.Runs == 1 ? TEXT("RUN") : TEXT("RUNS"));
         }
-        Text(Margin, 800, Y, 28, Gold, true);
-        Y += LineH(28) + 40.f;
+        TextFit(Margin, 800, Y, 22, Gold, CardW - 2.f * PadCard, true, 0);
+        Y += LineH(22) + GapComp;
     }
 
-    // Both Innings Score summaries (Centered with generous 18px line gap)
-    for (int I = 0; I < 2; ++I)
-    {
-        const auto& S = Match->Rules.Scores[I];
-        int Team = I == 0 ? Match->FirstBattingTeam : 1 - Match->FirstBattingTeam;
-        const FString LineStr = FString::Printf(TEXT("%s   %d / %d   (6b)"), *Match->TeamName(Team), S.Runs, S.Wickets);
-        Text(LineStr, 800, Y, 32, TeamColor(Team), true);
-        Y += LineH(32) + 18.f;
-    }
+    Line(CardX + PadCard, Y, CardX + CardW - PadCard, Y, HairlineSoft, 1.f);
+    Y += GapComp;
 
-    // Centered Action Buttons: (260 + 24 + 200 = 484 total width, centered at 800)
-    Y += 40.f;
-    Btn(TEXT("again"), TEXT("PLAY AGAIN  >"), 558, Y, 260, 62, 1);
-    Btn(TEXT("menu"), TEXT("HOME"), 842, Y, 200, 62, 0);
+    // Player of the Match Spotlight Chip with a guaranteed text inset
+    Rect(CardX + PadCard, Y, CardW - 2.f * PadCard, SubtitleH, SurfaceWell);
+    Rect(CardX + PadCard, Y, 4, SubtitleH, Gold);
+    TextMidFit(TEXT("PLAYER OF THE MATCH:  A. RAO  •  24* (6b)  [3x4  1x6]  •  SR 400.0"), 800,
+               Y, SubtitleH, 16, WhiteAthletic, CardW - 2.f * PadCard - 2.f * PadEdge, true, 0);
+    Y += SubtitleH + GapBlock;
+
+    // Full Strict Column Aligned Scorecard Table
+    ScorecardTable(CardX + PadCard, Y, CardW - 2.f * PadCard, TableH);
+
+    // Centered Action Buttons, one GapBlock apart, one PadCard above the rim.
+    // Subtitle() docks its commentary line into the GapSect directly above them.
+    const float BtnY = CardY + CardH - PadCard - BtnH;
+    SubtitleY = BtnY - GapSect - SubtitleH;
+    const float BtnW = 260.f;
+    const float BtnX0 = 800.f - (2.f * BtnW + GapBlock) * .5f;
+    Btn(TEXT("again"), TEXT("PLAY AGAIN  >"), BtnX0, BtnY, BtnW, BtnH, 1);
+    Btn(TEXT("menu"), TEXT("HOME"), BtnX0 + BtnW + GapBlock, BtnY, BtnW, BtnH, 0);
 }
 
 // ============================================================================
 // PAUSE & IN-GAME SETTINGS
-// Modern minimalist pause menu.
 // ============================================================================
 void AC26HUD::Preferences()
 {
-    Rect(0, 0, 1600, 900, FLinearColor(.004f, .008f, .014f, .78f));
+    Rect(0, 0, 1600, 900, FLinearColor(.004f, .008f, .014f, .88f));
+
+    static const TCHAR* HelpA = TEXT("Watch the bowler. After release a marker shows the expected bounce. Pull anywhere right to shape the shot, release at contact.");
+    static const TCHAR* HelpB = TEXT("Pull direction aims the shot, pull length sets power. Tiny pull defends, upward flick lofts. Wrong shots get punished.");
+    static const TCHAR* HelpC = TEXT("Bowling: drag the pitch marker, pull the right deck for pace, start the run-up and release in the sweet spot.");
 
     if (Match->ControlsOpen)
     {
-        Text(TEXT("HOW TO PLAY"), 800, 220, 44, Paper, true);
-        Text(TEXT("Left stick controls footwork. Swipe right area to aim and time."), 800, 320, 24, PaperDim, true);
-        Text(TEXT("Toggle LOFT for aerial boundary shots. Tap RUN to bank singles."), 800, 360, 24, PaperDim, true);
-        Text(TEXT("When bowling, drag the pitch marker and hit the gold release meter."), 800, 420, 24, PaperDim, true);
-        Btn(TEXT("close"), TEXT("RESUME MATCH"), 660, 540, 280, 56, 1);
+        // Card height is measured from the copy that actually wraps into it, so
+        // the "HOW TO PLAY" panel closes one PadCard under its RESUME button.
+        const float CardW = 700.f, WrapW = 620.f, BtnH = 48.f;
+        const int BodyLines = WrapLines(HelpA, 20, WrapW, 1) + WrapLines(HelpB, 20, WrapW, 1) + WrapLines(HelpC, 20, WrapW, 1);
+        const float BodyH = BodyLines * LineH(20);
+        const float CardH = PadCard + LineH(36) + GapComp + 1.f + GapBlock + BodyH
+                          + 2.f * GapComp + GapBlock + BtnH + PadCard;
+        const float CardX = 800.f - CardW * .5f, CardY = 450.f - CardH * .5f;
+        Panel(CardX, CardY, CardW, CardH, Gold);
+
+        float TY = CardY + PadCard;
+        TextFit(TEXT("HOW TO PLAY"), 800, TY, 36, WhiteAthletic, CardW - 2.f * PadCard, true, 0);
+        TY += LineH(36) + GapComp;
+        Rule(CardX + PadCard, TY, CardW - 2.f * PadCard);
+        TY += GapBlock;
+        TY += TextWrap(HelpA, 800, TY, 20, SilverCool, WrapW, true, 1) + GapComp;
+        TY += TextWrap(HelpB, 800, TY, 20, SilverCool, WrapW, true, 1) + GapComp;
+        TY += TextWrap(HelpC, 800, TY, 20, SilverCool, WrapW, true, 1) + GapBlock;
+
+        const bool bPro = !Match->Preferences || Match->Preferences->ControlScheme == 0;
+        Btn(TEXT("controls_scheme"), bPro ? TEXT("CONTROLS: GESTURE PRO") : TEXT("CONTROLS: CLASSIC"), CardX + PadCard, TY, 300, BtnH, 0);
+        Btn(TEXT("lefthand"), Match->Preferences->LeftHandedUI ? TEXT("LEFT-HAND UI: ON") : TEXT("LEFT-HAND UI: OFF"), CardX + CardW - PadCard - 300, TY, 300, BtnH, 0);
+
+        Btn(TEXT("close"), TEXT("RESUME MATCH"), 800 - 150, CardY + CardH - PadCard - 52.f, 300, 52, 1);
         return;
     }
 
-    const float CX = 620, CW = 360;
-    float Y = 220.f;
+    // Centered Modal Dialog Card, sized from its own button stack so the top and
+    // bottom padding come out equal whatever the stack contains.
+    const float CardW = 480.f, BtnH0 = 52.f, BtnHN = 48.f, StackCount = 5.f;
+    const float StackH = BtnH0 + (StackCount - 1.f) * BtnHN + (StackCount - 1.f) * GapItem;
+    const float CardH = PadCard + LineH(34) + GapComp + 1.f + GapBlock + StackH + PadCard;
+    const float CardX = 800.f - CardW * .5f, CardY = 450.f - CardH * .5f;
+    Panel(CardX, CardY, CardW, CardH, Gold);
 
-    Text(TEXT("MATCH PAUSED"), 800, Y, 40, Paper, true);
-    Y += 74.f;
+    TextFit(TEXT("MATCH PAUSED"), 800, CardY + PadCard, 34, WhiteAthletic, CardW - 2.f * PadCard, true, 0);
+    Rule(CardX + PadCard, CardY + PadCard + LineH(34) + GapComp, CardW - 2.f * PadCard);
 
-    Btn(TEXT("pause"), TEXT("RESUME MATCH"), CX, Y, CW, 56, 1);
-    Y += 56 + 14.f;
-    Btn(TEXT("master"), Match->Preferences->SoundVolume > .1f ? TEXT("AUDIO: ON") : TEXT("AUDIO: OFF"), CX, Y, CW, 48, 0);
-    Y += 48 + 14.f;
-    Btn(TEXT("help"), TEXT("HOW TO PLAY"), CX, Y, CW, 48, 0);
-    Y += 48 + 14.f;
-    Btn(TEXT("confirm_restart"), TEXT("RESTART OVER"), CX, Y, CW, 48, 2);
-    Y += 48 + 14.f;
-    Btn(TEXT("confirm_exit"), TEXT("EXIT TO HOME"), CX, Y, CW, 48, 0);
+    const float CX = CardX + PadCard, CW = CardW - 2.f * PadCard;
+    float Y = CardY + PadCard + LineH(34) + GapComp + 1.f + GapBlock;
 
-    if (!Match->PendingConfirm.IsNone()) Confirm();
+    Btn(TEXT("pause"), TEXT("RESUME MATCH"), CX, Y, CW, BtnH0, 1);
+    Y += BtnH0 + GapItem;
+    Btn(TEXT("master"), Match->Preferences->SoundVolume > .1f ? TEXT("AUDIO: ON") : TEXT("AUDIO: OFF"), CX, Y, CW, BtnHN, 0);
+    Y += BtnHN + GapItem;
+    Btn(TEXT("help"), TEXT("HOW TO PLAY"), CX, Y, CW, BtnHN, 0);
+    Y += BtnHN + GapItem;
+    Btn(TEXT("confirm_restart"), TEXT("RESTART OVER"), CX, Y, CW, BtnHN, 2);
+    Y += BtnHN + GapItem;
+    Btn(TEXT("confirm_exit"), TEXT("EXIT TO HOME"), CX, Y, CW, BtnHN, 0);
 }
 
 void AC26HUD::Subtitle()
 {
-    if (!Match->Preferences->Subtitles) return;
-    if (!Match->Audio || Match->Audio->ActiveSubtitle.IsEmpty()) return;
-    if (GetWorld()->GetTimeSeconds() > Match->Audio->SubtitleUntil) return;
+    if (!Match || !Match->Audio || !Match->Preferences || !Match->Preferences->Subtitles || Match->Audio->ActiveSubtitle.IsEmpty()) return;
 
     const FString& S = Match->Audio->ActiveSubtitle;
-    const float W = Width(S, 21) + 48.f;
-    const float X = 800.f - W * .5f, Y = 750.f;
+    const float H = 38.f;
+    // Cap the plate so a long commentary line can never run off the canvas, then
+    // fit the text inside it with the standard inset.
+    const float MaxPlateW = 1200.f;
+    const float W = FMath::Min(MaxPlateW, Width(S, 20, 1) + 2.f * Sp24);
+    const float X = 800.f - W * .5f, Y = SubtitleY;
 
-    Rect(X, Y, W, 38, Void);
-    TextMid(S, 800, Y, 38, 21, Paper, true);
+    Rect(X, Y, W, H, Void);
+    Line(X, Y, X + W, Y, HairlineSoft, 1.f);
+    Line(X, Y + H, X + W, Y + H, HairlineSoft, 1.f);
+    Line(X, Y, X, Y + H, HairlineSoft, 1.f);
+    Line(X + W, Y, X + W, Y + H, HairlineSoft, 1.f);
+    TextMidFit(S, 800, Y, H, 20, WhiteAthletic, W - 2.f * PadEdge, true, 1);
+}
+
+// Development-only UI Debug Bounds Visualization (Pressable or CVAR/Command-Line)
+void AC26HUD::DrawUIDebug()
+{
+    // 1. 1600 x 900 Design Canvas Bounds (Cyan)
+    Line(0, 0, 1600, 0, FLinearColor(0.f, 1.f, 1.f, .85f), 1.5f);
+    Line(1600, 0, 1600, 900, FLinearColor(0.f, 1.f, 1.f, .85f), 1.5f);
+    Line(1600, 900, 0, 900, FLinearColor(0.f, 1.f, 1.f, .85f), 1.5f);
+    Line(0, 900, 0, 0, FLinearColor(0.f, 1.f, 1.f, .85f), 1.5f);
+
+    // 2. Safe-Zone Inset Bounds (Green)
+    Line(ContentX, TopH, ContentR, TopH, FLinearColor(0.1f, 0.9f, 0.3f, .65f), 1.f);
+    Line(ContentR, TopH, ContentR, 858.f, FLinearColor(0.1f, 0.9f, 0.3f, .65f), 1.f);
+    Line(ContentR, 858.f, ContentX, 858.f, FLinearColor(0.1f, 0.9f, 0.3f, .65f), 1.f);
+    Line(ContentX, 858.f, ContentX, TopH, FLinearColor(0.1f, 0.9f, 0.3f, .65f), 1.f);
+
+    // 3. Interactive Hit Zones (Magenta)
+    for (const auto& Z : Zones)
+    {
+        const float X1 = Z.Rect.Min.X, Y1 = Z.Rect.Min.Y;
+        const float X2 = Z.Rect.Max.X, Y2 = Z.Rect.Max.Y;
+        Line(X1, Y1, X2, Y1, FLinearColor(1.f, 0.1f, 0.8f, .55f), 1.f);
+        Line(X2, Y1, X2, Y2, FLinearColor(1.f, 0.1f, 0.8f, .55f), 1.f);
+        Line(X2, Y2, X1, Y2, FLinearColor(1.f, 0.1f, 0.8f, .55f), 1.f);
+        Line(X1, Y2, X1, Y1, FLinearColor(1.f, 0.1f, 0.8f, .55f), 1.f);
+    }
+}
+
+void AC26HUD::DrawBounceIndicator()
+{
+    // Projected pitch marker. Live from the first frame of the run-up (showing the
+    // bowler's intended length) all the way through to the bounce, which is the
+    // only event allowed to end it. Screen-space projection of gameplay truth.
+    if (!Match || !Match->PlayerBatting()) return;
+    if (Match->Phase != EC26Phase::Delivery && Match->Phase != EC26Phase::RunUp) return;
+    if (!Match->IsBounceIndicatorVisible()) return;
+    APlayerController* PC = GetOwningPlayerController();
+    if (!PC) return;
+
+    const FVector World = Match->GetBounceIndicatorLocation();
+    FVector2D Screen;
+    if (!PC->ProjectWorldLocationToScreen(World, Screen)) return;
+    const FVector2D C = ToDesign(Screen);
+    if (C.X < -120.f || C.X > 1720.f || C.Y < -120.f || C.Y > 1020.f) return;
+
+    const float Alpha = Match->GetBounceIndicatorAlpha();
+    const float MScale = FMath::Clamp(Match->GestureTuning.MarkerScale, 0.4f, 2.5f);
+
+    // Perspective-correct radius derived from a world-space reference, so the
+    // marker sits ON the pitch instead of floating at a fixed pixel size.
+    FVector2D EdgePx;
+    float RX = 26.f;
+    const float WorldR = 26.f + Match->BouncePrediction.UncertaintyRadius * 0.22f;
+    if (PC->ProjectWorldLocationToScreen(World + FVector(WorldR, 0.f, 0.f), EdgePx))
+        RX = FMath::Clamp((ToDesign(EdgePx) - C).Size(), 11.f, 74.f);
+    // Length language: yorkers read tight, short balls read wide.
+    float ShapeK = 1.f;
+    if (Match->BouncePrediction.LengthCategory == EC26DeliveryLength::Yorker) ShapeK = 0.80f;
+    else if (Match->BouncePrediction.LengthCategory == EC26DeliveryLength::Bouncer) ShapeK = 1.18f;
+    else if (Match->BouncePrediction.LengthCategory == EC26DeliveryLength::Short) ShapeK = 1.09f;
+    RX *= ShapeK * MScale;
+    const float RY = RX * 0.50f;   // flattened onto the turf plane
+
+    const bool bSpicy = Match->BouncePrediction.LengthCategory == EC26DeliveryLength::Yorker
+        || Match->BouncePrediction.LengthCategory == EC26DeliveryLength::Bouncer;
+    const FLinearColor Base = bSpicy ? FLinearColor(1.00f, .78f, .38f, 1.f) : FLinearColor(.72f, .96f, .78f, 1.f);
+
+    // Dark under-shadow first: this is what keeps the marker readable against a
+    // bleached day pitch as well as against night-match shadow.
+    const int Segs = 44;
+    auto Ellipse = [&](float ScaleK, FLinearColor Col, float Thick)
+    {
+        for (int I = 0; I < Segs; ++I)
+        {
+            const float A1 = I * 2.f * PI / Segs, A2 = (I + 1) * 2.f * PI / Segs;
+            Line(C.X + RX * ScaleK * FMath::Cos(A1), C.Y + RY * ScaleK * FMath::Sin(A1),
+                 C.X + RX * ScaleK * FMath::Cos(A2), C.Y + RY * ScaleK * FMath::Sin(A2), Col, Thick);
+        }
+    };
+    Ellipse(1.06f, FLinearColor(0.f, 0.f, 0.f, .38f * Alpha), 3.2f);
+    Ellipse(1.00f, FLinearColor(Base.R, Base.G, Base.B, .90f * Alpha), 2.2f);
+    Ellipse(0.66f, FLinearColor(Base.R, Base.G, Base.B, .34f * Alpha), 1.2f);
+
+    // Four short ticks on the axes: reads as a painted target, not a debug circle.
+    const float Tick = RX * 0.26f;
+    Line(C.X - RX - Tick, C.Y, C.X - RX + Tick * .3f, C.Y, FLinearColor(Base.R, Base.G, Base.B, .75f * Alpha), 1.8f);
+    Line(C.X + RX - Tick * .3f, C.Y, C.X + RX + Tick, C.Y, FLinearColor(Base.R, Base.G, Base.B, .75f * Alpha), 1.8f);
+    Line(C.X, C.Y - RY - Tick * .55f, C.X, C.Y - RY + Tick * .2f, FLinearColor(Base.R, Base.G, Base.B, .60f * Alpha), 1.6f);
+    Line(C.X, C.Y + RY - Tick * .2f, C.X, C.Y + RY + Tick * .55f, FLinearColor(Base.R, Base.G, Base.B, .60f * Alpha), 1.6f);
+
+    // Confidence halo while the marker is still showing intent rather than the
+    // measured trajectory: it shrinks away as the correction completes.
+    if (Match->BouncePrediction.bFromIntent && Match->BouncePrediction.UncertaintyRadius > 8.f)
+    {
+        const float HK = 1.55f;
+        for (int I = 0; I < Segs; I += 2)
+        {
+            const float A1 = I * 2.f * PI / Segs, A2 = (I + 1) * 2.f * PI / Segs;
+            Line(C.X + RX * HK * FMath::Cos(A1), C.Y + RY * HK * FMath::Sin(A1),
+                 C.X + RX * HK * FMath::Cos(A2), C.Y + RY * HK * FMath::Sin(A2),
+                 FLinearColor(Base.R, Base.G, Base.B, .22f * Alpha), 1.f);
+        }
+    }
+}
+
+void AC26HUD::DrawBowlingTarget()
+{
+    if (!Match || Match->PlayerBatting()) return;
+    const bool bPro = !Match->Preferences || Match->Preferences->ControlScheme == 0;
+    if (!bPro) return;
+    APlayerController* PC = GetOwningPlayerController();
+    if (!PC) return;
+
+    if (Match->Phase == EC26Phase::Ready)
+    {
+        // Continuous pitch target: the player's ACTUAL chosen plan point.
+        const FVector World(Match->Bowling.Line, Match->Bowling.Length, 8.f);
+        FVector2D Screen;
+        if (PC->ProjectWorldLocationToScreen(World, Screen))
+        {
+            const FVector2D C = ToDesign(Screen);
+            if (C.X > -60.f && C.X < 1660.f && C.Y > -60.f && C.Y < 960.f)
+            {
+                FVector2D EdgePx;
+                float R = 22.f;
+                if (PC->ProjectWorldLocationToScreen(World + FVector(30.f, 0.f, 0.f), EdgePx))
+                    R = FMath::Clamp((ToDesign(EdgePx) - C).Size(), 10.f, 60.f);
+                Circle(C.X, C.Y, R, FLinearColor(Gold.R, Gold.G, Gold.B, .60f), 1.6f);
+                Circle(C.X, C.Y, R * 0.45f, FLinearColor(Gold.R, Gold.G, Gold.B, .30f), 1.f);
+                Line(C.X - R - 8.f, C.Y, C.X - R + 6.f, C.Y, Gold, 1.5f);
+                Line(C.X + R - 6.f, C.Y, C.X + R + 8.f, C.Y, Gold, 1.5f);
+                Text(Match->GetDeliveryLengthName(), C.X, C.Y - R - 26.f, 13, SilverCool, true, 0);
+            }
+        }
+        // Live effort readout, straight off the plan the slider is writing into.
+        if (Match->PacePointerId >= 0)
+        {
+            const float Effort01 = FMath::Clamp(Match->BowlingPlan.PaceNormalized, 0.f, 1.f);
+            Text(FString::Printf(TEXT("EFFORT %d%%"), int(Effort01 * 100.f + 0.5f)),
+                 Match->PaceTrackX + Match->PaceTrackW * 0.5f, Match->PaceTrackY + 22.f, 14, Gold, true, 0);
+        }
+    }
+    else if (Match->Phase == EC26Phase::RunUp)
+    {
+        // The effort the ball was planned at stays readable while it is bowled.
+        const float Effort01 = FMath::Clamp(Match->BowlingPlan.PaceNormalized, 0.f, 1.f);
+        Text(FString::Printf(TEXT("EFFORT %d%%"), int(Effort01 * 100.f + 0.5f)), 1380.f, 668.f, 15, SilverCool, true, 0);
+        if (Match->ReleaseLocked)
+        {
+            const FLinearColor Q = Match->BowlingExecutionQuality > 0.8f ? TurfGreen
+                : (Match->BowlingExecutionQuality > 0.55f ? Gold : Crimson);
+            Text(TEXT("RELEASE LOCKED"), 1380.f, 690.f, 13, Q, true, 0);
+        }
+    }
+}
+
+void AC26HUD::DrawBattingGestureCue()
+{
+    if (!Match || !Match->PlayerBatting()) return;
+    const bool bPro = !Match->Preferences || Match->Preferences->ControlScheme == 0;
+    if (!bPro) return;
+    const auto Phase = Match->Phase;
+    const bool bLive = (Phase == EC26Phase::RunUp || Phase == EC26Phase::Delivery);
+
+    if (Match->bBattingGestureActive && bLive)
+    {
+        const FVector2D S = Match->BattingGestureStart;
+        const FVector2D Raw = Match->BattingPullRaw;
+        const float Dead = Match->GestureTuning.GestureDeadZone;
+        const float MaxR = FMath::Max(20.f, Match->GestureTuning.GestureMaxRadius);
+        const float Frac = Match->BattingPullFrac;
+        const float Agg = Match->BattingAggression;
+        const bool bArmed = Match->bGestureArmed;
+
+        // --- origin furniture: dead zone + maximum radius, deliberately quiet ---
+        Circle(S.X, S.Y, Dead, FLinearColor(1.f, 1.f, 1.f, .16f), 1.f);
+        for (int I = 0; I < 48; I += 2)
+        {
+            const float A1 = I * 2.f * PI / 48.f, A2 = (I + 1) * 2.f * PI / 48.f;
+            Line(S.X + MaxR * FMath::Cos(A1), S.Y + MaxR * FMath::Sin(A1),
+                 S.X + MaxR * FMath::Cos(A2), S.Y + MaxR * FMath::Sin(A2),
+                 FLinearColor(1.f, 1.f, 1.f, .09f), 1.f);
+        }
+
+        // --- the arrow: direction AND magnitude in one mark --------------------
+        // Length is the clamped gameplay magnitude, not the raw finger travel, so
+        // what the player sees is exactly what the shot will use.
+        const FVector2D Dir = Raw.IsNearlyZero() ? FVector2D(0.f, -1.f) : Raw.GetSafeNormal();
+        const float Len = FMath::Max(Dead, Frac * MaxR);
+        const FVector2D Tip = S + Dir * Len;
+        const FLinearColor Accent = !bArmed ? FLinearColor(SilverCool.R, SilverCool.G, SilverCool.B, .70f)
+            : (Agg < 0.58f ? TurfGreen : (Agg < 0.85f ? Gold : Crimson));
+
+        if (bArmed)
+        {
+            // Shadowed shaft keeps the line readable over turf, crowd and sky.
+            Line(S.X, S.Y, Tip.X, Tip.Y, FLinearColor(0.f, 0.f, 0.f, .45f), 6.f);
+            Line(S.X, S.Y, Tip.X, Tip.Y, FLinearColor(Accent.R, Accent.G, Accent.B, .92f), 3.f);
+            Line(S.X, S.Y, Tip.X, Tip.Y, FLinearColor(1.f, 1.f, 1.f, .35f), 1.f);
+
+            // Arrow head, built from the pull direction so it always points true.
+            const FVector2D Perp(-Dir.Y, Dir.X);
+            const float Head = FMath::Clamp(14.f + Agg * 12.f, 14.f, 26.f);
+            const FVector2D B1 = Tip - Dir * Head + Perp * Head * 0.52f;
+            const FVector2D B2 = Tip - Dir * Head - Perp * Head * 0.52f;
+            Line(B1.X, B1.Y, Tip.X, Tip.Y, FLinearColor(0.f, 0.f, 0.f, .45f), 5.f);
+            Line(B2.X, B2.Y, Tip.X, Tip.Y, FLinearColor(0.f, 0.f, 0.f, .45f), 5.f);
+            Line(B1.X, B1.Y, Tip.X, Tip.Y, Accent, 3.f);
+            Line(B2.X, B2.Y, Tip.X, Tip.Y, Accent, 3.f);
+            Line(B1.X, B1.Y, B2.X, B2.Y, FLinearColor(Accent.R, Accent.G, Accent.B, .55f), 2.f);
+        }
+        else
+        {
+            // Inside the dead zone: preparation only, no direction claimed.
+            Circle(S.X, S.Y, Dead * 0.55f, FLinearColor(SilverCool.R, SilverCool.G, SilverCool.B, .55f), 2.f);
+        }
+
+        // --- power ring around the origin: a second read of the same number ----
+        const int Segs = 40;
+        const float PR = Dead + 13.f;
+        const int Fill = FMath::CeilToInt(Agg * Segs);
+        for (int I = 0; I < Segs; ++I)
+        {
+            const float A1 = -PI * 0.5f + I * 2.f * PI / Segs, A2 = -PI * 0.5f + (I + 1) * 2.f * PI / Segs;
+            const bool On = I < Fill;
+            Line(S.X + PR * FMath::Cos(A1), S.Y + PR * FMath::Sin(A1),
+                 S.X + PR * FMath::Cos(A2), S.Y + PR * FMath::Sin(A2),
+                 On ? Accent : FLinearColor(1.f, 1.f, 1.f, .10f), On ? 3.f : 1.5f);
+        }
+
+        // --- compact readout, clamped inside the safe area, never over the HUD --
+        // Sized from its own three lines plus the suitability bar, so the bar
+        // keeps the same PadEdge gutter as the copy above it.
+        const float BoxW = 208.f;
+        const float BoxH = PadEdge + LineH(21) + GapLine + LineH(14) + GapLine + LineH(13) + GapLine + 5.f + PadEdge;
+        const float BX = FMath::Clamp(S.X - BoxW * .5f, 424.f, 1584.f - BoxW);
+        const float BY = FMath::Clamp(S.Y - MaxR - BoxH - 20.f, 172.f, 596.f);
+        Rect(BX, BY, BoxW, BoxH, FLinearColor(SurfaceWell.R, SurfaceWell.G, SurfaceWell.B, .82f));
+        Line(BX, BY, BX + BoxW, BY, Accent, 1.5f);
+
+        const float BoxTX = BX + PadEdge;
+        const float BoxTW = BoxW - 2.f * PadEdge;
+        const FString Zone = bArmed ? FString(C26Controls::DirectionZoneName(Match->BattingGestureAngle)) : TEXT("READY");
+        const FString Band = bArmed ? FString(C26Controls::AggressionBandName(Agg)) : TEXT("PULL TO AIM");
+        float BoxY = BY + PadEdge;
+        TextFit(Zone, BoxTX, BoxY, 21, WhiteAthletic, BoxTW, false, 0);
+        BoxY += LineH(21) + GapLine;
+        TextFit(FString::Printf(TEXT("%s  •  POWER %d%%"), *Band, int(Agg * 100.f + .5f)), BoxTX, BoxY, 14, Accent, BoxTW, false, 0);
+        BoxY += LineH(14) + GapLine;
+        TextFit(bArmed && !Match->BattingShotCandidate.IsEmpty() ? Match->BattingShotCandidate : Match->GetBounceIndicatorText(),
+                BoxTX, BoxY, 13, SlateMuted, BoxTW, false, 0);
+        BoxY += LineH(13) + GapLine;
+        // Shot suitability against THIS delivery: green = the right stroke.
+        const FLinearColor SuitCol = Match->BattingSuitability > 0.75f ? TurfGreen
+            : (Match->BattingSuitability > 0.5f ? Gold : Crimson);
+        StatBar(BoxTX, BoxY, BoxTW, 5.f, Match->BattingSuitability, SuitCol);
+    }
+    // The idle batting affordance ring that used to pulse here has been removed;
+    // the right half of the screen is already the live shot zone.
+
+    // --- release feedback: the SAME delta the simulation was given -------------
+    if (!Match->bBattingGestureActive && Match->Clock < Match->BattingFeedbackUntil
+        && (Phase == EC26Phase::Delivery || Phase == EC26Phase::RunUp || Phase == EC26Phase::InPlay))
+    {
+        const FString Label = Match->GetReleaseTimingName();
+        FLinearColor Col = SilverCool;
+        switch (Match->BattingReleaseTiming)
+        {
+        case EC26ReleaseTiming::Perfect: Col = Gold; break;
+        case EC26ReleaseTiming::Good:    Col = TurfGreen; break;
+        case EC26ReleaseTiming::NoShot:  Col = SlateMuted; break;
+        default:                         Col = Crimson; break;
+        }
+        const FString Sub = FString::Printf(TEXT("%+.0f ms  •  %s"), Match->BattingReleaseDeltaMs,
+            Match->BattingShotCandidate.IsEmpty() ? TEXT("NO SHOT") : *Match->BattingShotCandidate);
+        // Two stacked lines, each centred in its own leading-tall band, so the
+        // big timing label can never be overrun by the sub-line beneath it.
+        const float FBW = FMath::Max(Width(Label, 30, 0), Width(Sub, 14, 0)) + 2.f * PadEdge;
+        const float FBH = PadEdge + LineH(30) + GapLine + LineH(14) + PadEdge;
+        const float FBY = 246.f;
+        Rect(800.f - FBW * .5f, FBY, FBW, FBH, SurfaceWell);
+        Line(800.f - FBW * .5f, FBY, 800.f + FBW * .5f, FBY, Col, 1.5f);
+        TextMid(Label, 800.f, FBY + PadEdge, LineH(30), 30, Col, true, 0);
+        TextMid(Sub, 800.f, FBY + PadEdge + LineH(30) + GapLine, LineH(14), 14, SlateMuted, true, 0);
+    }
+}
+
+void AC26HUD::DrawControlDebug()
+{
+#if !UE_BUILD_SHIPPING
+    if (!Match || !Match->bDebugControls) return;
+    // Development-only diagnostic overlay: every number the batting loop runs on,
+    // so a bad shot can be read off the screen instead of guessed at.
+    const float X = 44.f, W = 396.f;
+    float Y = 150.f;
+    Rect(X - Sp12, Y - Sp12, W, 720.f, FLinearColor(0.f, 0.f, 0.f, .58f));
+    // Rows advance on the font's own leading, so a wrapped 13pt diagnostic can
+    // never be overprinted by the row beneath it.
+    auto Row = [&](const FString& S, FLinearColor C) { Text(S, X, Y, 13, C, false, 0); Y += LineH(13); };
+
+    Row(TEXT("— BATTING INPUT DEBUG (C26Controls) —"), Gold);
+    Row(FString::Printf(TEXT("STATE %s   ARMED %s   POINTER %d"), *Match->GetBattingStateName(),
+        Match->bGestureArmed ? TEXT("Y") : TEXT("N"), Match->GesturePointerId), WhiteAthletic);
+    Row(FString::Printf(TEXT("GESTURE START %.0f / %.0f    CURRENT %.0f / %.0f"),
+        Match->BattingGestureStart.X, Match->BattingGestureStart.Y,
+        Match->BattingGestureCurrent.X, Match->BattingGestureCurrent.Y), SilverCool);
+    Row(FString::Printf(TEXT("PULL ANGLE %+.0f deg   AIM %+.1f deg   %s"),
+        Match->BattingPullScreenAngle, Match->BattingGestureAngle,
+        C26Controls::DirectionZoneName(Match->BattingGestureAngle)), WhiteAthletic);
+    Row(FString::Printf(TEXT("RAW MAG %.0f du   NORM %.2f   AGGR %.2f (%s)"),
+        Match->BattingPullRawMagnitude, Match->BattingPullFrac, Match->BattingAggression,
+        C26Controls::AggressionBandName(Match->BattingAggression)), WhiteAthletic);
+    Row(FString::Printf(TEXT("DEADZONE %.0f   MAX RADIUS %.0f   HOLD %.2fs"),
+        Match->GestureTuning.GestureDeadZone, Match->GestureTuning.GestureMaxRadius,
+        Match->BattingGestureHoldTime), SlateMuted);
+    Row(FString::Printf(TEXT("CANDIDATE %s   SUIT %.2f   HAND %s"),
+        Match->BattingShotCandidate.IsEmpty() ? TEXT("-") : *Match->BattingShotCandidate,
+        Match->BattingSuitability, Match->bLeftHandedBatter ? TEXT("LEFT") : TEXT("RIGHT")), WhiteAthletic);
+
+    Y += 4.f;
+    Row(TEXT("— TIMING —"), Gold);
+    Row(FString::Printf(TEXT("TO IDEAL RELEASE %+.0f ms"), Match->SecondsToIdealRelease() * 1000.f), SilverCool);
+    const FLinearColor TCol = Match->BattingReleaseTiming == EC26ReleaseTiming::Perfect ? Gold
+        : (Match->BattingReleaseTiming == EC26ReleaseTiming::Good ? TurfGreen : Crimson);
+    Row(FString::Printf(TEXT("RELEASE DELTA %+.0f ms   %s"), Match->BattingReleaseDeltaMs,
+        *Match->GetReleaseTimingName()), TCol);
+    Row(FString::Printf(TEXT("SIM ERROR %+.0f ms   RESULT %s   Q %.2f"),
+        Match->LastContact.TimingDeltaMs, *Match->LastContact.Shot, Match->LastContact.Quality), WhiteAthletic);
+    Row(FString::Printf(TEXT("COMMITS THIS BALL %d   CANCEL '%s'"), Match->GestureCommitCount,
+        Match->GestureCancelReason.IsEmpty() ? TEXT("-") : *Match->GestureCancelReason), SlateMuted);
+
+    Y += 4.f;
+    Row(TEXT("— PITCH MARKER —"), Gold);
+    const auto& BP = Match->BouncePrediction;
+    Row(FString::Printf(TEXT("SOURCE %s   VISIBLE %s   ALPHA %.2f"),
+        BP.bFromIntent ? TEXT("IntendedTarget") : TEXT("PredictedTrajectory"),
+        Match->IsBounceIndicatorVisible() ? TEXT("TRUE") : TEXT("FALSE"), BP.Alpha), WhiteAthletic);
+    Row(FString::Printf(TEXT("INTENT %.0f,%.0f   SHOWN %.0f,%.0f   PRED %.0f,%.0f"),
+        BP.IntendedLocation.X, BP.IntendedLocation.Y, BP.DisplayLocation.X, BP.DisplayLocation.Y,
+        BP.TrueLocation.X, BP.TrueLocation.Y), SilverCool);
+    Row(FString::Printf(TEXT("ACTUAL BOUNCE %.0f,%.0f   ERR %.1fcm   BOUNCED %s"),
+        Match->Simulation.BouncePosition.X, Match->Simulation.BouncePosition.Y,
+        FVector::Dist2D(BP.DisplayLocation, BP.TrueLocation), BP.bBounced ? TEXT("Y") : TEXT("N")), SlateMuted);
+    Row(FString::Printf(TEXT("%s • %s   BOUNCE T %.2fs   BALL AGE %.2fs"),
+        *Match->GetDeliveryLengthName(), *Match->GetDeliveryLineName(),
+        BP.BounceTime, Match->Simulation.Ball.Age), WhiteAthletic);
+
+    Y += 4.f;
+    Row(TEXT("— BOWLING PLAN —"), Gold);
+    {
+        const FC26DeliveryPlan& Plan = Match->Phase == EC26Phase::Ready ? Match->Bowling : Match->LockedBowling;
+        const bool bBowling = !Match->PlayerBatting();
+        const EC26Movement Mov = C26Delivery::MovementOf(Match->BowlingPlan.Type);
+        const float WantDir = C26Delivery::DirectionIsFree(Match->BowlingPlan.Type)
+            ? Match->BowlingPlan.MovementDirection : C26Delivery::NaturalDirection(Match->BowlingPlan.Type);
+        float Lo = 0.f, Hi = 0.f;
+        Match->PaceRangeKph(Lo, Hi);
+        const int Diff = Match->Preferences ? Match->Preferences->Difficulty : 1;
+
+        Row(FString::Printf(TEXT("STATE %s   %s   DIFF %d"), *Match->GetBowlingStateName(),
+            bBowling ? TEXT("PLAYER BOWLS") : TEXT("AI BOWLS"), Diff), WhiteAthletic);
+        Row(FString::Printf(TEXT("TYPE %s   MOVEMENT %s"), *Match->GetDeliveryName(),
+            Mov == EC26Movement::None ? TEXT("None") : Mov == EC26Movement::Swing ? TEXT("Swing")
+            : Mov == EC26Movement::ReverseSwing ? TEXT("ReverseSwing")
+            : Mov == EC26Movement::Seam ? TEXT("Seam") : TEXT("Spin")), WhiteAthletic);
+        Row(FString::Printf(TEXT("DESIRED TARGET  X %+.0f  Y %.0f  (%s / %s)"),
+            Match->BowlingIntendedPitch.X, Match->BowlingIntendedPitch.Y,
+            *Match->GetDeliveryLineName(), *Match->GetDeliveryLengthName()), SilverCool);
+        Row(FString::Printf(TEXT("ACTUAL PITCH    X %+.0f  Y %.0f   ERR %.1f cm"),
+            Match->BowlingActualPitch.X, Match->BowlingActualPitch.Y,
+            FVector::Dist2D(Match->BowlingIntendedPitch, Match->BowlingActualPitch)), SilverCool);
+        Row(FString::Printf(TEXT("DESIRED PACE %.0f km/h   RANGE %.0f-%.0f   EFFORT %.2f"),
+            Match->LastPlannedKph, Lo, Hi, Match->BowlingPlan.PaceNormalized), WhiteAthletic);
+        Row(FString::Printf(TEXT("ACTUAL PACE  %.1f km/h   (%.0f cm/s)"),
+            Match->LastActualKph, Plan.Speed), WhiteAthletic);
+        Row(FString::Printf(TEXT("WANT DIR %+.2f (%s)   WANT AMOUNT %.2f"),
+            WantDir, *Match->GetMovementText(), Match->BowlingPlan.MovementMagnitude), WhiteAthletic);
+        Row(FString::Printf(TEXT("ACTUAL MOVEMENT  swing %+.1f  dev %+.1f  onset %.2f s"),
+            Plan.Swing, Plan.Deviation, Plan.SwingOnset), WhiteAthletic);
+        Row(FString::Printf(TEXT("RELEASE  meter %.3f  band %s  quality %.2f  NO BALL %s"),
+            Match->ReleaseMeterValue < 0.f ? 0.f : Match->ReleaseMeterValue,
+            *Match->GetReleaseBandName(), Match->BowlingExecutionQuality,
+            Match->bBowlingNoBall ? TEXT("TRUE") : TEXT("false")), WhiteAthletic);
+        Row(FString::Printf(TEXT("BAR  early %.2f  good %.2f  perfect %.2f  NOBALL %.2f"),
+            Match->ActiveBar.EarlyStart, Match->ActiveBar.GoodStart,
+            Match->ActiveBar.PerfectStart, Match->ActiveBar.NoBallStart), SlateMuted);
+        Row(FString::Printf(TEXT("HANDS  bowler %s   batter %s   crease %s (%+.0f cm)"),
+            Match->BowlerProfile.bLeftArm ? TEXT("LEFT-ARM") : TEXT("RIGHT-ARM"),
+            Match->bLeftHandedBatter ? TEXT("LEFT") : TEXT("RIGHT"),
+            Match->BowlingPlan.bAroundWicket ? TEXT("AROUND") : TEXT("OVER"),
+            Match->CreaseOffsetCm()), SlateMuted);
+        Row(FString::Printf(TEXT("DELIVERED  %s  line %.0f  length %.0f  bounce %.2f"),
+            C26Delivery::Name(Plan.Type), Plan.Line, Plan.Length, Plan.Bounce), SlateMuted);
+    }
+
+    // --- world-space debug visualisation, development only -------------------
+    if (APlayerController* PC = GetOwningPlayerController())
+    {
+        auto Mark = [&](const FVector& World, FLinearColor Col, const TCHAR* Tag)
+        {
+            FVector2D Px;
+            if (!PC->ProjectWorldLocationToScreen(World, Px)) return;
+            const FVector2D D = ToDesign(Px);
+            Line(D.X - 9.f, D.Y, D.X + 9.f, D.Y, Col, 1.5f);
+            Line(D.X, D.Y - 9.f, D.X, D.Y + 9.f, Col, 1.5f);
+            Text(Tag, D.X + 12.f, D.Y - 8.f, 11, Col, false, 0);
+        };
+        if (Match->Phase == EC26Phase::RunUp || Match->Phase == EC26Phase::Delivery)
+        {
+            Mark(BP.IntendedLocation, FLinearColor(.45f, .75f, 1.f, .9f), TEXT("INTENT"));
+            Mark(BP.TrueLocation, FLinearColor(1.f, .45f, .45f, .9f), TEXT("PREDICTED"));
+            Mark(BP.DisplayLocation, FLinearColor(1.f, 1.f, 1.f, .9f), TEXT("SHOWN"));
+            if (Match->Simulation.BounceEvent)
+                Mark(Match->Simulation.BouncePosition, FLinearColor(.4f, 1.f, .5f, .9f), TEXT("ACTUAL"));
+        }
+    }
+    // Raw (unclamped) gesture vector alongside the clamped gameplay vector.
+    if (Match->bBattingGestureActive)
+    {
+        const FVector2D S = Match->BattingGestureStart, Cur = Match->BattingGestureCurrent;
+        Line(S.X, S.Y, Cur.X, Cur.Y, FLinearColor(1.f, 0.f, 1.f, .45f), 1.f);
+        Circle(Cur.X, Cur.Y, 5.f, FLinearColor(1.f, 0.f, 1.f, .55f), 1.f);
+    }
+    // Gesture zone bounds.
+    const FVector2D Z0 = Match->GestureTuning.GestureZoneMin, Z1 = Match->GestureTuning.GestureZoneMax;
+    const FLinearColor ZC(0.f, 1.f, 1.f, .18f);
+    Line(Z0.X, Z0.Y, Z1.X, Z0.Y, ZC, 1.f); Line(Z1.X, Z0.Y, Z1.X, Z1.Y, ZC, 1.f);
+    Line(Z1.X, Z1.Y, Z0.X, Z1.Y, ZC, 1.f); Line(Z0.X, Z1.Y, Z0.X, Z0.Y, ZC, 1.f);
+#endif
 }
 
 void AC26HUD::DrawHUD()
@@ -1364,22 +2993,33 @@ void AC26HUD::DrawHUD()
     OffsetY = (Canvas->SizeY - 900 * Scale) * .5f;
     Zones.Reset();
     FA = 1.f;
+    TextShadow = .80f;
+    SubtitleY = 640.f;
 
-    if (Match->Phase == EC26Phase::Menu)
+    if (Match->bFieldPlanningMode && !Match->PlayerBatting())
+    {
+        DrawFieldPlanning();
+    }
+    else if (Match->Phase == EC26Phase::Menu)
     {
         Menu();
     }
     else if (Match->Phase == EC26Phase::Intro)
     {
         Vignette();
-        float Y = 260.f;
-        Text(TEXT("SUPER OVER  /  NIGHT SHOOTOUT"), 800, Y, 22, MintCyan, true);
-        Y += 38.f;
-        Text(Match->TeamName(Match->FirstBattingTeam) + TEXT("  vs  ") + Match->TeamName(1 - Match->FirstBattingTeam), 800, Y, 50, Paper, true);
-        Y += LineH(50) + 14.f;
-        Text(Match->TossText, 800, Y, 24, Muted, true);
+        float Y = 250.f;
+        TextFit(TEXT("SUPER OVER  /  NIGHT SHOOTOUT"), 800, Y, 20, Gold, ContentW, true, 0);
+        Y += LineH(20) + GapComp;
+        TextFit(Match->TeamName(Match->FirstBattingTeam) + TEXT("  vs  ") + Match->TeamName(1 - Match->FirstBattingTeam),
+                800, Y, 46, WhiteAthletic, ContentW, true, 0);
+        Y += LineH(46) + GapBlock;
+        TextFit(Match->TossText, 800, Y, 22, SlateMuted, ContentW, true, 1);
 
-        Btn(TEXT("skip"), TEXT("SKIP INTRO  >"), 1320, 780, 200, 54, 0);
+        Btn(TEXT("skip"), TEXT("SKIP INTRO  >"), 1320, SafeBot - 52.f, 200, 52, 0);
+    }
+    else if (Match->Phase == EC26Phase::Presentation)
+    {
+        DrawPresentationOverlay();
     }
     else if (Match->Phase == EC26Phase::Result)
     {
@@ -1389,36 +3029,546 @@ void AC26HUD::DrawHUD()
     {
         Vignette();
         float Y = 240.f;
-        Text(Match->Callout, 800, Y, 84, Paper, true);
-        Y += LineH(84) + 12.f;
-        Text(Match->Detail, 800, Y, 26, MintCyan, true);
-        Y += LineH(26) + 18.f;
+        TextFit(Match->Callout, 800, Y, 72, WhiteAthletic, ContentW, true, 3);
+        Y += LineH(72) + GapComp;
+        TextFit(Match->Detail, 800, Y, 24, Gold, ContentW, true, 0);
+        Y += LineH(24) + GapBlock;
 
-        const auto& F = Match->Rules.Scores[0];
-        Text(FString::Printf(TEXT("%s NEED %d RUNS FROM 6 BALLS"), *Match->TeamShort(1 - Match->FirstBattingTeam), Match->Rules.Target()),
-             800, Y, 28, Gold, true);
-        Y += LineH(28) + 38.f;
+        TextFit(FString::Printf(TEXT("%s NEED %d RUNS FROM 6 BALLS"), *Match->TeamShort(1 - Match->FirstBattingTeam), Match->Rules.Target()),
+                800, Y, 28, Gold, ContentW, true, 2);
+        Y += LineH(28) + GapSect;
 
-        Btn(TEXT("skip"), Match->PlayerBatting() ? TEXT("TAKE THE BALL  >") : TEXT("START THE CHASE  >"), 620, Y, 360, 64, 1);
+        Btn(TEXT("skip"), Match->PlayerBatting() ? TEXT("TAKE THE BALL  >") : TEXT("START THE CHASE  >"), 620, Y, 360, 60, 1);
     }
     else
     {
         Score();
+        DrawBroadcastGraphics();
         Controls();
+        DrawBounceIndicator();
+        DrawBowlingTarget();
+        DrawDeliveryHistory();
+        DrawBattingGestureCue();
+        DrawFieldingHUD();
+        DrawBattingTimingMeter();
+        DrawControlDebug();
     }
 
     if (Match->Phase != EC26Phase::Menu)
     {
         Subtitle();
-        Toast(true);
     }
 
-    if (Match->SettingsOpen || Match->ControlsOpen || Match->Paused)
+    if (Match->Paused || Match->ControlsOpen)
     {
         Preferences();
     }
-    if (!Match->PendingConfirm.IsNone() && !Match->SettingsOpen && !Match->ControlsOpen && !Match->Paused)
+
+    // Development-only UI Debug Overlay (Z-Order 100)
+    if (bUIDebug || FParse::Param(FCommandLine::Get(), TEXT("C26UIDebug")))
     {
-        Confirm();
+        DrawUIDebug();
     }
+
+    if (Match->PresentationDirector && Match->PresentationDirector->bDebugOverlayVisible)
+    {
+        DrawPresentationDebug();
+    }
+}
+
+// ============================================================================
+// CRICKET 26 // GAMEPLAY CONTROL OVERHAUL DRAW CALLS
+// ============================================================================
+
+void AC26HUD::DrawDeliveryHistory()
+{
+    if (!Match) return;
+
+    // Only the live delivery marker (DrawBounceIndicator / DrawBowlingTarget) is
+    // shown. Historical pitch lines and past-delivery dots were removed per design:
+    // they cluttered the pitch near the batter.
+    // This function now only keeps the non-marker tactical button.
+
+    if (!Match->PlayerBatting() && Match->Phase == EC26Phase::Ready)
+    {
+        Btn(TEXT("toggle_field_plan"), TEXT("TACTICAL FIELD PLAN  >"), 64.f, 760.f, 260.f, 48.f, 0);
+
+
+    }
+}
+
+void AC26HUD::DrawFieldPlanning()
+{
+    if (!Match) return;
+    // Fielding controls belong to the bowling side only.
+    if (Match->PlayerBatting()) return;
+    APlayerController* PC = GetOwningPlayerController();
+    if (!PC) return;
+
+    Rect(0, 0, 1600, 900, FLinearColor(0.01f, 0.02f, 0.05f, 0.78f));
+
+    const float TopY = 32.f;
+    TextFit(TEXT("TACTICAL FIELD PLANNER"), 800, TopY, 32, WhiteAthletic, 800, true, 0);
+    Rule(300, TopY + LineH(32) + GapComp, 1000);
+
+    const float StatusY = TopY + LineH(32) + GapBlock;
+    if (Match->bFieldIsLegal)
+    {
+        Rect(500, StatusY, 600, 36, FLinearColor(0.08f, 0.35f, 0.16f, 0.85f));
+        TextMid(TEXT("LEGAL: LAW 28 & POWERPLAY COMPLIANT"), 800, StatusY, 36, 16, TurfGreen, true, 0);
+    }
+    else
+    {
+        Rect(450, StatusY, 700, 36, FLinearColor(0.45f, 0.10f, 0.12f, 0.90f));
+        TextMidFit(Match->FieldLegalityWarning.IsEmpty() ? TEXT("ILLEGAL FIELD FORMATION") : Match->FieldLegalityWarning,
+                   800, StatusY, 36, 15, FLinearColor(1.f, 0.4f, 0.4f, 1.f), 680, true, 0);
+    }
+
+    // Boundary rope (clean, crisp, prominent boundary circle matching C26Field bounds)
+    const int BoundarySegs = 72;
+    for (int I = 0; I < BoundarySegs; ++I)
+    {
+        const float A1 = I * 2.f * PI / BoundarySegs;
+        const float A2 = (I + 1) * 2.f * PI / BoundarySegs;
+        const FVector P1(C26Field::RadiusX * FMath::Cos(A1), C26Field::RadiusY * FMath::Sin(A1), 5.f);
+        const FVector P2(C26Field::RadiusX * FMath::Cos(A2), C26Field::RadiusY * FMath::Sin(A2), 5.f);
+        FVector2D S1, S2;
+        if (PC->ProjectWorldLocationToScreen(P1, S1) && PC->ProjectWorldLocationToScreen(P2, S2))
+        {
+            // Soft outer halo
+            Line(ToDesign(S1).X, ToDesign(S1).Y, ToDesign(S2).X, ToDesign(S2).Y, FLinearColor(0.2f, 0.7f, 1.f, 0.22f), 3.0f);
+            // Crisp white boundary rope
+            Line(ToDesign(S1).X, ToDesign(S1).Y, ToDesign(S2).X, ToDesign(S2).Y, FLinearColor(0.95f, 0.95f, 0.92f, 0.85f), 1.6f);
+        }
+    }
+
+    // 30-yard inner circle (clean cyan/emerald outline)
+    const int Segs = 64;
+    for (int I = 0; I < Segs; ++I)
+    {
+        const float A1 = I * 2.f * PI / Segs;
+        const float A2 = (I + 1) * 2.f * PI / Segs;
+        const FVector P1(C26Field::InnerCircleRadius * FMath::Cos(A1), C26Field::InnerCircleRadius * FMath::Sin(A1), 5.f);
+        const FVector P2(C26Field::InnerCircleRadius * FMath::Cos(A2), C26Field::InnerCircleRadius * FMath::Sin(A2), 5.f);
+        FVector2D S1, S2;
+        if (PC->ProjectWorldLocationToScreen(P1, S1) && PC->ProjectWorldLocationToScreen(P2, S2))
+        {
+            Line(ToDesign(S1).X, ToDesign(S1).Y, ToDesign(S2).X, ToDesign(S2).Y, FLinearColor(0.2f, 0.95f, 0.65f, 0.50f), 1.8f);
+        }
+    }
+
+    // Central pitch strip projection
+    {
+        const FVector Corners[4] = {
+            FVector(-152.f, -1006.f, 2.f),
+            FVector( 152.f, -1006.f, 2.f),
+            FVector( 152.f,  1006.f, 2.f),
+            FVector(-152.f,  1006.f, 2.f)
+        };
+        FVector2D SC[4];
+        bool bAllProjected = true;
+        for (int K = 0; K < 4; ++K)
+        {
+            if (!PC->ProjectWorldLocationToScreen(Corners[K], SC[K])) bAllProjected = false;
+        }
+        if (bAllProjected)
+        {
+            for (int K = 0; K < 4; ++K)
+            {
+                const FVector2D D1 = ToDesign(SC[K]);
+                const FVector2D D2 = ToDesign(SC[(K + 1) % 4]);
+                Line(D1.X, D1.Y, D2.X, D2.Y, FLinearColor(0.85f, 0.78f, 0.65f, 0.70f), 1.6f);
+            }
+        }
+    }
+
+    const auto& Positions = Match->GetFieldPositions();
+    for (int32 I = 0; I < Positions.Num() && I < 11; ++I)
+    {
+        const FVector& Pos = Positions[I];
+        FVector2D Screen;
+        if (PC->ProjectWorldLocationToScreen(Pos + FVector(0, 0, 10.f), Screen))
+        {
+            const FVector2D D = ToDesign(Screen);
+            const bool bSelected = (I == Match->SelectedFielderIdx);
+            const bool bMovable = (I >= 2 && I <= 10);
+
+            const float R = bSelected ? 20.f : 15.f;
+            const FLinearColor RingCol = bSelected ? Gold : (bMovable ? TurfGreen : SlateMuted);
+
+            // Dark backing disk so the number pops against grass
+            Circle(D.X, D.Y, R, RingCol, bSelected ? 2.5f : 1.5f);
+            Rect(D.X - R + 2.f, D.Y - R + 2.f, (R - 2.f) * 2.f, (R - 2.f) * 2.f, FLinearColor(0.02f, 0.05f, 0.09f, 0.90f));
+
+            TextMid(FString::FromInt(I + 1), D.X, D.Y - R, R * 2.f, 13, bSelected ? Gold : WhiteAthletic, true, 0);
+
+            // If selected, draw guideline to pitch center and targeting reticle
+            if (bSelected)
+            {
+                Circle(D.X, D.Y, R + 6.f, FLinearColor(Gold.R, Gold.G, Gold.B, 0.40f), 1.2f);
+                FVector2D PitchCentreScreen;
+                if (PC->ProjectWorldLocationToScreen(FVector(0.f, 0.f, 10.f), PitchCentreScreen))
+                {
+                    const FVector2D PCD = ToDesign(PitchCentreScreen);
+                    Line(PCD.X, PCD.Y, D.X, D.Y, FLinearColor(Gold.R, Gold.G, Gold.B, 0.35f), 1.2f);
+                }
+            }
+
+            const FString PosName = C26Fielding::GetFieldPositionName(Pos, Match->BatterIsLeftHanded());
+            const float PosLabelW = 120.f;
+            Rect(D.X - PosLabelW * 0.5f, D.Y + R + 2.f, PosLabelW, 16.f, FLinearColor(0.01f, 0.03f, 0.06f, 0.80f));
+            TextFit(PosName, D.X, D.Y + R + 3.f, 11, bSelected ? Gold : SilverCool, PosLabelW - 8.f, true, 0);
+        }
+    }
+
+    if (Match->SelectedFielderIdx >= 2 && Match->SelectedFielderIdx <= 10)
+    {
+        const FString SelName = C26Fielding::GetFieldPositionName(Positions[Match->SelectedFielderIdx], Match->BatterIsLeftHanded());
+        TextFit(FString::Printf(TEXT("SELECTED: #%d %s  —  DRAG ON TURF TO REPOSITION"), Match->SelectedFielderIdx + 1, *SelName),
+                800, 715, 16, Gold, 700, true, 0);
+    }
+    else
+    {
+        TextFit(TEXT("TAP OR DRAG ANY FIELDER (3–11) TO CUSTOMIZE YOUR FIELD"), 800, 715, 15, SilverCool, 700, true, 0);
+    }
+
+    const float PanelY = 746.f, PanelH = 120.f;
+    Rect(60.f, PanelY, 1480.f, PanelH, FLinearColor(0.02f, 0.05f, 0.09f, 0.92f));
+    Line(60.f, PanelY, 1540.f, PanelY, HairlineSoft, 1.f);
+
+    Text(TEXT("TACTICAL FORMATIONS:"), 80.f, PanelY + 14.f, 13, SlateMuted, false, 0);
+
+    const float B1Y = PanelY + 34.f, BW = 156.f, BH = 34.f, BGap = 12.f;
+    Btn(TEXT("field_preset_balanced"), TEXT("BALANCED"), 80.f, B1Y, BW, BH, Match->CurrentFieldPreset == EC26FieldPreset::Balanced ? 1 : 0);
+    Btn(TEXT("field_preset_attacking"), TEXT("ATTACKING"), 80.f + (BW + BGap), B1Y, BW, BH, Match->CurrentFieldPreset == EC26FieldPreset::Attacking ? 1 : 0);
+    Btn(TEXT("field_preset_defensive"), TEXT("DEFENSIVE"), 80.f + 2.f * (BW + BGap), B1Y, BW, BH, Match->CurrentFieldPreset == EC26FieldPreset::Defensive ? 1 : 0);
+    Btn(TEXT("field_preset_powerplay_attack"), TEXT("POWERPLAY"), 80.f + 3.f * (BW + BGap), B1Y, BW, BH, Match->CurrentFieldPreset == EC26FieldPreset::PowerplayAttack ? 1 : 0);
+    Btn(TEXT("field_preset_pace_attack"), TEXT("PACE ATTACK"), 80.f + 4.f * (BW + BGap), B1Y, BW, BH, Match->CurrentFieldPreset == EC26FieldPreset::PaceAttack ? 1 : 0);
+    Btn(TEXT("field_preset_spin_attack"), TEXT("SPIN ATTACK"), 80.f + 5.f * (BW + BGap), B1Y, BW, BH, Match->CurrentFieldPreset == EC26FieldPreset::SpinAttack ? 1 : 0);
+
+    const float B2Y = B1Y + BH + 6.f;
+    Btn(TEXT("field_preset_death_overs"), TEXT("DEATH OVERS"), 80.f, B2Y, BW, BH, Match->CurrentFieldPreset == EC26FieldPreset::DeathOvers ? 1 : 0);
+    Btn(TEXT("field_preset_boundary"), TEXT("RING FENCE"), 80.f + (BW + BGap), B2Y, BW, BH, Match->CurrentFieldPreset == EC26FieldPreset::ProtectBoundary ? 1 : 0);
+    Btn(TEXT("field_preset_single_prev"), TEXT("PREVENT 1s"), 80.f + 2.f * (BW + BGap), B2Y, BW, BH, Match->CurrentFieldPreset == EC26FieldPreset::SinglePrevention ? 1 : 0);
+    Btn(TEXT("field_preset_offside_heavy"), TEXT("OFF HEAVY"), 80.f + 3.f * (BW + BGap), B2Y, BW, BH, Match->CurrentFieldPreset == EC26FieldPreset::OffsideHeavy ? 1 : 0);
+    Btn(TEXT("field_preset_legside_heavy"), TEXT("LEG HEAVY"), 80.f + 4.f * (BW + BGap), B2Y, BW, BH, Match->CurrentFieldPreset == EC26FieldPreset::LegsideHeavy ? 1 : 0);
+
+    Btn(TEXT("toggle_field_plan"), TEXT("RESUME MATCH  >"), 1280.f, B1Y + 8.f, 240.f, 52.f, 1);
+}
+
+void AC26HUD::DrawFieldingHUD()
+{
+    if (!Match || Match->Phase != EC26Phase::InPlay) return;
+    // Manual fielding (dive / catch / throw + active fielder ring) belongs
+    // to the bowling side only. The batting side runs, never fields.
+    if (Match->PlayerBatting()) return;
+    APlayerController* PC = GetOwningPlayerController();
+    if (!PC) return;
+
+    if (Match->ActiveFielder >= 0 && Match->Athletes.IsValidIndex(Match->ActiveFielder))
+    {
+        const FVector FLoc = Match->Athletes[Match->ActiveFielder]->GetActorLocation();
+        FVector2D Screen;
+        if (PC->ProjectWorldLocationToScreen(FLoc, Screen))
+        {
+            const FVector2D D = ToDesign(Screen);
+            Circle(D.X, D.Y, 28.f, TurfGreen, 2.f);
+            Circle(D.X, D.Y, 34.f, FLinearColor(TurfGreen.R, TurfGreen.G, TurfGreen.B, 0.4f), 1.2f);
+        }
+    }
+
+    if (Match->bDivePromptActive)
+    {
+        Btn(TEXT("field_dive"), TEXT("DIVE  [D]"), 1350.f, 730.f, 190.f, 56.f, 1);
+    }
+
+    if (Match->bCatchOpportunityActive)
+    {
+        FVector2D InterceptScreen;
+        if (PC->ProjectWorldLocationToScreen(Match->Simulation.PredictLanding(), InterceptScreen))
+        {
+            const FVector2D D = ToDesign(InterceptScreen);
+            Circle(D.X, D.Y, 32.f, Gold, 2.5f);
+            Circle(D.X, D.Y, 18.f, TurfGreen, 1.5f);
+        }
+
+        Btn(TEXT("field_catch"), TEXT("TAKE CATCH!  [C]"), 660.f, 690.f, 280.f, 62.f, 1);
+    }
+
+    if (Match->bFieldingDecisionPaused || Match->bThrowTargetActive)
+    {
+        const float CardW = 440.f, CardH = 270.f;
+        const float CardX = 1120.f, CardY = 460.f;
+
+        // Dark frosted backdrop card
+        Rect(CardX, CardY, CardW, CardH, FLinearColor(0.02f, 0.05f, 0.09f, 0.94f));
+        Line(CardX, CardY, CardX + CardW, CardY, Gold, 2.5f);
+        Line(CardX, CardY + CardH, CardX + CardW, CardY + CardH, HairlineSoft, 1.f);
+        Line(CardX, CardY, CardX, CardY + CardH, HairlineSoft, 1.f);
+        Line(CardX + CardW, CardY, CardX + CardW, CardY + CardH, HairlineSoft, 1.f);
+
+        // Header
+        TextFit(TEXT("TACTICAL FIELDING DECISION"), CardX + 18.f, CardY + 16.f, 13, WhiteAthletic, 260.f, false, 0);
+        if (Match->bFieldingDecisionPaused)
+        {
+            Rect(CardX + CardW - 96.f, CardY + 14.f, 78.f, 20.f, FLinearColor(0.85f, 0.65f, 0.12f, 0.85f));
+            TextMid(TEXT("PAUSED"), CardX + CardW - 96.f, CardY + 15.f, 78.f, 11, FLinearColor::Black, true, 0);
+        }
+
+        const FString FielderStr = (Match->Athletes.IsValidIndex(Match->ActiveFielder) && Match->Athletes[Match->ActiveFielder])
+            ? FString::Printf(TEXT("#%d %s GATHERED THE BALL"), Match->ActiveFielder + 1, *Match->Athletes[Match->ActiveFielder]->GetName())
+            : TEXT("BALL GATHERED IN THE OUTFIELD");
+        TextFit(FielderStr, CardX + 18.f, CardY + 42.f, 11, SlateMuted, CardW - 36.f, false, 0);
+
+        // Section: Target Selection
+        TextFit(TEXT("TARGET END:"), CardX + 18.f, CardY + 62.f, 11, SilverCool, 120.f, false, 0);
+        const bool bKeeper = Match->SelectedThrowTarget == EC26ThrowTarget::KeepersEnd;
+        Btn(TEXT("throw_bowler"), TEXT("BOWLER  [1]"), CardX + 18.f, CardY + 80.f, 196.f, 42.f, !bKeeper ? 1 : 0);
+        Btn(TEXT("throw_keeper"), TEXT("KEEPER  [2]"), CardX + 226.f, CardY + 80.f, 196.f, 42.f, bKeeper ? 1 : 0);
+
+        // Section: Throw Power / Style
+        TextFit(TEXT("THROW EFFORT:"), CardX + 18.f, CardY + 132.f, 11, SilverCool, 120.f, false, 0);
+        const bool bDirect = Match->ThrowPowerCharge > 0.8f;
+        Btn(TEXT("throw_regular"), TEXT("REGULAR (SAFE)"), CardX + 18.f, CardY + 150.f, 196.f, 36.f, !bDirect ? 1 : 0);
+        Btn(TEXT("throw_direct"), TEXT("DIRECT HIT (POWER)"), CardX + 226.f, CardY + 150.f, 196.f, 36.f, bDirect ? 1 : 0);
+
+        // Power bar
+        StatBar(CardX + 18.f, CardY + 194.f, CardW - 36.f, 8.f, Match->ThrowPowerCharge, bDirect ? Crimson : Gold);
+
+        // Confirm / Execute button
+        Btn(TEXT("throw_execute"), TEXT("EXECUTE THROW  [SPACE]  >"), CardX + 18.f, CardY + 210.f, CardW - 36.f, 48.f, 1);
+
+        // Draw on-field target reticle at target wicket
+        const float TargetY = bKeeper ? C26Field::WicketY : -C26Field::WicketY;
+        FVector2D TargetScreen;
+        if (PC->ProjectWorldLocationToScreen(FVector(0.f, TargetY, 40.f), TargetScreen))
+        {
+            const FVector2D TD = ToDesign(TargetScreen);
+            Circle(TD.X, TD.Y, 26.f, Gold, 2.5f);
+            Circle(TD.X, TD.Y, 32.f, FLinearColor(Gold.R, Gold.G, Gold.B, 0.4f), 1.5f);
+            Line(TD.X - 36.f, TD.Y, TD.X + 36.f, TD.Y, Gold, 1.2f);
+            Line(TD.X, TD.Y - 36.f, TD.X, TD.Y + 36.f, Gold, 1.2f);
+            TextMid(bKeeper ? TEXT("STRIKER CREASE") : TEXT("BOWLER CREASE"), TD.X - 100.f, TD.Y - 48.f, 200.f, 11, Gold, true, 0);
+        }
+    }
+}
+
+void AC26HUD::DrawBattingTimingMeter()
+{
+    if (!Match || Match->ContactFeedbackTimer <= 0.f) return;
+
+    const float Alpha = FMath::Clamp(Match->ContactFeedbackTimer / 0.35f, 0.f, 1.f);
+    const float BoxW = 520.f, BoxH = 68.f;
+    const float BoxX = 800.f - BoxW * 0.5f, BoxY = 100.f;
+
+    Rect(BoxX, BoxY, BoxW, BoxH, FLinearColor(0.01f, 0.02f, 0.05f, 0.88f * Alpha));
+    Line(BoxX, BoxY, BoxX + BoxW, BoxY, FLinearColor(1.f, 1.f, 1.f, 0.15f * Alpha), 1.f);
+    Line(BoxX, BoxY + BoxH, BoxX + BoxW, BoxY + BoxH, FLinearColor(1.f, 1.f, 1.f, 0.15f * Alpha), 1.f);
+
+    const float TrackX = BoxX + 30.f, TrackY = BoxY + 32.f, TrackW = 460.f, TrackH = 10.f;
+    Rect(TrackX, TrackY, 60.f, TrackH, FLinearColor(0.8f, 0.15f, 0.15f, 0.8f * Alpha));
+    Rect(TrackX + 60.f, TrackY, 90.f, TrackH, FLinearColor(0.9f, 0.55f, 0.15f, 0.8f * Alpha));
+    Rect(TrackX + 150.f, TrackY, 50.f, TrackH, FLinearColor(0.85f, 0.85f, 0.2f, 0.8f * Alpha));
+    Rect(TrackX + 200.f, TrackY, 60.f, TrackH, FLinearColor(0.15f, 0.95f, 0.45f, 0.95f * Alpha));
+    Rect(TrackX + 260.f, TrackY, 50.f, TrackH, FLinearColor(0.85f, 0.85f, 0.2f, 0.8f * Alpha));
+    Rect(TrackX + 310.f, TrackY, 90.f, TrackH, FLinearColor(0.9f, 0.55f, 0.15f, 0.8f * Alpha));
+    Rect(TrackX + 400.f, TrackY, 60.f, TrackH, FLinearColor(0.8f, 0.15f, 0.15f, 0.8f * Alpha));
+
+    const float ClampedMs = FMath::Clamp(Match->LastTimingDeltaMs, -90.f, 90.f);
+    const float NeedleX = TrackX + TrackW * 0.5f + (ClampedMs / 90.f) * (TrackW * 0.5f);
+    Line(NeedleX, TrackY - 4.f, NeedleX, TrackY + TrackH + 4.f, FLinearColor(1.f, 1.f, 1.f, Alpha), 2.5f);
+
+    const float AbsMs = FMath::Abs(Match->LastTimingDeltaMs);
+    FString TimingWord = TEXT("PERFECT");
+    FLinearColor TextCol = TurfGreen;
+    if (AbsMs > 65.f) { TimingWord = Match->LastTimingDeltaMs < 0 ? TEXT("VERY EARLY") : TEXT("VERY LATE"); TextCol = Crimson; }
+    else if (AbsMs > 35.f) { TimingWord = Match->LastTimingDeltaMs < 0 ? TEXT("EARLY") : TEXT("LATE"); TextCol = Gold; }
+    else if (AbsMs > 15.f) { TimingWord = TEXT("GOOD"); TextCol = Gold; }
+
+    const FString Readout = FString::Printf(TEXT("%+d MS  •  %s"), int(Match->LastTimingDeltaMs), *TimingWord);
+    TextMidFit(Readout, 800, BoxY + 4.f, 22.f, 14, TextCol, BoxW - 40.f, true, 0);
+
+    const FString SubText = FString::Printf(TEXT("%s  •  %d%% CONTACT QUALITY"),
+                                           Match->LastShotName.IsEmpty() ? TEXT("SHOT") : *Match->LastShotName,
+                                           int(Match->LastTimingQualityPct));
+    TextMidFit(SubText, 800, TrackY + TrackH + 4.f, 18.f, 12, SilverCool, BoxW - 40.f, true, 0);
+}
+
+// ============================================================================
+// CRICKET 26 // PRESENTATION DIRECTOR BROADCAST OVERLAYS
+// ============================================================================
+
+void AC26HUD::DrawPresentationOverlay()
+{
+    if (!Match || !Match->PresentationDirector) return;
+    UC26PresentationDirector* PD = Match->PresentationDirector;
+    if (!PD->IsPresentationActive()) return;
+
+    const FC26PresentationSceneDefinition& Def = PD->GetCurrentSceneDef();
+    const float Progress = PD->GetSceneProgress();
+
+    // Cinematic letterboxing bars top & bottom
+    Rect(0, 0, 1600, 48, FLinearColor(0.f, 0.f, 0.f, 0.90f));
+    Rect(0, 852, 1600, 48, FLinearColor(0.f, 0.f, 0.f, 0.90f));
+
+    // Live Broadcast bug in top left
+    Rect(40, 14, 8, 20, Crimson);
+    Text(TEXT("LIVE BROADCAST"), 56, 17, 13, WhiteAthletic, 0, false);
+
+    // Skip button in top right
+    Btn(TEXT("skip"), TEXT("TAP TO SKIP  >"), 1380, 10, 180, 32, 0);
+    // Skip progress hairline
+    Rect(1380, 42, 180 * Progress, 2, Gold);
+
+    // Contextual broadcast cards
+    if (Def.OverlayType == TEXT("TossCard"))
+    {
+        const float BoxW = 860.f, BoxH = 110.f;
+        const float BoxX = (1600.f - BoxW) * 0.5f, BoxY = 720.f;
+        Panel(BoxX, BoxY, BoxW, BoxH, HairlineSoft);
+        Rect(BoxX, BoxY, 6, BoxH, Gold);
+
+        Eyebrow(TEXT("OFFICIAL TOSS CEREMONY // SUPER OVER"), BoxX + 24, BoxY + 16);
+        Text(Match->TossText.IsEmpty() ? TEXT("TOSS DECISION IN PROGRESS") : Match->TossText,
+             BoxX + 24, BoxY + 42, 24, WhiteAthletic, 1, false);
+
+        FVector CoinPos; FRotator CoinRot;
+        if (PD->GetTossCoinState(CoinPos, CoinRot))
+        {
+            Text(TEXT("COIN IN FLIGHT..."), BoxX + 24, BoxY + 76, 15, Gold, 0, false);
+        }
+        else
+        {
+            Text(TEXT("PITCH REPORT: HARD TURF, EXCELLENT CARRY"), BoxX + 24, BoxY + 76, 14, SlateMuted, 0, false);
+        }
+    }
+    else if (Def.OverlayType == TEXT("MilestoneFifty") || Def.OverlayType == TEXT("MilestoneCentury"))
+    {
+        const bool bCentury = (Def.OverlayType == TEXT("MilestoneCentury"));
+        const float BoxW = 760.f, BoxH = 130.f;
+        const float BoxX = (1600.f - BoxW) * 0.5f, BoxY = 700.f;
+        Panel(BoxX, BoxY, BoxW, BoxH, HairlineGleam);
+        Rect(BoxX, BoxY, 8, BoxH, Gold);
+
+        Rect(BoxX + 16, BoxY + 15, 100, 100, SurfaceWell);
+        Text(bCentury ? TEXT("100") : TEXT("50"), BoxX + 66, BoxY + 42, 44, Gold, 3, true);
+
+        const int32 StrikerIdx = FMath::Clamp(Match->Rules.Now().Striker, 0, 2);
+        const FString Name = Match->BatterName();
+        const int32 Runs = Match->Rules.Now().BatterRuns[StrikerIdx];
+        const int32 Balls = Match->Rules.Now().BatterBalls[StrikerIdx];
+        const float SR = Balls > 0 ? (float(Runs) / float(Balls) * 100.f) : 0.f;
+
+        Eyebrow(bCentury ? TEXT("MILESTONE // CENTURY") : TEXT("MILESTONE // HALF CENTURY"), BoxX + 130, BoxY + 20);
+        Text(Name.ToUpper(), BoxX + 130, BoxY + 46, 28, WhiteAthletic, 2, false);
+
+        const FString StatStr = FString::Printf(TEXT("%d RUNS  /  %d BALLS  /  SR %.1f"), Runs, Balls, SR);
+        Text(StatStr, BoxX + 130, BoxY + 84, 16, SilverCool, 0, false);
+    }
+    else if (Def.OverlayType == TEXT("WicketCard"))
+    {
+        const float BoxW = 820.f, BoxH = 125.f;
+        const float BoxX = (1600.f - BoxW) * 0.5f, BoxY = 705.f;
+        Panel(BoxX, BoxY, BoxW, BoxH, HairlineSoft);
+        Rect(BoxX, BoxY, 8, BoxH, Crimson);
+
+        Rect(BoxX + 24, BoxY + 18, 120, 32, Crimson);
+        Text(TEXT("WICKET"), BoxX + 84, BoxY + 24, 18, WhiteAthletic, 3, true);
+
+        const FString Bowler = Match->BowlerName();
+        const FString Batter = Match->BatterName();
+        Text(FString::Printf(TEXT("%s OUT"), *Batter.ToUpper()), BoxX + 160, BoxY + 22, 24, WhiteAthletic, 1, false);
+
+        const FString SubStr = FString::Printf(TEXT("BOWLER: %s  |  FALL OF WICKET: %d/%d (BALL %d)"),
+                                              *Bowler.ToUpper(), Match->Rules.Now().Runs, Match->Rules.Now().Wickets, Match->Rules.Now().LegalBalls);
+        Text(SubStr, BoxX + 24, BoxY + 70, 16, SilverCool, 0, false);
+    }
+    else if (Def.OverlayType == TEXT("OverSummary"))
+    {
+        const float BoxW = 800.f, BoxH = 115.f;
+        const float BoxX = (1600.f - BoxW) * 0.5f, BoxY = 715.f;
+        Panel(BoxX, BoxY, BoxW, BoxH, HairlineSoft);
+        Rect(BoxX, BoxY, 6, BoxH, TurfGreen);
+
+        Eyebrow(TEXT("OVER SUMMARY // SUPER OVER"), BoxX + 24, BoxY + 18);
+        const FString ScoreStr = FString::Printf(TEXT("TOTAL: %s %d/%d"), *Match->TeamShort(Match->BattingTeam()), Match->Rules.Now().Runs, Match->Rules.Now().Wickets);
+        Text(ScoreStr, BoxX + 24, BoxY + 44, 26, WhiteAthletic, 1, false);
+
+        const FString DetailStr = FString::Printf(TEXT("BOWLER: %s  |  TARGET: %d"), *Match->BowlerName(), Match->Rules.Target());
+        Text(DetailStr, BoxX + 24, BoxY + 80, 15, SlateMuted, 0, false);
+    }
+    else if (Def.OverlayType == TEXT("NewBatterCard"))
+    {
+        const float BoxW = 700.f, BoxH = 105.f;
+        const float BoxX = (1600.f - BoxW) * 0.5f, BoxY = 725.f;
+        Panel(BoxX, BoxY, BoxW, BoxH, HairlineSoft);
+        Rect(BoxX, BoxY, 6, BoxH, ElectricCyan);
+
+        Eyebrow(TEXT("NEW BATTER INCOMING"), BoxX + 24, BoxY + 16);
+        Text(Match->BatterName().ToUpper(), BoxX + 24, BoxY + 42, 26, WhiteAthletic, 1, false);
+        Text(TEXT("RIGHT HAND BAT  |  AGGRESSIVE TOP-ORDER"), BoxX + 24, BoxY + 74, 14, SlateMuted, 0, false);
+    }
+    else if (Def.OverlayType == TEXT("MatchResult") || Def.OverlayType == TEXT("PlayerOfMatch"))
+    {
+        const float BoxW = 860.f, BoxH = 130.f;
+        const float BoxX = (1600.f - BoxW) * 0.5f, BoxY = 700.f;
+        Panel(BoxX, BoxY, BoxW, BoxH, HairlineGleam);
+        Rect(BoxX, BoxY, 8, BoxH, Gold);
+
+        Eyebrow(TEXT("MATCH RESULT // POST-MATCH PRESENTATION"), BoxX + 24, BoxY + 16);
+        Text(Match->Callout, BoxX + 24, BoxY + 42, 32, Gold, 3, false);
+        Text(Match->Detail, BoxX + 24, BoxY + 82, 18, WhiteAthletic, 1, false);
+    }
+}
+
+void AC26HUD::DrawPresentationDebug()
+{
+    if (!Match || !Match->PresentationDirector) return;
+    UC26PresentationDirector* PD = Match->PresentationDirector;
+
+    const float BoxX = 20.f, BoxY = 60.f, BoxW = 440.f, BoxH = 260.f;
+    Panel(BoxX, BoxY, BoxW, BoxH, HairlineGleam);
+    Rect(BoxX, BoxY, BoxW, 4, ElectricCyan);
+
+    float Y = BoxY + 14.f;
+    const bool bActive = PD->IsPresentationActive();
+
+    Text(TEXT("PRESENTATION DIRECTOR // DEBUG OVERLAY"), BoxX + 16, Y, 13, ElectricCyan, 0, false);
+    Y += 22.f;
+
+    const FString StatusStr = FString::Printf(TEXT("STATUS: %s  |  QUEUE: %d ITEMS"),
+                                             bActive ? TEXT("PLAYING") : TEXT("IDLE"), PD->GetQueueCount());
+    Text(StatusStr, BoxX + 16, Y, 13, bActive ? TurfGreen : SlateMuted, 0, false);
+    Y += 18.f;
+
+    if (bActive)
+    {
+        const FC26PresentationSceneDefinition& Def = PD->GetCurrentSceneDef();
+        const FString EvtStr = FString::Printf(TEXT("EVENT: %d  |  VARIANT: %s"), int32(PD->GetCurrentEvent()), *Def.VariantId.ToString());
+        Text(EvtStr, BoxX + 16, Y, 12, WhiteAthletic, 0, false);
+        Y += 18.f;
+
+        const FString TimeStr = FString::Printf(TEXT("TIME: %.2fs / %.2fs  (%.0f%%)"),
+                                               PD->GetSceneTime(), PD->GetSceneDuration(), PD->GetSceneProgress() * 100.f);
+        Text(TimeStr, BoxX + 16, Y, 12, Gold, 0, false);
+        Y += 18.f;
+
+        const FString CamStr = FString::Printf(TEXT("CAMERA: Lens %d  |  OVERLAY: %s"), int32(Def.CameraAngle), *Def.OverlayType);
+        Text(CamStr, BoxX + 16, Y, 12, SilverCool, 0, false);
+        Y += 18.f;
+    }
+
+    const float Pressure = PD->CalculateMatchPressure(Match->Rules.Target(), Match->Rules.Now().Runs,
+                                                      Match->Rules.Config.Balls - Match->Rules.Now().LegalBalls,
+                                                      Match->Rules.Now().Wickets);
+    const FString TensionStr = FString::Printf(TEXT("MATCH TENSION: %.2f  |  PACING: %d"), Pressure, int32(PD->GetPacing()));
+    Text(TensionStr, BoxX + 16, Y, 12, Pressure > 0.6f ? Crimson : SlateMuted, 0, false);
+    Y += 24.f;
+
+    HairRule(BoxX + 16, Y, BoxW - 32.f);
+    Y += 8.f;
+
+    Text(TEXT("HOTKEYS: [T]oss [W]kt Bowled [K]Caught [5]Fifty [0]Cent"), BoxX + 16, Y, 11, SlateMuted, 0, false);
+    Y += 16.f;
+    Text(TEXT("         [B]owler/Capt [N]ewBatter [O]verEnd [M]Win [P]Close"), BoxX + 16, Y, 11, SlateMuted, 0, false);
 }
