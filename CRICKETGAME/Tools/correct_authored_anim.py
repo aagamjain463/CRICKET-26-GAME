@@ -435,6 +435,8 @@ def main():
         'Solved/A_C26_BattingCut.fbx', 'Solved/A_C26_BattingSweep.fbx',
         'Solved/A_C26_BattingDefence.fbx', 'Solved/A_C26_BattingHook.fbx',
         'Solved/A_C26_BattingLoftedDrive.fbx', 'Solved/A_C26_BattingGlance.fbx',
+        'Solved/A_C26_UmpireSignalWide.fbx', 'Solved/A_C26_UmpireSignalSix.fbx',
+        'Solved/A_C26_UmpireSignalOut.fbx', 'Solved/A_C26_UmpireSignalFour.fbx',
         'Solved/A_C26_BowlingPace.fbx',
         'Solved/A_C26_BowlingOffSpin.fbx', 'Solved/A_C26_BowlingLegSpin.fbx',
     ]
@@ -479,6 +481,18 @@ def main():
     def hands_height(m):
         return hands_mid(m)[1]
 
+    def hand_offside(m, side):
+        """One hand's signed off-side offset from the hips (signals need the hands
+        measured separately: symmetric arms cancel in the midpoint)."""
+        right = body_right(m)
+        h = m['mixamorig:%sHand' % side].t
+        p = m['mixamorig:Hips'].t
+        d = (h[0] - p[0], h[2] - p[2])
+        return d[0]*right[0] + d[1]*right[1]
+
+    def hand_height(m, side):
+        return m['mixamorig:%sHand' % side].t[1]
+
     def hips_height(m):
         return m['mixamorig:Hips'].t[1]
 
@@ -492,7 +506,8 @@ def main():
             ('stance: chest faces the bowler', STANCE_FRAME,
              lambda m, w, t: (abs(math.degrees(math.atan2(*body_forward(m)))) < 20.0,
                               'chest yaw %+.1f deg' % math.degrees(math.atan2(*body_forward(m))))),
-            ('defining frame: chest faces the bowler', CONTACT_FRAME if 'Batting' in f else RELEASE_FRAME,
+            ('defining frame: chest faces the bowler',
+             14 if 'Umpire' in f else (CONTACT_FRAME if 'Batting' in f else RELEASE_FRAME),
              lambda m, w, t: (abs(math.degrees(math.atan2(*body_forward(m)))) < 35.0,
                               'chest yaw %+.1f deg' % math.degrees(math.atan2(*body_forward(m))))),
             ('stance: lowest ankle at ground', STANCE_FRAME,
@@ -500,9 +515,12 @@ def main():
                               'ankle Y %.1f / %.1f' % (m['mixamorig:LeftFoot'].t[1], m['mixamorig:RightFoot'].t[1]))),
             ('stance: hips at athletic height', STANCE_FRAME,
              lambda m, w, t: (150.0 < m['mixamorig:Hips'].t[1] < 215.0, 'hips Y %.1f' % m['mixamorig:Hips'].t[1])),
-            ('stance: hands together', STANCE_FRAME,
-             lambda m, w, t: (hand_span(m) < 20.0, 'span %.1f cm' % hand_span(m))),
         ]
+        if 'Umpire' not in f:
+            # Batters hold the handle and bowlers hold the ball in both hands; an
+            # umpire's hands hang at his sides at the ready.
+            checks.append(('stance: hands together', STANCE_FRAME,
+                           lambda m, w, t: (hand_span(m) < 20.0, 'span %.1f cm' % hand_span(m))))
         if 'Batting' in f:
             checks.append(('contact: hands together', CONTACT_FRAME,
                            lambda m, w, t: (hand_span(m) < 20.0, 'span %.1f cm' % hand_span(m))))
@@ -590,6 +608,43 @@ def main():
             checks.append(('deflect: soft hands across to fine leg', 29,
                            lambda m, w, t: (hands_offside(m) < -25.0 and hands_height(m) - hips_height(m) < 60.0,
                                             '%.1f cm off side, %.1f cm above hips' % (hands_offside(m), hands_height(m) - hips_height(m)))))
+        if 'UmpireSignalWide' in f:
+            # Both arms fully out to the sides at shoulder height, and they STAY
+            # there: the hold frame is checked like the pose frame.
+            for frame, label in ((14, 'signal'), (36, 'hold')):
+                checks.append(('%s: both arms straight out' % label, frame,
+                               lambda m, w, t: (hand_offside(m, 'Right') > 120.0 and hand_offside(m, 'Left') < -120.0,
+                                                'R %+.1f / L %+.1f cm off side' % (hand_offside(m, 'Right'), hand_offside(m, 'Left')))))
+                checks.append(('%s: arms level at shoulder height' % label, frame,
+                               lambda m, w, t: (60.0 < hand_height(m, 'Right') - hips_height(m) < 145.0,
+                                                'R hand %.1f cm above hips' % (hand_height(m, 'Right') - hips_height(m)))))
+        if 'UmpireSignalSix' in f:
+            checks.append(('signal: both arms straight up', 14,
+                           lambda m, w, t: (hand_height(m, 'Right') > 340.0 and hand_height(m, 'Left') > 340.0,
+                                            'R %.0f / L %.0f cm absolute' % (hand_height(m, 'Right'), hand_height(m, 'Left')))))
+            checks.append(('signal: clearly above the head', 14,
+                           lambda m, w, t: (hand_height(m, 'Right') - hips_height(m) > 150.0 and hand_height(m, 'Left') - hips_height(m) > 150.0,
+                                            'R %+.1f / L %+.1f cm above hips' % (hand_height(m, 'Right') - hips_height(m), hand_height(m, 'Left') - hips_height(m)))))
+        if 'UmpireSignalOut' in f:
+            checks.append(('signal: one arm straight up', 14,
+                           lambda m, w, t: (hand_height(m, 'Right') > 340.0,
+                                            'R hand %.0f cm absolute' % hand_height(m, 'Right'))))
+            checks.append(('signal: the other arm stays down', 14,
+                           lambda m, w, t: (hand_height(m, 'Left') < hips_height(m) + 70.0,
+                                            'L hand %.1f cm above hips' % (hand_height(m, 'Left') - hips_height(m)))))
+        if 'UmpireSignalFour' in f:
+            # The one signal with motion: the arms sweep across the body to each
+            # side in turn before finishing out wide at waist height.
+            checks.append(('sweep: first across to the left', 10,
+                           lambda m, w, t: (hand_offside(m, 'Right') < -40.0,
+                                            'R hand %+.1f cm off side' % hand_offside(m, 'Right'))))
+            checks.append(('sweep: then across to the right', 18,
+                           lambda m, w, t: (hand_offside(m, 'Left') > 40.0,
+                                            'L hand %+.1f cm off side' % hand_offside(m, 'Left'))))
+            checks.append(('signal: finish arms out at waist height', 24,
+                           lambda m, w, t: (hand_offside(m, 'Right') > 100.0 and hand_offside(m, 'Left') < -100.0
+                                            and hand_height(m, 'Right') - hips_height(m) < 100.0,
+                                            'R %+.1f / L %+.1f cm off side, R %.1f cm above hips' % (hand_offside(m, 'Right'), hand_offside(m, 'Left'), hand_height(m, 'Right') - hips_height(m)))))
         if 'Bowling' in f:
             def release_check(m, w, t):
                 head = m['mixamorig:Head'].t[1]

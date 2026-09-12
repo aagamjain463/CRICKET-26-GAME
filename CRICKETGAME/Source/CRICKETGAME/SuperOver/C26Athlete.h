@@ -161,6 +161,13 @@ private:
     UPROPERTY() TObjectPtr<UAnimSequence> BattingGlanceClip;
     UPROPERTY() TObjectPtr<UAnimSequence> BowlingOffSpinClip;
     UPROPERTY() TObjectPtr<UAnimSequence> BowlingLegSpinClip;
+    /** Umpire signals: target-free pose actions (unlike pickup/catch/dive/throw,
+        which solve toward the LIVE ball and must stay procedural). Every signal
+        clip ends ON the signal pose, so the runtime can hold it indefinitely. */
+    UPROPERTY() TObjectPtr<UAnimSequence> UmpireWideClip;
+    UPROPERTY() TObjectPtr<UAnimSequence> UmpireSixClip;
+    UPROPERTY() TObjectPtr<UAnimSequence> UmpireOutClip;
+    UPROPERTY() TObjectPtr<UAnimSequence> UmpireFourClip;
     UPROPERTY() TObjectPtr<UMaterialInterface> TexturedSkin;
     void ApplyRecordedMotion(bool Running, bool Batting);
     /** Sample a whole-body authored action over Pose. This is the same bind-by-name retarget
@@ -188,7 +195,10 @@ private:
         the low round-arm release, wrist-spin types the tall whippy one, seam/swing types
         the pace action. */
     UAnimSequence* SelectBowlingClip();
-    /** Lazy load of the six library clips (see the block above for why not the ctor). */
+    /** The clip for the signal the umpire is currently signalling, or null (the
+        procedural signal pose then stands, as it always has). */
+    UAnimSequence* SelectSignalClip();
+    /** Lazy load of the library clips (see the block above for why not the ctor). */
     void LoadShotLibrary();
     TSet<int32>& DrivenFor(UAnimSequence* Clip);
     // The Mixamo rig is a T-pose facing mesh +Y with mesh +X out to the character's LEFT.

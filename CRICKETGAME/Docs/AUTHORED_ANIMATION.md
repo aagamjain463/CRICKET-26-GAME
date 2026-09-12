@@ -135,7 +135,7 @@ per-frame ground pin) and refuses to emit anything that fails verification.
 
 ## Verification actually performed (offline, on the CORRECTED clips)
 
-93 checks across the 11-clip library (`python3 Tools/correct_authored_anim.py`), all PASS:
+120 checks across the 15-clip library (`python3 Tools/correct_authored_anim.py`), all PASS:
 
 - Every clip: chest faces the bowler at the stance AND the defining frame (the gate a
   whole-body yaw bug cannot hide from -- one existed; see below); stance ankles at
@@ -162,8 +162,16 @@ per-frame ground pin) and refuses to emit anything that fails verification.
 - BowlingPace: release hand **400 cm vs head 329** (fully extended), hips **74.6 cm
   down the pitch**; BowlingOffSpin: release **360** (deliberately lower -- finger
   spin), hips 65.7; BowlingLegSpin: release **399**, hips 74.6.
+- UmpireSignalWide: arms **+142.4 / -141.6 cm** out at **86.4 cm above** the hips
+  (shoulder height) at the signal frame AND still there at the hold frame (36).
+- UmpireSignalSix: both hands **389 cm absolute / +189.3 above** the hips.
+- UmpireSignalOut: right hand **392 cm** up, left hand **-3.1 cm above** the hips
+  (hanging at his side, exactly as an out signal reads).
+- UmpireSignalFour: the arms sweep **-49.4 cm** across to the left, **+51.1 cm**
+  back across to the right, and finish **+132.2 / -133.0 cm** out at **42 cm above**
+  the hips -- the boundary sweep, waist height.
 
-The same facts are re-asserted IN ENGINE by `Cricket26.Anim.AuthoredClips` (all 11 clips)
+The same facts are re-asserted IN ENGINE by `Cricket26.Anim.AuthoredClips` (all 15 clips)
 (`Tests/C26ProductionTests.cpp`) for all 8 clips, sampling the imported
 AnimSequences through `GetBoneTransform` after the FBX importer's own conversion.
 
@@ -188,12 +196,15 @@ bit-exactly, and chest yaw gates were added to every clip's checks.
    the two `ApplyAuthoredClip` call sites), but the import + build + playtest must run on a Mac
    with UE 5.8. The in-engine gate is `Cricket26.Anim.AuthoredClips` plus the BatLab/BowlLab
    playtests.
-2. **Library gaps.** Batting now covers drive, lofted drive, pull, hook, cut, sweep,
-   glance and defence; bowling covers pace, off-spin and leg-spin. Not yet authored:
-   the upper cut / late cut distinction (both share the cut clip), back-foot defence,
-   keeper crouch/dive/stump, umpire signals, fielder pickup/throw/catch/dive. With
-   the offline pipeline each new clip is a pure-Python key-list addition to
-   `c26_anim_author.py` plus a job in `Tools/rebuild_authored_clips.py`.
+2. **Library gaps.** Batting covers drive, lofted drive, pull, hook, cut, sweep,
+   glance and defence; bowling covers pace, off-spin and leg-spin; the four umpire
+   signals (wide / six / out / four) are authored. Deliberately NOT clip-authored:
+   fielder pickup/catch/dive/throw and the keeper's take, because those actions
+   solve toward the LIVE ball position and a fixed clip would aim at nothing --
+   they stay procedural by design. Not yet authored: the upper cut / late cut
+   split, back-foot defence, keeper crouch idle. With the offline pipeline each
+   new clip is a pure-Python key-list addition to `c26_anim_author.py` plus a job
+   in `Tools/rebuild_authored_clips.py`.
 3. **Timing authority.** `C26MatchGameMode` owns release and contact timing. The clips must be
    *driven* by those instants, not allowed to own them — the same rule the audio director follows.
    `A_C26_BattingDrive` contact is at frame 23 of 36 (0.958 s in) and `A_C26_BowlingPace` release is

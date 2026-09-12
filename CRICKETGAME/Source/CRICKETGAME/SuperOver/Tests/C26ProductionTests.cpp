@@ -100,14 +100,16 @@ bool FC26AuthoredClipsTest::RunTest(const FString&)
     // an asset error, run Tools/ImportAnimations.py; if it fails a geometry check,
     // the pipeline in Docs/AUTHORED_ANIMATION.md was bypassed.
     constexpr float Fps=24.f;
-    struct FClipSpec{const TCHAR* Name;bool Batting;};
+    struct FClipSpec{const TCHAR* Name;bool Batting;bool Umpire;};
     const FClipSpec Specs[]={
-        {TEXT("A_C26_BattingDrive"),true},{TEXT("A_C26_BattingPull"),true},
-        {TEXT("A_C26_BattingCut"),true},{TEXT("A_C26_BattingSweep"),true},
-        {TEXT("A_C26_BattingDefence"),true},{TEXT("A_C26_BattingHook"),true},
-        {TEXT("A_C26_BattingLoftedDrive"),true},{TEXT("A_C26_BattingGlance"),true},
-        {TEXT("A_C26_BowlingPace"),false},
-        {TEXT("A_C26_BowlingOffSpin"),false},{TEXT("A_C26_BowlingLegSpin"),false},
+        {TEXT("A_C26_BattingDrive"),true,false},{TEXT("A_C26_BattingPull"),true,false},
+        {TEXT("A_C26_BattingCut"),true,false},{TEXT("A_C26_BattingSweep"),true,false},
+        {TEXT("A_C26_BattingDefence"),true,false},{TEXT("A_C26_BattingHook"),true,false},
+        {TEXT("A_C26_BattingLoftedDrive"),true,false},{TEXT("A_C26_BattingGlance"),true,false},
+        {TEXT("A_C26_UmpireSignalWide"),false,true},{TEXT("A_C26_UmpireSignalSix"),false,true},
+        {TEXT("A_C26_UmpireSignalOut"),false,true},{TEXT("A_C26_UmpireSignalFour"),false,true},
+        {TEXT("A_C26_BowlingPace"),false,false},{TEXT("A_C26_BowlingOffSpin"),false,false},
+        {TEXT("A_C26_BowlingLegSpin"),false,false},
     };
     // Skeleton-space transform of one bone chain: GetBoneTransform returns LOCALS
     // seeded from the ref pose, so the chain composes parent-first like the athlete does.
@@ -159,8 +161,38 @@ bool FC26AuthoredClipsTest::RunTest(const FString&)
         TestTrue(*FString::Printf(TEXT("%s: stance chest faces the bowler"),*Tag),FMath::Abs(YawDeg(0.f))<20.f);
         TestTrue(*FString::Printf(TEXT("%s: defining-frame chest faces the bowler"),*Tag),FMath::Abs(YawDeg(Defining))<35.f);
         // 2. Hands on the handle / ball at the stance, and together at the defining frame.
-        TestTrue(*FString::Printf(TEXT("%s: hands together at stance"),*Tag),FVector::Distance(LeftHand(Clip,0.f),RightHand(Clip,0.f))<25.f);
-        TestTrue(*FString::Printf(TEXT("%s: hands together at defining frame"),*Tag),FVector::Distance(LeftHand(Clip,Defining),RightHand(Clip,Defining))<25.f);
+        if(!Spec.Umpire)  // an umpire's hands hang at his sides at the ready
+        {
+            TestTrue(*FString::Printf(TEXT("%s: hands together at stance"),*Tag),FVector::Distance(LeftHand(Clip,0.f),RightHand(Clip,0.f))<25.f);
+            TestTrue(*FString::Printf(TEXT("%s: hands together at defining frame"),*Tag),FVector::Distance(LeftHand(Clip,Defining),RightHand(Clip,Defining))<25.f);
+        }
+        if(Spec.Umpire)
+        {
+            const float P14=14.f/Fps;
+            const FVector P=Bone(Clip,P14,{Hips});
+            const FVector OffDir=FVector::CrossProduct(FVector::UpVector,Forward(Clip,P14));
+            const FString Sig=Spec.Name+6;   // skip "A_C26_" -> "UmpireSignalWide" etc
+            const FVector R=RightHand(Clip,P14),L=LeftHand(Clip,P14);
+            if(Sig==TEXT("UmpireSignalWide"))
+            {
+                TestTrue(*FString::Printf(TEXT("%s: arms straight out at shoulder height"),*Tag),
+                         FVector::DotProduct(R-P,OffDir)>120.f&&FVector::DotProduct(L-P,OffDir)<-120.f&&R.Z<P.Z+145.f&&R.Z>P.Z+60.f);
+                TestTrue(*FString::Printf(TEXT("%s: wide holds"),*Tag),
+                         FVector::DotProduct(RightHand(Clip,36.f/Fps)-Bone(Clip,36.f/Fps,{Hips}),FVector::CrossProduct(FVector::UpVector,Forward(Clip,36.f/Fps)))>120.f);
+            }
+            if(Sig==TEXT("UmpireSignalSix"))
+                TestTrue(*FString::Printf(TEXT("%s: both arms straight up"),*Tag),R.Z>340.f&&L.Z>340.f);
+            if(Sig==TEXT("UmpireSignalOut"))
+                TestTrue(*FString::Printf(TEXT("%s: one arm up, one down"),*Tag),R.Z>340.f&&L.Z<P.Z+70.f);
+            if(Sig==TEXT("UmpireSignalFour"))
+            {
+                const FVector P24=Bone(Clip,24.f/Fps,{Hips});
+                const FVector R24=RightHand(Clip,24.f/Fps),L24=LeftHand(Clip,24.f/Fps);
+                const FVector Off24=FVector::CrossProduct(FVector::UpVector,Forward(Clip,24.f/Fps));
+                TestTrue(*FString::Printf(TEXT("%s: finish arms out at waist height"),*Tag),
+                         FVector::DotProduct(R24-P24,Off24)>100.f&&FVector::DotProduct(L24-P24,Off24)<-100.f&&R24.Z<P24.Z+100.f);
+            }
+        }
         if(Spec.Batting)
         {
             const FVector H=HandMid(Clip,Defining),P=Bone(Clip,Defining,{Hips}),F=Forward(Clip,Defining);

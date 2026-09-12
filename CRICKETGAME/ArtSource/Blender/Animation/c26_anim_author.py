@@ -804,6 +804,135 @@ def bowling_legspin_keys():
     return keys
 
 
+def _umpire_key_builder():
+    """The umpire K: upright, facing down the pitch, hands targeted RELATIVE TO
+    THEIR OWN SHOULDER (signals need the hands far apart, which the batting
+    builder's single shared grip cannot express) and both elbow poles explicit,
+    because a straight raised arm needs its elbow nudged outward to read as
+    a signal rather than a stretched shrug."""
+    def K(frame, turn, lean, chest, neck, head, rh_rel, lh_rel, lfoot, rfoot,
+          hips_z, hips_y=0.0, rpole=(1.0, 0.15, 0.0), lpole=(-1.0, 0.15, 0.0)):
+        spec = spine(turn, lean, chest, neck, head)
+        ik = {
+            'right_hand_rel': Vector(rh_rel),
+            'left_hand_rel': Vector(lh_rel),
+            'left_foot': Vector(lfoot),
+            'right_foot': Vector(rfoot),
+            'right_hand_pole': Vector(rpole),
+            'left_hand_pole': Vector(lpole),
+        }
+        return (frame, spec, V(0.0, hips_y, hips_z), ik)
+    return K
+
+
+_UMPIRE_READY = dict(turn=6, lean=0, chest=0, neck=0, head=0,
+                     rh_rel=(-0.01, 0.10, -0.44), lh_rel=(0.01, 0.10, -0.44),
+                     lfoot=(0.11, 0.06, 0.10), rfoot=(-0.10, 0.08, 0.10),
+                     hips_z=-0.05)
+
+
+def _umpire_keys(pose_keys, ready_note=""):
+    """Every signal shares one shape of arc: standing at ease, a small gather,
+    the signal arriving by frame 14, then holding. The clip ENDS on the signal
+    pose, which is what lets the runtime hold it indefinitely."""
+    K = _umpire_key_builder()
+    keys = [K(1, **_UMPIRE_READY)]
+    keys += pose_keys(K)
+    return keys
+
+
+def umpire_signal_wide_keys():
+    """WIDE: both arms straight out to the sides at shoulder height, palms down.
+    The most static of the four -- it arrives and stays."""
+    def pose(K):
+        return [
+            # Small gather: weight settles, hands drift slightly in and up.
+            K(6, 4, -2, 0, 0, 0, (0.02, 0.12, -0.30), (-0.02, 0.12, -0.30),
+              (0.11, 0.05, 0.10), (-0.10, 0.07, 0.10), -0.06),
+            # THE SIGNAL: arms fully out to the sides, elbows locked.
+            K(14, 6, 0, 0, 0, 0, (0.46, 0.06, -0.02), (-0.46, 0.06, -0.02),
+              (0.11, 0.06, 0.10), (-0.10, 0.08, 0.10), -0.05,
+              rpole=(1.0, 0.0, 0.0), lpole=(-1.0, 0.0, 0.0)),
+            # The hold: the pose itself, with the tiniest settle.
+            K(22, 6, 0, 0, 0, 0, (0.46, 0.05, -0.01), (-0.46, 0.05, -0.01),
+              (0.11, 0.06, 0.10), (-0.10, 0.08, 0.10), -0.05,
+              rpole=(1.0, 0.0, 0.0), lpole=(-1.0, 0.0, 0.0)),
+            K(36, 6, 0, 0, 0, 0, (0.46, 0.05, -0.01), (-0.46, 0.05, -0.01),
+              (0.11, 0.06, 0.10), (-0.10, 0.08, 0.10), -0.05,
+              rpole=(1.0, 0.0, 0.0), lpole=(-1.0, 0.0, 0.0)),
+        ]
+    return _umpire_keys(pose)
+
+
+def umpire_signal_six_keys():
+    """SIX: both arms straight up. The arms rise THROUGH the front, not out to
+    the sides, and the head tips back to follow them."""
+    def pose(K):
+        return [
+            K(6, 5, -2, 0, 0, 2, (0.04, 0.12, -0.18), (-0.04, 0.12, -0.18),
+              (0.11, 0.05, 0.10), (-0.10, 0.07, 0.10), -0.06),
+            # THE SIGNAL: both arms vertical, elbows nudged outward.
+            K(14, 6, -2, 0, 2, 6, (0.07, 0.05, 0.44), (-0.07, 0.05, 0.44),
+              (0.11, 0.06, 0.10), (-0.10, 0.08, 0.10), -0.05,
+              rpole=(1.0, 0.25, 0.0), lpole=(-1.0, 0.25, 0.0)),
+            K(22, 6, -2, 0, 2, 6, (0.07, 0.04, 0.44), (-0.07, 0.04, 0.44),
+              (0.11, 0.06, 0.10), (-0.10, 0.08, 0.10), -0.05,
+              rpole=(1.0, 0.25, 0.0), lpole=(-1.0, 0.25, 0.0)),
+            K(36, 6, -2, 0, 2, 6, (0.07, 0.04, 0.44), (-0.07, 0.04, 0.44),
+              (0.11, 0.06, 0.10), (-0.10, 0.08, 0.10), -0.05,
+              rpole=(1.0, 0.25, 0.0), lpole=(-1.0, 0.25, 0.0)),
+        ]
+    return _umpire_keys(pose)
+
+
+def umpire_signal_out_keys():
+    """OUT: the right index finger straight up, the left arm staying down at the
+    side. The finger is carried by a stiff wrist; the body barely moves."""
+    def pose(K):
+        return [
+            # The right hand comes up across the chest on its way.
+            K(6, 5, 0, 0, 0, 0, (-0.16, 0.16, -0.12), (0.01, 0.10, -0.42),
+              (0.11, 0.05, 0.10), (-0.10, 0.07, 0.10), -0.06),
+            # THE SIGNAL: one arm up, one arm down.
+            K(14, 6, -2, 0, 2, 4, (0.05, 0.04, 0.45), (-0.02, 0.08, -0.42),
+              (0.11, 0.06, 0.10), (-0.10, 0.08, 0.10), -0.05,
+              rpole=(1.0, 0.2, 0.0), lpole=(-1.0, 0.0, 0.0)),
+            K(22, 6, -2, 0, 2, 4, (0.05, 0.03, 0.45), (-0.02, 0.08, -0.42),
+              (0.11, 0.06, 0.10), (-0.10, 0.08, 0.10), -0.05,
+              rpole=(1.0, 0.2, 0.0), lpole=(-1.0, 0.0, 0.0)),
+            K(36, 6, -2, 0, 2, 4, (0.05, 0.03, 0.45), (-0.02, 0.08, -0.42),
+              (0.11, 0.06, 0.10), (-0.10, 0.08, 0.10), -0.05,
+              rpole=(1.0, 0.2, 0.0), lpole=(-1.0, 0.0, 0.0)),
+        ]
+    return _umpire_keys(pose)
+
+
+def umpire_signal_four_keys():
+    """FOUR (boundary): the one with motion -- both arms sweep side to side
+    across the body at waist height, twice, finishing arms out wide. The finish
+    (frame 24) is the frame the checks pin."""
+    def pose(K):
+        return [
+            # Gather both hands to the centre, low.
+            K(6, 5, 2, 0, 0, 0, (-0.20, 0.20, -0.28), (-0.10, 0.20, -0.28),
+              (0.11, 0.05, 0.10), (-0.10, 0.07, 0.10), -0.07),
+            # First sweep: both arms across to the LEFT.
+            K(10, 2, 2, 0, 0, -2, (-0.42, 0.14, -0.24), (-0.34, 0.14, -0.24),
+              (0.11, 0.05, 0.10), (-0.10, 0.07, 0.10), -0.06),
+            # Second sweep: back across to the RIGHT.
+            K(18, 10, 2, 0, 0, 2, (0.34, 0.14, -0.24), (0.42, 0.14, -0.24),
+              (0.11, 0.05, 0.10), (-0.10, 0.07, 0.10), -0.06),
+            # THE FINISH: arms out wide at waist height, and the hold.
+            K(24, 6, 0, 0, 0, 0, (0.46, 0.08, -0.24), (-0.46, 0.08, -0.24),
+              (0.11, 0.06, 0.10), (-0.10, 0.08, 0.10), -0.05,
+              rpole=(1.0, 0.0, 0.0), lpole=(-1.0, 0.0, 0.0)),
+            K(36, 6, 0, 0, 0, 0, (0.46, 0.08, -0.24), (-0.46, 0.08, -0.24),
+              (0.11, 0.06, 0.10), (-0.10, 0.08, 0.10), -0.05,
+              rpole=(1.0, 0.0, 0.0), lpole=(-1.0, 0.0, 0.0)),
+        ]
+    return _umpire_keys(pose)
+
+
 def _bowling_key_builder():
     """The bowling K, identical to bowling_keys()' local K."""
     def K(frame, turn, lean, chest, neck, head, rh_rel, lh_rel, lfoot, rfoot, hips_z,
@@ -842,6 +971,13 @@ def main():
         ('A_C26_BattingCut', batting_cut_keys(), 1, 36),
         ('A_C26_BattingSweep', batting_sweep_keys(), 1, 36),
         ('A_C26_BattingDefence', batting_defence_keys(), 1, 36),
+        ('A_C26_BattingHook', batting_hook_keys(), 1, 36),
+        ('A_C26_BattingLoftedDrive', batting_lofted_drive_keys(), 1, 36),
+        ('A_C26_BattingGlance', batting_glance_keys(), 1, 36),
+        ('A_C26_UmpireSignalWide', umpire_signal_wide_keys(), 1, 36),
+        ('A_C26_UmpireSignalSix', umpire_signal_six_keys(), 1, 36),
+        ('A_C26_UmpireSignalOut', umpire_signal_out_keys(), 1, 36),
+        ('A_C26_UmpireSignalFour', umpire_signal_four_keys(), 1, 36),
         ('A_C26_BowlingPace', bowling_keys(), 1, 46),
         ('A_C26_BowlingOffSpin', bowling_offspin_keys(), 1, 46),
         ('A_C26_BowlingLegSpin', bowling_legspin_keys(), 1, 46),

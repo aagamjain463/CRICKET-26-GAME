@@ -117,7 +117,7 @@ c26_anim_author.py            keyframes + IK solve + repair_facing  (single sour
   orientation copy per bone, hips delta at the measured rig ratio (2.23739), per-frame ground
   pin, root rename to `Armature.001`, v1 Lcl defaults. It **exits non-zero if any check fails**.
 
-### Verification (offline, 93 checks across 11 clips, all PASS)
+### Verification (offline, 120 checks across 15 clips, all PASS)
 
 | Clip | Check | Result |
 |---|---|---|
@@ -154,6 +154,14 @@ never by a visual guess:
 | BowlingPace | seam/swing family | release 400 vs head 329, 74.6 down the pitch |
 | BowlingOffSpin | OffBreak/ArmBall/TopSpinner/Doosra | release 360 (deliberately lower), 65.7 down pitch |
 | BowlingLegSpin | LegBreak/Googly/Flipper | release 399, 74.6 down pitch |
+| UmpireSignalWide | `SignalWide` action (wide / no-ball) | arms +142/-142 out at 86 above hips, held |
+| UmpireSignalSix | `SignalSix` action | both hands 389 absolute, +189 above hips |
+| UmpireSignalOut | `SignalOut` action (wicket) | right hand 392 up, left at his side (-3) |
+| UmpireSignalFour | `SignalFour` action (boundary) | sweeps -49/+51 across, finishes +132/-132 at waist |
+
+Pickup, catch, dive, throw and the keeper's take stay PROCEDURAL by design: they
+solve toward the live ball position (ContactTarget), which a fixed clip cannot --
+an authored clip would reach at nothing. Clips are for target-free actions.
 
 Selection mirrors `C26Controls::ShotFamily()` -- the single implementation the
 simulation itself names strokes with -- using the shot angle, stride intent, loft
@@ -207,9 +215,10 @@ importer has done its own conversion. If it fails with an asset error, run
    but the UE import + build + in-match playtest of the *corrected* clips has not run yet
    (sandbox has no UE). The exact sequence is in §6.
 2. **Shot library breadth.** Batting: drive, lofted drive, pull, hook, cut, sweep,
-   glance, defence. Bowling: pace, off-spin, leg-spin. Not yet: upper cut / late cut
-   (share the cut clip), back-foot defence, keeper crouch/dive/stump, umpire signals,
-   fielder pickup/throw/catch/dive. Each is a key-list addition to
+   glance, defence. Bowling: pace, off-spin, leg-spin. Umpire: wide, six, out, four
+   signals. Pickup/catch/dive/throw and the keeper's take are deliberately
+   procedural (they aim at the live ball). Not yet: upper cut / late cut split,
+   back-foot defence, keeper crouch idle. Each is a key-list addition to
    `c26_anim_author.py` — no Blender round-trip needed.
 3. **Garment mesh quality.** Torso prototype-grade meshes remain the biggest visual gap for
    "premium" (open item since before this session; never overwrite `SK_Cricketer_KitBase`).

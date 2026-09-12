@@ -1347,6 +1347,10 @@ void AC26Athlete::LoadShotLibrary()
     Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingGlance.A_C26_BattingGlance"),BattingGlanceClip);
     Load(TEXT("/Game/Cricket26/Animations/A_C26_BowlingOffSpin.A_C26_BowlingOffSpin"),BowlingOffSpinClip);
     Load(TEXT("/Game/Cricket26/Animations/A_C26_BowlingLegSpin.A_C26_BowlingLegSpin"),BowlingLegSpinClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_UmpireSignalWide.A_C26_UmpireSignalWide"),UmpireWideClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_UmpireSignalSix.A_C26_UmpireSignalSix"),UmpireSixClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_UmpireSignalOut.A_C26_UmpireSignalOut"),UmpireOutClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_UmpireSignalFour.A_C26_UmpireSignalFour"),UmpireFourClip);
 }
 
 UAnimSequence* AC26Athlete::SelectBattingClip()
@@ -1391,6 +1395,19 @@ UAnimSequence* AC26Athlete::SelectBowlingClip()
         case EC26Delivery::Flipper:
             return BowlingLegSpinClip?BowlingLegSpinClip:BowlingClip;
         default:return BowlingClip;
+    }
+}
+
+UAnimSequence* AC26Athlete::SelectSignalClip()
+{
+    LoadShotLibrary();
+    switch(Action)
+    {
+        case EC26Action::SignalWide:return UmpireWideClip;
+        case EC26Action::SignalSix:return UmpireSixClip;
+        case EC26Action::SignalOut:return UmpireOutClip;
+        case EC26Action::SignalFour:return UmpireFourClip;
+        default:return nullptr;
     }
 }
 
@@ -2032,6 +2049,24 @@ void AC26Athlete::Animate(float Dt)
         // in front of the shoulder, the mark/gather keys hold the ball in both hands, and the hips
         // carry the bowler 71 cm down the pitch through the action.
         ApplyAuthoredClip(Delivery,DrivenFor(Delivery),ClipTime,Weight);
+        }
+    }
+    if(!Batting&&!Running&&(Action==EC26Action::SignalFour||Action==EC26Action::SignalSix
+        ||Action==EC26Action::SignalOut||Action==EC26Action::SignalWide))
+    {
+        // Signals are target-free pose actions, so an authored clip fits them
+        // exactly (pickup/catch/dive/throw are the opposite: they solve toward
+        // the live ball and stay procedural). The clip's whole arc plays over
+        // ~1 s and its LAST frame IS the signal pose, so clamping holds the
+        // arms up for as long as the match holds the action; the exit blend is
+        // SmoothPose's job when the next delivery resets the umpire to Ready.
+        if(UAnimSequence* Sig=SelectSignalClip())
+        {
+            const float ClipLength=Sig->GetPlayLength();
+            constexpr float Length=1.f;
+            const float ClipTime=FMath::Min(ActionTime/Length,1.f)*ClipLength;
+            const float Weight=FMath::SmoothStep(0.f,.14f,ActionTime);
+            ApplyAuthoredClip(Sig,DrivenFor(Sig),ClipTime,Weight);
         }
     }
     AimHead();
