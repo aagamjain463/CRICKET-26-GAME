@@ -68,8 +68,8 @@ void AC26MatchGameMode::UpdateProductionGate(float Dt)
     {
         if(PhaseTime==0&&Frame(TEXT("contact")))
         {
-            const FVector P=Athletes[11]->Bat->GetComponentTransform().InverseTransformPosition(Simulation.Ball.Position);
-            float Gap=BIG_NUMBER;const UStaticMesh* Mesh=Athletes[11]->Bat->GetStaticMesh();
+            const FVector P=Athletes[11]->VisualBat()->GetComponentTransform().InverseTransformPosition(Simulation.Ball.Position);
+            float Gap=BIG_NUMBER;const UStaticMesh* Mesh=Athletes[11]->VisualBat()->GetStaticMesh();
             if(Mesh&&Mesh->GetRenderData()&&Mesh->GetRenderData()->LODResources.Num())
             {
                 const auto& L=Mesh->GetRenderData()->LODResources[0];auto Indices=L.IndexBuffer.GetArrayView();

@@ -395,6 +395,7 @@ void AC26MatchGameMode::PrepareDelivery()
     BattingGestureHoldTime=0.f;bFootworkManual=false;
     // Striker handedness drives the direction mirror; the preference lets a player test both.
     bLeftHandedBatter=Preferences&&Preferences->LeftHandedBatter;
+    if(Athletes.IsValidIndex(11))Athletes[11]->LeftHandedBat=bLeftHandedBatter;
     CancelBowlingDrags();
     ReleaseMeterValue=-1.f;ReleaseBand=EC26ReleaseBand::TooEarly;ReleaseBandQuality=0.f;bBowlingNoBall=false;
     ReleasePointerId=-1;LastActualKph=0.f;TrajectoryPreviewHash=0;
@@ -640,7 +641,7 @@ void AC26MatchGameMode::UpdateDelivery(float Dt)
             if(LastContact.Timing!=EC26Timing::Miss)
             {
                 Athletes[11]->ContactTarget=Simulation.Ball.Position;Athletes[11]->ShotAngle=LastContact.FaceAngle;
-                Athletes[11]->ActionTime=C26Field::BatContactPoseTime;Athletes[11]->Animate(0);
+                Athletes[11]->ShotLabel=BattingShotCandidate;Athletes[11]->ActionTime=C26Field::BatContactPoseTime;Athletes[11]->Animate(0);
                 // Anchor the replay and the shot cameras to the real moment of contact.
                 Director->MarkContact(LastContact.Quality,Intent.Loft,Simulation.Ball.Position);
                 OnCricketEvent.Broadcast(TEXT("BatContact"),Simulation.Ball.Position);
@@ -1252,6 +1253,7 @@ void AC26MatchGameMode::Tick(float Dt)
         for(int I=0;I<Athletes.Num();++I)
         {
             const bool EventPose=(I==0&&ReleasedThisFrame)||(I==11&&ContactThisFrame)||(I==ActiveFielder&&(ThrowClock>=0||CatchClock>=0))||(I==1&&KeeperTakeClock>=0);
+            if(I==11&&!BattingShotCandidate.IsEmpty())Athletes[I]->ShotLabel=BattingShotCandidate;
             Athletes[I]->Animate(EventPose?0.f:Dt);
         }
         if(ThrowClock>=.53f&&!ThrowReleased)Simulation.Ball.Position=Athletes[ActiveFielder]->HandPosition();

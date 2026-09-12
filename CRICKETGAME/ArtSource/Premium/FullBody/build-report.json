@@ -1,0 +1,42 @@
+{
+  "status": "candidate_requires_visual_approval",
+  "source": "assembled original MetaHuman + original project cricket shoes",
+  "parts": [
+    {
+      "name": "SKM_MH_C26_Player_001_BodyMesh.001",
+      "vertices": 32334,
+      "triangles": 60816,
+      "unweighted": 0
+    },
+    {
+      "name": "SKM_MH_C26_Player_001_FaceMesh.001",
+      "vertices": 19283,
+      "triangles": 34514,
+      "unweighted": 0
+    },
+    {
+      "name": "C26_Jersey",
+      "vertices": 6058,
+      "triangles": 11300,
+      "unweighted": 0
+    },
+    {
+      "name": "C26_Trousers",
+      "vertices": 6350,
+      "triangles": 12158,
+      "unweighted": 0
+    },
+    {
+      "name": "C26_Shoe_L",
+      "vertices": 461,
+      "triangles": 780,
+      "unweighted": 0
+    },
+    {
+      "name": "C26_Shoe_R",
+      "vertices": 461,
+      "triangles": 780,
+      "unweighted": 0
+    }
+  ]
+}

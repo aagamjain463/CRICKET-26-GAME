@@ -277,6 +277,8 @@ FC26ReplayFrame AC26CameraDirector::CaptureState(const FVector& Ball,const TArra
         A.ActionTime=Actor->ActionTime;A.MotionTime=Actor->MotionTime;A.ShotAngle=Actor->ShotAngle;
         A.Contact=Actor->ContactTarget;A.LookAt=Actor->LookAt;A.Loft=Actor->Loft;
         A.Footwork=Actor->FootworkIntent;A.Stride=Actor->StrideIntent;A.Defend=Actor->Defending;A.DeliveryStyle=Actor->DeliveryStyle;
+        A.ShotLabel=Actor->ShotLabel;
+        if(Actor->Presentation&&Actor->Presentation->IsActive())A.CharacterPose=Actor->Presentation->CapturePose();
         A.MoveSpeed=Actor->MoveSpeed;A.Gait=Actor->GaitPhase;A.Trigger=Actor->Trigger;
         F.Athletes.Add(A);
     }
@@ -456,7 +458,9 @@ void AC26CameraDirector::ApplyFrame(const FC26ReplayFrame& A,const FC26ReplayFra
         Actor->MoveSpeed=FMath::Lerp(AA.MoveSpeed,BB.MoveSpeed,T);
         Actor->GaitPhase=FMath::Lerp(AA.Gait,BB.Gait,T);
         Actor->Trigger=FMath::Lerp(AA.Trigger,BB.Trigger,T);
-        Actor->Animate(0);
+        Actor->ShotLabel=T<.5f?AA.ShotLabel:BB.ShotLabel;
+        if(Actor->Presentation&&Actor->Presentation->IsActive())Actor->Presentation->ApplyReplayPose(AA.CharacterPose,BB.CharacterPose,T);
+        else Actor->Animate(0);
     }
     const int P=FMath::Min(ReplayProps.Num(),FMath::Min(A.Props.Num(),B.Props.Num()));
     for(int I=0;I<P;++I)

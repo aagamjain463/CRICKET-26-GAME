@@ -1,4 +1,5 @@
 #include "C26Athlete.h"
+#include "Characters/C26CharacterPresentationComponent.h"
 #include "C26Types.h"
 #include "C26Motion.h"
 #include "Engine/SkeletalMesh.h"
@@ -46,6 +47,7 @@ AC26Athlete::AC26Athlete()
 {
     PrimaryActorTick.bCanEverTick=false;
     RootComponent=CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
+    Presentation=CreateDefaultSubobject<UC26CharacterPresentationComponent>(TEXT("CharacterPresentation"));
     Mesh=CreateDefaultSubobject<UC26PoseMesh>(TEXT("Cricketer"));Mesh->SetupAttachment(RootComponent);
     HeroMesh=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HeroAthleteMesh"));
     HeroMesh->SetupAttachment(RootComponent);
@@ -203,6 +205,7 @@ void AC26Athlete::Dress(UStaticMeshComponent* Part,const TCHAR* Key,UMaterialIns
 }
 void AC26Athlete::UpdateDetail(const FVector& ViewPoint)
 {
+    if(Presentation&&Presentation->IsActive()){Presentation->SetQualityForView(ViewPoint);return;}
     // The striker, the bowler and the keeper are hero wherever they stand: they are what the
     // presentation is about, and demoting them by distance would drop the grille off a batter
     // during a wide replay. Fielders earn hero quality by being near the play.
@@ -489,6 +492,13 @@ void AC26Athlete::ApplyHeroScan()
 }
 void AC26Athlete::Configure(EC26Role NewRole,int Team,int Number)
 {
+    if(Presentation)
+    {
+        const EC26Role OldRole=Role;const int32 OldTeam=TeamId,OldNumber=SquadNumber;
+        Role=NewRole;TeamId=Team;SquadNumber=Number;
+        if(Presentation->TryActivate(this)){Presentation->Configure(this);SetAction(EC26Action::Ready);return;}
+        Role=OldRole;TeamId=OldTeam;SquadNumber=OldNumber;
+    }
     if(Shirt&&Role==NewRole&&TeamId==Team&&SquadNumber==Number){SetAction(EC26Action::Ready);return;}
     Role=NewRole;TeamId=Team;
     // Squad number picks which of the six fielder scans this athlete wears, so it has to be current
@@ -713,6 +723,7 @@ void AC26Athlete::Configure(EC26Role NewRole,int Team,int Number)
 }
 void AC26Athlete::ApplyVisualRole()
 {
+    if(Presentation&&Presentation->IsActive()){Presentation->Configure(this);return;}
     // Exactly one visible body per athlete. Hero scans carry pads/helmet/bat baked in;
     // the animated kit shows team clothing with shoes, and role-appropriate separate
     // equipment is gated in ApplyDetail. Switching roles re-runs Configure, which lands
@@ -908,7 +919,7 @@ void AC26Athlete::CurlFingers(const FString& Side,float Amount)
 }
 void AC26Athlete::SetAction(EC26Action NewAction,bool ResetTime){if(NewAction!=Action||ResetTime)ActionTime=0;Action=NewAction;}
 void AC26Athlete::ResetAt(const FVector& Position,float Yaw)
-{SetActorLocationAndRotation(Position,FRotator(0,Yaw,0));MotionTime=0;MoveSpeed=0;GaitPhase=0;Trigger=0;ContactTarget=FVector::ZeroVector;SetAction(EC26Action::Ready);Animate(0);}
+{SetActorLocationAndRotation(Position,FRotator(0,Yaw,0));if(Presentation&&Presentation->IsActive())Presentation->ResetMotion();MotionTime=0;MoveSpeed=0;GaitPhase=0;Trigger=0;ContactTarget=FVector::ZeroVector;SetAction(EC26Action::Ready);Animate(0);}
 void AC26Athlete::SetShotContact(const FVector& Target,float Angle,bool bLoft)
 {ContactTarget=Target;ShotAngle=Angle;Loft=bLoft;SetAction(EC26Action::Batting);}
 FVector AC26Athlete::Palm(bool Right) const
@@ -926,12 +937,14 @@ FVector AC26Athlete::Palm(bool Right) const
 }
 FVector AC26Athlete::HandPosition() const
 {
+    if(Presentation&&Presentation->IsActive())return Presentation->BallHandPosition();
     const int I=Bone(TEXT("RightHand"));
     if(I<0||!Pose.IsValidIndex(I))return GetActorLocation()+FVector(0,0,210);
     return Mesh->GetComponentTransform().TransformPosition(Palm(true));
 }
 FVector AC26Athlete::ReceivingPosition() const
 {
+    if(Presentation&&Presentation->IsActive())return Presentation->ReceivePosition();
     const int L=Bone(TEXT("LeftHand")),R=Bone(TEXT("RightHand"));
     if(L<0||R<0)return HandPosition();
     return Mesh->GetComponentTransform().TransformPosition((Palm(false)+Palm(true))*.5f);
@@ -1378,6 +1391,11 @@ void AC26Athlete::ApplyAuthoredClip(UAnimSequence* Clip,const TSet<int32>& Drive
 }
 void AC26Athlete::Animate(float Dt)
 {
+    if(Presentation&&Presentation->IsActive())
+    {
+        ActionTime+=FMath::Max(0.f,Dt);MotionTime+=FMath::Max(0.f,Dt);
+        Presentation->UpdateFromMatch(this,Dt);return;
+    }
     if(bHeroVisual && HeroMesh && HeroMesh->GetStaticMesh())
     {
         HeroMesh->SetVisibility(true);
@@ -1929,3 +1947,6 @@ void AC26Athlete::Animate(float Dt)
     PlaceKit(Grip,Dir,Batting,Running);
     UpdateContactShadow();
 }
+
+UStaticMeshComponent* AC26Athlete::VisualBat() const
+{return Presentation&&Presentation->IsActive()?Presentation->GetBat():Bat.Get();}

@@ -8,6 +8,7 @@ class UProceduralMeshComponent;
 class UStaticMeshComponent;
 class UTextRenderComponent;
 class UAnimSequence;
+class UC26CharacterPresentationComponent;
 
 UCLASS()
 class CRICKETGAME_API UC26PoseMesh : public UPoseableMeshComponent
@@ -27,6 +28,10 @@ class CRICKETGAME_API AC26Athlete : public AActor
     GENERATED_BODY()
 public:
     AC26Athlete();
+    UPROPERTY(VisibleAnywhere) TObjectPtr<UC26CharacterPresentationComponent> Presentation;
+    FString ShotLabel=TEXT("COVER DRIVE");
+    bool LeftHandedBat=false,LeftArmBowl=false;
+    UStaticMeshComponent* VisualBat() const;
     virtual void BeginPlay() override;
     UPROPERTY(VisibleAnywhere) TObjectPtr<UC26PoseMesh> Mesh;
     /** Legacy component retained for serialized levels; live players use the skinned mesh. */

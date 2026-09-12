@@ -2,6 +2,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "C26Types.h"
+#include "Characters/C26CharacterPresentationComponent.h"
 #include "C26CameraDirector.generated.h"
 class UCameraComponent;
 class UStaticMeshComponent;
@@ -29,6 +30,8 @@ struct FC26BroadcastRig
 struct FC26ReplayAthlete
 {
     FTransform Transform;
+    FC26CharacterPoseSample CharacterPose;
+    FString ShotLabel;
     EC26Action Action=EC26Action::Ready;
     EC26Delivery DeliveryStyle=EC26Delivery::Pace;
     float ActionTime=0,MotionTime=0,ShotAngle=0,Footwork=0,Stride=0,MoveSpeed=0,Gait=0,Trigger=0;
