@@ -59,6 +59,7 @@ void AC26CameraDirector::Reset()
     ContactPending=ReleasePending=OutcomePending=false;ReleaseStamp=-1;
     HaveCamera=false;LastPhase=EC26Phase::Result;EventName=NAME_None;
     ContactPoint=FVector::ZeroVector;
+    bFieldPlanning=false;
 }
 
 void AC26CameraDirector::SetFieldingTarget(const FVector& Position,bool HasTarget,bool RunnersActive)
@@ -93,7 +94,7 @@ void AC26CameraDirector::Look(EC26CameraMode NewMode,const FVector& From,const F
             const float Need=Rise/FMath::Tan(FMath::DegreesToRadians(MaxDrop));
             FVector Flat(Safe.X-At.X,Safe.Y-At.Y,0);
             const float Have=Flat.Size();
-            if(Have<Need)
+            if(Have<Need)\
             {
                 Flat=Have>1.f?Flat/Have:FVector(0,1,0);
                 Safe.X=At.X+Flat.X*Need;Safe.Y=At.Y+Flat.Y*Need;
@@ -139,6 +140,12 @@ void AC26CameraDirector::Direct(EC26Phase Phase,float Time,bool PlayerBatting,co
     }
 #endif
     const bool Cut=LastPhase!=Phase;LastPhase=Phase;
+    if(bFieldPlanning)
+    {
+        // Elevated tactical camera framing the whole cricket ground, 30yd circle and boundary
+        Look(EC26CameraMode::FieldPlanning,FVector(0.f,-400.f,5600.f),FVector(0.f,100.f,0.f),58.f,Mode!=EC26CameraMode::FieldPlanning,Dt,6.f,85.f);
+        return;
+    }
     if(Phase==EC26Phase::Menu)
     {
         const float A=-.62f+Time*.0055f;
@@ -427,6 +434,7 @@ void AC26CameraDirector::Restore(const TArray<TObjectPtr<AC26Athlete>>& Actors)
     LastPhase=EC26Phase::Menu;
     PlaybackRate=1;
     ReplayShot=0;
+    bFieldPlanning=false;
 }
 
 void AC26CameraDirector::ApplyFrame(const FC26ReplayFrame& A,const FC26ReplayFrame& B,float T,const TArray<TObjectPtr<AC26Athlete>>& Actors)
@@ -467,4 +475,126 @@ void AC26CameraDirector::ApplyFrame(const FC26ReplayFrame& A,const FC26ReplayFra
         Tr.SetScale3D(FMath::Lerp(A.Props[I].GetScale3D(),B.Props[I].GetScale3D(),T));
         if(ReplayProps[I])ReplayProps[I]->SetWorldTransform(Tr);
     }
+}
+
+void AC26CameraDirector::DirectPresentation(EC26CinematicCamera Lens, const FVector& FocusPrimary, const FVector& FocusSecondary, float NormalizedProgress, float Dt, bool bCut)
+{
+    FVector Eye = FVector::ZeroVector;
+    FVector Aim = FocusPrimary + FVector(0, 0, 140.f);
+    float Fov = 38.f;
+    float TrackRate = 5.5f;
+
+    FVector Separation = FocusSecondary - FocusPrimary;
+    Separation.Z = 0.f;
+    const float SepDist = Separation.Size();
+    const FVector Forward = SepDist > 10.f ? (Separation / SepDist) : FVector(0, 1, 0);
+    const FVector Right = FVector(-Forward.Y, Forward.X, 0.f);
+
+    switch (Lens)
+    {
+    case EC26CinematicCamera::StadiumWide:
+    {
+        Eye = FVector(2800.f, -5400.f, 3200.f);
+        Aim = FocusPrimary.IsZero() ? FVector(0.f, 0.f, 100.f) : FocusPrimary + FVector(0, 0, 80.f);
+        Fov = 56.f;
+        TrackRate = 3.5f;
+        break;
+    }
+    case EC26CinematicCamera::HighAngleToss:
+    {
+        Eye = FocusPrimary + FVector(220.f, -280.f, 480.f);
+        Aim = FocusPrimary + FVector(0.f, 0.f, 90.f);
+        Fov = 42.f;
+        TrackRate = 4.5f;
+        break;
+    }
+    case EC26CinematicCamera::TwoShot:
+    {
+        const FVector Midpoint = (FocusPrimary + FocusSecondary) * 0.5f;
+        const float OffsetSide = FMath::Max(320.f, SepDist * 1.5f);
+        Eye = Midpoint + Right * OffsetSide + FVector(0, 0, 145.f);
+        Aim = Midpoint + FVector(0, 0, 135.f);
+        Fov = 35.f;
+        TrackRate = 5.0f;
+        break;
+    }
+    case EC26CinematicCamera::CloseUpFace:
+    {
+        const FVector CamDir = Forward.IsZero() ? FVector(0, -1, 0) : -Forward;
+        Eye = FocusPrimary + CamDir * 190.f + Right * 35.f + FVector(0, 0, 160.f);
+        Aim = FocusPrimary + FVector(0, 0, 165.f);
+        Fov = 26.f;
+        TrackRate = 6.0f;
+        break;
+    }
+    case EC26CinematicCamera::LowAngleDramatic:
+    {
+        const FVector CamDir = Forward.IsZero() ? FVector(0, -1, 0) : -Forward;
+        Eye = FocusPrimary + CamDir * 230.f + Right * 40.f + FVector(0, 0, 32.f);
+        Aim = FocusPrimary + FVector(0, 0, 150.f);
+        Fov = 42.f;
+        TrackRate = 5.0f;
+        break;
+    }
+    case EC26CinematicCamera::OrbitCelebration:
+    {
+        const float Angle = NormalizedProgress * 2.f * PI * 0.65f + 0.4f;
+        const float OrbitRadius = 340.f;
+        Eye = FocusPrimary + FVector(FMath::Cos(Angle) * OrbitRadius, FMath::Sin(Angle) * OrbitRadius, 155.f);
+        Aim = FocusPrimary + FVector(0, 0, 135.f);
+        Fov = 36.f;
+        TrackRate = 7.0f;
+        break;
+    }
+    case EC26CinematicCamera::OverShoulderBatter:
+    {
+        Eye = FocusPrimary - Forward * 180.f + Right * 55.f + FVector(0, 0, 168.f);
+        Aim = FocusSecondary + FVector(0, 0, 140.f);
+        Fov = 32.f;
+        TrackRate = 5.5f;
+        break;
+    }
+    case EC26CinematicCamera::OverShoulderBowler:
+    {
+        Eye = FocusPrimary - Forward * 190.f + Right * 55.f + FVector(0, 0, 175.f);
+        Aim = FocusSecondary + FVector(0, 0, 135.f);
+        Fov = 30.f;
+        TrackRate = 5.5f;
+        break;
+    }
+    case EC26CinematicCamera::PitchTrackWalking:
+    {
+        const float TrackY = FMath::Lerp(-400.f, 400.f, NormalizedProgress);
+        Eye = FVector(FocusPrimary.X + 360.f, FocusPrimary.Y + TrackY, 150.f);
+        Aim = FocusPrimary + FVector(0, 0, 130.f);
+        Fov = 38.f;
+        TrackRate = 4.5f;
+        break;
+    }
+    case EC26CinematicCamera::UmpirePOV:
+    {
+        Eye = FocusPrimary + FVector(0.f, -50.f, 178.f);
+        Aim = FocusSecondary + FVector(0.f, 0.f, 130.f);
+        Fov = 36.f;
+        TrackRate = 6.0f;
+        break;
+    }
+    case EC26CinematicCamera::DugoutReaction:
+    {
+        Eye = FVector(-4400.f, -2700.f, 210.f);
+        Aim = FVector(-4100.f, -2400.f, 145.f);
+        Fov = 28.f;
+        TrackRate = 4.0f;
+        break;
+    }
+    default:
+    {
+        Eye = FocusPrimary + FVector(350.f, -400.f, 200.f);
+        Aim = FocusPrimary + FVector(0, 0, 130.f);
+        Fov = 40.f;
+        break;
+    }
+    }
+
+    Look(EC26CameraMode::Presentation, Eye, Aim, Fov, bCut, Dt, TrackRate);
 }

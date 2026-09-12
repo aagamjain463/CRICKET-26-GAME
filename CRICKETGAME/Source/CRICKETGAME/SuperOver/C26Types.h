@@ -5,7 +5,7 @@
 class UCurveFloat;
 
 UENUM(BlueprintType)
-enum class EC26Phase : uint8 { Menu, Intro, Ready, RunUp, Delivery, InPlay, Reaction, Replay, Interval, Result };
+enum class EC26Phase : uint8 { Menu, Intro, Ready, RunUp, Delivery, InPlay, Reaction, Replay, Presentation, Interval, Result };
 // Delivery library. The first six values are the original set and keep their
 // indices; the variations are appended so saved plans stay valid.
 UENUM(BlueprintType)
@@ -33,13 +33,68 @@ enum class EC26BowlerKind : uint8 { Fast, FastMedium, Medium, OffSpin, LegSpin }
 UENUM(BlueprintType)
 enum class EC26Timing : uint8 { Perfect, Good, Early, Late, Edge, Miss };
 UENUM(BlueprintType)
-enum class EC26Action : uint8 { Ready, Batting, Bowling, Running, Pickup, Throw, Catch, Celebrate, Disappointed, SignalFour, SignalSix, SignalOut, SignalWide };
+enum class EC26Action : uint8 { Ready, Batting, Bowling, Running, Pickup, Throw, Catch, Celebrate, Disappointed, SignalFour, SignalSix, SignalOut, SignalWide, Dive, Slide, BatRaise, GloveTap, Handshake, FistPump, Discuss, TossFlip };
 UENUM(BlueprintType)
 enum class EC26Role : uint8 { Batter, Bowler, Fielder, Keeper, Umpire };
 
 // Control scheme architecture: GesturePro (touch/mouse pull-and-release) vs Legacy (button tap)
 UENUM(BlueprintType)
 enum class EC26ControlScheme : uint8 { GesturePro, Legacy };
+
+// Tactical fielding presets
+UENUM(BlueprintType)
+enum class EC26FieldPreset : uint8
+{
+    Balanced,
+    Attacking,
+    Defensive,
+    PowerplayAttack,
+    PowerplayDefensive,
+    PaceAttack,
+    SpinAttack,
+    OffsideHeavy,
+    LegsideHeavy,
+    DeathOvers,
+    ProtectBoundary,
+    SinglePrevention
+};
+
+// Fielding state machine
+UENUM(BlueprintType)
+enum class EC26FieldingState : uint8
+{
+    Idle,
+    BallInPlay,
+    Chasing,
+    Intercepting,
+    Gathering,
+    ThrowPreparing,
+    Throwing,
+    CatchOpportunity,
+    CatchAttempt,
+    DiveAttempt,
+    Recovery
+};
+
+// Manual throw target selection
+UENUM(BlueprintType)
+enum class EC26ThrowTarget : uint8
+{
+    BowlersEnd,
+    KeepersEnd
+};
+
+// Catch timing classification
+UENUM(BlueprintType)
+enum class EC26CatchTiming : uint8
+{
+    None,
+    Perfect,
+    Good,
+    Early,
+    Late,
+    Missed
+};
 
 // Explicit batting gesture state machine. One pointer-down/up cycle walks
 // Idle -> ReadyForShot -> Pulling -> Armed -> Released -> ShotCommitted and
@@ -94,6 +149,23 @@ enum class EC26DeliveryLength : uint8 { Yorker, Full, GoodLength, Short, Bouncer
 // Delivery line recognition categories
 UENUM(BlueprintType)
 enum class EC26DeliveryLine : uint8 { WideOff, OutsideOff, OffStump, MiddleStump, LegStump, DownLeg };
+
+// Delivery history record for pitch map and tactical bowling analysis
+USTRUCT(BlueprintType)
+struct FC26DeliveryRecord
+{
+    GENERATED_BODY()
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) FVector IntendedPitch = FVector::ZeroVector;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) FVector ActualPitch = FVector::ZeroVector;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) float SpeedKph = 0.f;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) EC26Delivery DeliveryType = EC26Delivery::Pace;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 RunsConceded = 0;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) bool bWicket = false;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) bool bBoundary = false;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) bool bDot = false;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) bool bExtra = false;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) FString OutcomeText;
+};
 
 USTRUCT(BlueprintType)
 struct FC26DeliveryPlan
@@ -348,22 +420,26 @@ namespace C26Field
     constexpr float BatContactPoseTime = .24f;
     constexpr float RadiusX = 6550.f;
     constexpr float RadiusY = 7200.f;
+    constexpr float InnerCircleRadius = 2740.f;
     inline FVector RopePoint(float A) { return FVector(RadiusX*FMath::Cos(A),RadiusY*FMath::Sin(A),4.5f); }
     inline bool Inside(const FVector& P) { return FMath::Square(P.X/RadiusX)+FMath::Square(P.Y/RadiusY)<1.f; }
+    inline bool InsideInnerCircle(const FVector& P) { return (P.X * P.X + P.Y * P.Y) <= (InnerCircleRadius * InnerCircleRadius); }
 }
 inline bool C26ValidTransition(EC26Phase From,EC26Phase To)
 {
     if(From==To||To==EC26Phase::Menu)return true;
     switch(From)
     {
-    case EC26Phase::Intro:return To==EC26Phase::Ready;
-    case EC26Phase::Ready:return To==EC26Phase::RunUp;
+    case EC26Phase::Intro:return To==EC26Phase::Ready||To==EC26Phase::Presentation;
+    case EC26Phase::Ready:return To==EC26Phase::RunUp||To==EC26Phase::Presentation;
     case EC26Phase::RunUp:return To==EC26Phase::Delivery;
     case EC26Phase::Delivery:return To==EC26Phase::InPlay||To==EC26Phase::Reaction;
     case EC26Phase::InPlay:return To==EC26Phase::Reaction;
-    case EC26Phase::Reaction:return To==EC26Phase::Replay||To==EC26Phase::Ready||To==EC26Phase::Interval||To==EC26Phase::Result;
-    case EC26Phase::Replay:return To==EC26Phase::Ready||To==EC26Phase::Interval||To==EC26Phase::Result;
-    case EC26Phase::Interval:return To==EC26Phase::Ready;
+    case EC26Phase::Reaction:return To==EC26Phase::Replay||To==EC26Phase::Presentation||To==EC26Phase::Ready||To==EC26Phase::Interval||To==EC26Phase::Result;
+    case EC26Phase::Replay:return To==EC26Phase::Presentation||To==EC26Phase::Ready||To==EC26Phase::Interval||To==EC26Phase::Result;
+    case EC26Phase::Presentation:return To==EC26Phase::Ready||To==EC26Phase::Interval||To==EC26Phase::Result||To==EC26Phase::Presentation;
+    case EC26Phase::Interval:return To==EC26Phase::Ready||To==EC26Phase::Presentation;
+    case EC26Phase::Result:return To==EC26Phase::Presentation;
     default:return false;
     }
 }

@@ -820,7 +820,7 @@ float AC26Athlete::PoseLag() const
     // swing would move the contact point down the blade. Stances, gathers and the run can afford
     // a slower, softer approach because nothing is being measured against them.
     const bool Timed=Action==EC26Action::Batting||Action==EC26Action::Bowling
-        ||Action==EC26Action::Throw||Action==EC26Action::Catch;
+        ||Action==EC26Action::Throw||Action==EC26Action::Catch||Action==EC26Action::Dive;
     const float Base=Timed?.022f:Action==EC26Action::Pickup?.038f:.058f;
     // A pose only re-solved every second or third frame needs a filter slow enough to bridge the
     // gap, or the smoothing becomes the stutter it was added to remove.
@@ -1592,6 +1592,10 @@ void AC26Athlete::Animate(float Dt)
         }
         else if(Action==EC26Action::Celebrate){Grip=Rig(6,26,196);Dir=Rig(-.25f,.30f,.92f).GetSafeNormal();TurnRight=12.f;LeanForward=-6.f;}
         else if(Action==EC26Action::Disappointed){Grip=Rig(14,16,74);Dir=Rig(.55f,.10f,.83f).GetSafeNormal();TurnRight=22.f;LeanForward=24.f;}
+        else if(Action==EC26Action::BatRaise){Grip=Rig(8,22,212);Dir=Rig(-.15f,.10f,.98f).GetSafeNormal();TurnRight=-12.f;LeanForward=-8.f;}
+        else if(Action==EC26Action::GloveTap){Grip=Rig(28,14,125);Dir=Rig(.6f,.1f,.79f).GetSafeNormal();TurnRight=18.f;LeanForward=6.f;}
+        else if(Action==EC26Action::Handshake){Grip=Rig(10,14,75);Dir=Rig(.10f,.05f,.993f).GetSafeNormal();TurnRight=6.f;LeanForward=4.f;}
+        else if(Action==EC26Action::Discuss){Grip=Rig(18,12,105);Dir=Rig(.4f,.05f,.91f).GetSafeNormal();TurnRight=24.f;LeanForward=10.f;}
         else{Grip=Rig(10,14,85);Dir=Rig(.10f,.05f,.993f).GetSafeNormal();TurnRight=30.f;}
         if(NonStriker&&Action==EC26Action::Ready)
         {
@@ -1629,7 +1633,7 @@ void AC26Athlete::Animate(float Dt)
     // sways visibly is not standing still, he is unbalanced -- but a player with none of it at all
     // is a statue, and a field of statues is the first thing a viewer notices.
     const bool Busy=Action==EC26Action::Batting||Action==EC26Action::Bowling||Action==EC26Action::Throw
-        ||Action==EC26Action::Catch||Action==EC26Action::Pickup;
+        ||Action==EC26Action::Catch||Action==EC26Action::Pickup||Action==EC26Action::Dive;
     if(!Running&&!Busy)
     {
         LeanForward+=Easy.Breath*1.2f;
@@ -1712,6 +1716,20 @@ void AC26Athlete::Animate(float Dt)
         PoleL=FP.PoleL;PoleR=FP.PoleR;
         ActiveFingerCurl=FP.FingerCurl;
     }
+    else if(Action==EC26Action::Dive)
+    {
+        const FVector Rel=ContactTarget.IsZero()?Rig(30,0,15):Mesh->GetComponentTransform().InverseTransformPosition(ContactTarget);
+        const auto FP=C26Motion::SolveFielderDive(ActionTime,Rel,AnkleZ,ShoulderZ,PalmReach);
+        Crouch=FP.Crouch;
+        LeanForward=FP.LeanForward;
+        LeanRight=FP.LeanRight;
+        Shift=FP.HipShift;
+        FL=FP.LeftFoot;FR=FP.RightFoot;
+        PitchL=FP.PitchL;PitchR=FP.PitchR;
+        LH=FP.LeftHand;RH=FP.RightHand;
+        PoleL=FP.PoleL;PoleR=FP.PoleR;
+        ActiveFingerCurl=FP.FingerCurl;
+    }
     if(Action==EC26Action::Throw)
     {
         const auto FP=C26Motion::SolveFielderThrow(ActionTime,AnkleZ,ShoulderZ);
@@ -1732,6 +1750,16 @@ void AC26Athlete::Animate(float Dt)
     if(Action==EC26Action::SignalOut){RH=Rig(2,20,206);LH=Rig(1,-23,95);}
     if(Action==EC26Action::SignalFour){LH=Rig(20,-72,128);RH=Rig(20,72,128);}
     if(Action==EC26Action::SignalWide){LH=Rig(2,-84,140);RH=Rig(2,84,140);}
+    if(Action==EC26Action::BatRaise&&!Batting){LH=Rig(8,-22,190);RH=Rig(8,22,210);LeanForward=-8.f;}
+    if(Action==EC26Action::FistPump&&!Batting){LH=Rig(4,-18,95);RH=Rig(18,12,145);LeanForward=-12.f;TurnRight=-16.f;}
+    if(Action==EC26Action::GloveTap&&!Batting){LH=Rig(4,-18,95);RH=Rig(32,10,132);LeanForward=4.f;}
+    if(Action==EC26Action::Handshake){LH=Rig(2,-20,85);RH=Rig(30,6,108);LeanForward=4.f;}
+    if(Action==EC26Action::Discuss){LH=Rig(4,-20,95);RH=Rig(24,18,126);LeanForward=8.f;TurnRight=15.f;}
+    if(Action==EC26Action::TossFlip){
+        const float FlipT=FMath::Clamp(ActionTime/1.2f,0.f,1.f);
+        const float HandZ=FlipT<0.35f?FMath::Lerp(90.f,140.f,FlipT/0.35f):FMath::Lerp(140.f,110.f,(FlipT-0.35f)/0.65f);
+        LH=Rig(2,-18,85);RH=Rig(22,4,HandZ);LeanForward=-4.f;
+    }
 
     MoveBone(TEXT("Hips"),Shift+FVector(0,0,Crouch));
     Twist(TEXT("Hips"),TurnRight*.42f,LeanForward*.30f,LeanRight*.5f);

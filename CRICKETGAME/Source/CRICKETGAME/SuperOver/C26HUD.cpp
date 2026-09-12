@@ -1,4 +1,6 @@
 #include "C26HUD.h"
+#include "C26PresentationDirector.h"
+#include "C26Athlete.h"
 #include "C26Controls.h"
 #include "C26MatchGameMode.h"
 #include "C26Settings.h"
@@ -2944,7 +2946,11 @@ void AC26HUD::DrawHUD()
     TextShadow = .80f;
     SubtitleY = 640.f;
 
-    if (Match->Phase == EC26Phase::Menu)
+    if (Match->bFieldPlanningMode)
+    {
+        DrawFieldPlanning();
+    }
+    else if (Match->Phase == EC26Phase::Menu)
     {
         Menu();
     }
@@ -2960,6 +2966,10 @@ void AC26HUD::DrawHUD()
         TextFit(Match->TossText, 800, Y, 22, SlateMuted, ContentW, true, 1);
 
         Btn(TEXT("skip"), TEXT("SKIP INTRO  >"), 1320, SafeBot - 52.f, 200, 52, 0);
+    }
+    else if (Match->Phase == EC26Phase::Presentation)
+    {
+        DrawPresentationOverlay();
     }
     else if (Match->Phase == EC26Phase::Result)
     {
@@ -2986,7 +2996,10 @@ void AC26HUD::DrawHUD()
         Controls();
         DrawBounceIndicator();
         DrawBowlingTarget();
+        DrawDeliveryHistory();
         DrawBattingGestureCue();
+        DrawFieldingHUD();
+        DrawBattingTimingMeter();
         DrawControlDebug();
     }
 
@@ -3005,4 +3018,436 @@ void AC26HUD::DrawHUD()
     {
         DrawUIDebug();
     }
+
+    if (Match->PresentationDirector && Match->PresentationDirector->bDebugOverlayVisible)
+    {
+        DrawPresentationDebug();
+    }
+}
+
+// ============================================================================
+// CRICKET 26 // GAMEPLAY CONTROL OVERHAUL DRAW CALLS
+// ============================================================================
+
+void AC26HUD::DrawDeliveryHistory()
+{
+    if (!Match) return;
+    APlayerController* PC = GetOwningPlayerController();
+    if (!PC) return;
+
+    const bool bShowOnPitch = (Match->Phase == EC26Phase::Ready || Match->Phase == EC26Phase::RunUp || Match->Phase == EC26Phase::Delivery);
+    if (!bShowOnPitch) return;
+
+    const float PitchLinesY[] = { 100.f, 280.f, 480.f, 650.f, 800.f };
+    for (int32 I = 0; I < 5; ++I)
+    {
+        const float Y = PitchLinesY[I];
+        FVector2D SLeft, SRight;
+        if (PC->ProjectWorldLocationToScreen(FVector(-135.f, Y, 6.f), SLeft) &&
+            PC->ProjectWorldLocationToScreen(FVector(135.f, Y, 6.f), SRight))
+        {
+            const FVector2D DLeft = ToDesign(SLeft);
+            const FVector2D DRight = ToDesign(SRight);
+            Line(DLeft.X, DLeft.Y, DRight.X, DRight.Y, FLinearColor(1.f, 1.f, 1.f, 0.08f), 1.f);
+        }
+    }
+
+    for (int32 I = 0; I < Match->RecentDeliveries.Num(); ++I)
+    {
+        const auto& Rec = Match->RecentDeliveries[I];
+        FVector2D Screen;
+        if (PC->ProjectWorldLocationToScreen(FVector(Rec.ActualPitch.X, Rec.ActualPitch.Y, 7.f), Screen))
+        {
+            const FVector2D D = ToDesign(Screen);
+            if (D.X > 50.f && D.X < 1550.f && D.Y > 50.f && D.Y < 850.f)
+            {
+                FLinearColor DotColor = FLinearColor(0.85f, 0.88f, 0.92f, 0.55f);
+                if (Rec.bWicket) DotColor = FLinearColor(0.95f, 0.20f, 0.25f, 0.85f);
+                else if (Rec.bBoundary) DotColor = FLinearColor(1.0f, 0.82f, 0.22f, 0.85f);
+                else if (Rec.RunsConceded > 0) DotColor = FLinearColor(0.25f, 0.80f, 0.95f, 0.75f);
+
+                Circle(D.X, D.Y, 5.5f, DotColor, 2.f);
+            }
+        }
+    }
+
+    if (!Match->PlayerBatting() && Match->Phase == EC26Phase::Ready)
+    {
+        Btn(TEXT("toggle_field_plan"), TEXT("TACTICAL FIELD PLAN  >"), 64.f, 760.f, 260.f, 48.f, 0);
+
+        const float PresetsX = 64.f, PresetsY = 704.f;
+        TextFit(TEXT("TARGET PRESETS:"), PresetsX, PresetsY - 18.f, 12, SlateMuted, 200.f, false, 0);
+        Btn(TEXT("bowl_preset_yorker"), TEXT("YORKER"), PresetsX, PresetsY, 76.f, 36.f, 0);
+        Btn(TEXT("bowl_preset_good"), TEXT("GOOD"), PresetsX + 82.f, PresetsY, 68.f, 36.f, 0);
+        Btn(TEXT("bowl_preset_short"), TEXT("SHORT"), PresetsX + 156.f, PresetsY, 68.f, 36.f, 0);
+        Btn(TEXT("bowl_preset_bouncer"), TEXT("BOUNCER"), PresetsX + 230.f, PresetsY, 78.f, 36.f, 0);
+    }
+}
+
+void AC26HUD::DrawFieldPlanning()
+{
+    if (!Match) return;
+    APlayerController* PC = GetOwningPlayerController();
+    if (!PC) return;
+
+    Rect(0, 0, 1600, 900, FLinearColor(0.01f, 0.02f, 0.05f, 0.78f));
+
+    const float TopY = 32.f;
+    TextFit(TEXT("TACTICAL FIELD PLANNER"), 800, TopY, 32, WhiteAthletic, 800, true, 0);
+    Rule(300, TopY + LineH(32) + GapComp, 1000);
+
+    const float StatusY = TopY + LineH(32) + GapBlock;
+    if (Match->bFieldIsLegal)
+    {
+        Rect(500, StatusY, 600, 36, FLinearColor(0.08f, 0.35f, 0.16f, 0.85f));
+        TextMid(TEXT("LEGAL: LAW 28 & POWERPLAY COMPLIANT"), 800, StatusY, 36, 16, TurfGreen, true, 0);
+    }
+    else
+    {
+        Rect(450, StatusY, 700, 36, FLinearColor(0.45f, 0.10f, 0.12f, 0.90f));
+        TextMidFit(Match->FieldLegalityWarning.IsEmpty() ? TEXT("ILLEGAL FIELD FORMATION") : Match->FieldLegalityWarning,
+                   800, StatusY, 36, 15, FLinearColor(1.f, 0.4f, 0.4f, 1.f), 680, true, 0);
+    }
+
+    const int Segs = 48;
+    for (int I = 0; I < Segs; ++I)
+    {
+        const float A1 = I * 2.f * PI / Segs;
+        const float A2 = (I + 1) * 2.f * PI / Segs;
+        const FVector P1(C26Field::InnerCircleRadius * FMath::Cos(A1), C26Field::InnerCircleRadius * FMath::Sin(A1), 5.f);
+        const FVector P2(C26Field::InnerCircleRadius * FMath::Cos(A2), C26Field::InnerCircleRadius * FMath::Sin(A2), 5.f);
+        FVector2D S1, S2;
+        if (PC->ProjectWorldLocationToScreen(P1, S1) && PC->ProjectWorldLocationToScreen(P2, S2))
+        {
+            Line(ToDesign(S1).X, ToDesign(S1).Y, ToDesign(S2).X, ToDesign(S2).Y, FLinearColor(1.f, 1.f, 1.f, 0.22f), 1.5f);
+        }
+    }
+
+    const auto& Positions = Match->GetFieldPositions();
+    for (int32 I = 0; I < Positions.Num() && I < 11; ++I)
+    {
+        const FVector& Pos = Positions[I];
+        FVector2D Screen;
+        if (PC->ProjectWorldLocationToScreen(Pos + FVector(0, 0, 10.f), Screen))
+        {
+            const FVector2D D = ToDesign(Screen);
+            const bool bSelected = (I == Match->SelectedFielderIdx);
+            const bool bMovable = (I >= 2 && I <= 10);
+
+            const float R = bSelected ? 22.f : 16.f;
+            const FLinearColor RingCol = bSelected ? Gold : (bMovable ? TurfGreen : SlateMuted);
+
+            Circle(D.X, D.Y, R, RingCol, bSelected ? 2.5f : 1.5f);
+            TextMid(FString::FromInt(I + 1), D.X, D.Y - R, R * 2.f, 13, WhiteAthletic, true, 0);
+
+            const FString PosName = C26Fielding::GetFieldPositionName(Pos, Match->BatterIsLeftHanded());
+            TextFit(PosName, D.X, D.Y + R + 3.f, 11, bSelected ? Gold : SilverCool, 120.f, true, 0);
+        }
+    }
+
+    if (Match->SelectedFielderIdx >= 2 && Match->SelectedFielderIdx <= 10)
+    {
+        const FString SelName = C26Fielding::GetFieldPositionName(Positions[Match->SelectedFielderIdx], Match->BatterIsLeftHanded());
+        TextFit(FString::Printf(TEXT("SELECTED: #%d %s  —  DRAG ON TURF TO REPOSITION"), Match->SelectedFielderIdx + 1, *SelName),
+                800, 715, 16, Gold, 700, true, 0);
+    }
+    else
+    {
+        TextFit(TEXT("TAP OR DRAG ANY FIELDER (2–11) TO REPOSITION ON TURF"), 800, 715, 15, SilverCool, 700, true, 0);
+    }
+
+    const float PanelY = 746.f, PanelH = 120.f;
+    Rect(60.f, PanelY, 1480.f, PanelH, FLinearColor(0.02f, 0.05f, 0.09f, 0.92f));
+    Line(60.f, PanelY, 1540.f, PanelY, HairlineSoft, 1.f);
+
+    Text(TEXT("TACTICAL FORMATIONS:"), 80.f, PanelY + 14.f, 13, SlateMuted, false, 0);
+
+    const float B1Y = PanelY + 34.f, BW = 156.f, BH = 34.f, BGap = 12.f;
+    Btn(TEXT("field_preset_balanced"), TEXT("BALANCED"), 80.f, B1Y, BW, BH, Match->CurrentFieldPreset == EC26FieldPreset::Balanced ? 1 : 0);
+    Btn(TEXT("field_preset_attacking"), TEXT("ATTACKING"), 80.f + (BW + BGap), B1Y, BW, BH, Match->CurrentFieldPreset == EC26FieldPreset::Attacking ? 1 : 0);
+    Btn(TEXT("field_preset_defensive"), TEXT("DEFENSIVE"), 80.f + 2.f * (BW + BGap), B1Y, BW, BH, Match->CurrentFieldPreset == EC26FieldPreset::Defensive ? 1 : 0);
+    Btn(TEXT("field_preset_powerplay_attack"), TEXT("POWERPLAY"), 80.f + 3.f * (BW + BGap), B1Y, BW, BH, Match->CurrentFieldPreset == EC26FieldPreset::PowerplayAttack ? 1 : 0);
+    Btn(TEXT("field_preset_pace_attack"), TEXT("PACE ATTACK"), 80.f + 4.f * (BW + BGap), B1Y, BW, BH, Match->CurrentFieldPreset == EC26FieldPreset::PaceAttack ? 1 : 0);
+    Btn(TEXT("field_preset_spin_attack"), TEXT("SPIN ATTACK"), 80.f + 5.f * (BW + BGap), B1Y, BW, BH, Match->CurrentFieldPreset == EC26FieldPreset::SpinAttack ? 1 : 0);
+
+    const float B2Y = B1Y + BH + 6.f;
+    Btn(TEXT("field_preset_death_overs"), TEXT("DEATH OVERS"), 80.f, B2Y, BW, BH, Match->CurrentFieldPreset == EC26FieldPreset::DeathOvers ? 1 : 0);
+    Btn(TEXT("field_preset_boundary"), TEXT("RING FENCE"), 80.f + (BW + BGap), B2Y, BW, BH, Match->CurrentFieldPreset == EC26FieldPreset::ProtectBoundary ? 1 : 0);
+    Btn(TEXT("field_preset_single_prev"), TEXT("PREVENT 1s"), 80.f + 2.f * (BW + BGap), B2Y, BW, BH, Match->CurrentFieldPreset == EC26FieldPreset::SinglePrevention ? 1 : 0);
+    Btn(TEXT("field_preset_offside_heavy"), TEXT("OFF HEAVY"), 80.f + 3.f * (BW + BGap), B2Y, BW, BH, Match->CurrentFieldPreset == EC26FieldPreset::OffsideHeavy ? 1 : 0);
+    Btn(TEXT("field_preset_legside_heavy"), TEXT("LEG HEAVY"), 80.f + 4.f * (BW + BGap), B2Y, BW, BH, Match->CurrentFieldPreset == EC26FieldPreset::LegsideHeavy ? 1 : 0);
+
+    Btn(TEXT("toggle_field_plan"), TEXT("RESUME MATCH  >"), 1280.f, B1Y + 8.f, 240.f, 52.f, 1);
+}
+
+void AC26HUD::DrawFieldingHUD()
+{
+    if (!Match || Match->Phase != EC26Phase::InPlay) return;
+    APlayerController* PC = GetOwningPlayerController();
+    if (!PC) return;
+
+    if (Match->ActiveFielder >= 0 && Match->Athletes.IsValidIndex(Match->ActiveFielder))
+    {
+        const FVector FLoc = Match->Athletes[Match->ActiveFielder]->GetActorLocation();
+        FVector2D Screen;
+        if (PC->ProjectWorldLocationToScreen(FLoc, Screen))
+        {
+            const FVector2D D = ToDesign(Screen);
+            Circle(D.X, D.Y, 28.f, TurfGreen, 2.f);
+            Circle(D.X, D.Y, 34.f, FLinearColor(TurfGreen.R, TurfGreen.G, TurfGreen.B, 0.4f), 1.2f);
+        }
+    }
+
+    if (Match->bDivePromptActive)
+    {
+        Btn(TEXT("field_dive"), TEXT("DIVE  [D]"), 1350.f, 730.f, 190.f, 56.f, 1);
+    }
+
+    if (Match->bCatchOpportunityActive)
+    {
+        FVector2D InterceptScreen;
+        if (PC->ProjectWorldLocationToScreen(Match->Simulation.PredictLanding(), InterceptScreen))
+        {
+            const FVector2D D = ToDesign(InterceptScreen);
+            Circle(D.X, D.Y, 32.f, Gold, 2.5f);
+            Circle(D.X, D.Y, 18.f, TurfGreen, 1.5f);
+        }
+
+        Btn(TEXT("field_catch"), TEXT("TAKE CATCH!  [C]"), 660.f, 690.f, 280.f, 62.f, 1);
+    }
+
+    if (Match->bThrowTargetActive)
+    {
+        const float ThrowX = 1180.f, ThrowY = 660.f, ThrowW = 380.f, ThrowH = 130.f;
+        Rect(ThrowX, ThrowY, ThrowW, ThrowH, FLinearColor(0.02f, 0.05f, 0.09f, 0.90f));
+        Line(ThrowX, ThrowY, ThrowX + ThrowW, ThrowY, HairlineSoft, 1.f);
+
+        TextFit(TEXT("THROW TARGET:"), ThrowX + 16.f, ThrowY + 14.f, 13, SlateMuted, 200.f, false, 0);
+        const bool bKeeper = Match->SelectedThrowTarget == EC26ThrowTarget::KeepersEnd;
+        Btn(TEXT("throw_keeper"), TEXT("KEEPER  [2]"), ThrowX + 16.f, ThrowY + 34.f, 166.f, 42.f, bKeeper ? 1 : 0);
+        Btn(TEXT("throw_bowler"), TEXT("BOWLER  [1]"), ThrowX + 198.f, ThrowY + 34.f, 166.f, 42.f, !bKeeper ? 1 : 0);
+
+        TextFit(TEXT("THROW POWER:"), ThrowX + 16.f, ThrowY + 86.f, 12, SilverCool, 100.f, false, 0);
+        StatBar(ThrowX + 110.f, ThrowY + 88.f, 254.f, 14.f, Match->ThrowPowerCharge, Gold);
+    }
+}
+
+void AC26HUD::DrawBattingTimingMeter()
+{
+    if (!Match || Match->ContactFeedbackTimer <= 0.f) return;
+
+    const float Alpha = FMath::Clamp(Match->ContactFeedbackTimer / 0.35f, 0.f, 1.f);
+    const float BoxW = 520.f, BoxH = 68.f;
+    const float BoxX = 800.f - BoxW * 0.5f, BoxY = 100.f;
+
+    Rect(BoxX, BoxY, BoxW, BoxH, FLinearColor(0.01f, 0.02f, 0.05f, 0.88f * Alpha));
+    Line(BoxX, BoxY, BoxX + BoxW, BoxY, FLinearColor(1.f, 1.f, 1.f, 0.15f * Alpha), 1.f);
+    Line(BoxX, BoxY + BoxH, BoxX + BoxW, BoxY + BoxH, FLinearColor(1.f, 1.f, 1.f, 0.15f * Alpha), 1.f);
+
+    const float TrackX = BoxX + 30.f, TrackY = BoxY + 32.f, TrackW = 460.f, TrackH = 10.f;
+    Rect(TrackX, TrackY, 60.f, TrackH, FLinearColor(0.8f, 0.15f, 0.15f, 0.8f * Alpha));
+    Rect(TrackX + 60.f, TrackY, 90.f, TrackH, FLinearColor(0.9f, 0.55f, 0.15f, 0.8f * Alpha));
+    Rect(TrackX + 150.f, TrackY, 50.f, TrackH, FLinearColor(0.85f, 0.85f, 0.2f, 0.8f * Alpha));
+    Rect(TrackX + 200.f, TrackY, 60.f, TrackH, FLinearColor(0.15f, 0.95f, 0.45f, 0.95f * Alpha));
+    Rect(TrackX + 260.f, TrackY, 50.f, TrackH, FLinearColor(0.85f, 0.85f, 0.2f, 0.8f * Alpha));
+    Rect(TrackX + 310.f, TrackY, 90.f, TrackH, FLinearColor(0.9f, 0.55f, 0.15f, 0.8f * Alpha));
+    Rect(TrackX + 400.f, TrackY, 60.f, TrackH, FLinearColor(0.8f, 0.15f, 0.15f, 0.8f * Alpha));
+
+    const float ClampedMs = FMath::Clamp(Match->LastTimingDeltaMs, -90.f, 90.f);
+    const float NeedleX = TrackX + TrackW * 0.5f + (ClampedMs / 90.f) * (TrackW * 0.5f);
+    Line(NeedleX, TrackY - 4.f, NeedleX, TrackY + TrackH + 4.f, FLinearColor(1.f, 1.f, 1.f, Alpha), 2.5f);
+
+    const float AbsMs = FMath::Abs(Match->LastTimingDeltaMs);
+    FString TimingWord = TEXT("PERFECT");
+    FLinearColor TextCol = TurfGreen;
+    if (AbsMs > 65.f) { TimingWord = Match->LastTimingDeltaMs < 0 ? TEXT("VERY EARLY") : TEXT("VERY LATE"); TextCol = Crimson; }
+    else if (AbsMs > 35.f) { TimingWord = Match->LastTimingDeltaMs < 0 ? TEXT("EARLY") : TEXT("LATE"); TextCol = Gold; }
+    else if (AbsMs > 15.f) { TimingWord = TEXT("GOOD"); TextCol = Gold; }
+
+    const FString Readout = FString::Printf(TEXT("%+d MS  •  %s"), int(Match->LastTimingDeltaMs), *TimingWord);
+    TextMidFit(Readout, 800, BoxY + 4.f, 22.f, 14, TextCol, BoxW - 40.f, true, 0);
+
+    const FString SubText = FString::Printf(TEXT("%s  •  %d%% CONTACT QUALITY"),
+                                           Match->LastShotName.IsEmpty() ? TEXT("SHOT") : *Match->LastShotName,
+                                           int(Match->LastTimingQualityPct));
+    TextMidFit(SubText, 800, TrackY + TrackH + 4.f, 18.f, 12, SilverCool, BoxW - 40.f, true, 0);
+}
+
+// ============================================================================
+// CRICKET 26 // PRESENTATION DIRECTOR BROADCAST OVERLAYS
+// ============================================================================
+
+void AC26HUD::DrawPresentationOverlay()
+{
+    if (!Match || !Match->PresentationDirector) return;
+    UC26PresentationDirector* PD = Match->PresentationDirector;
+    if (!PD->IsPresentationActive()) return;
+
+    const FC26PresentationSceneDefinition& Def = PD->GetCurrentSceneDef();
+    const float Progress = PD->GetSceneProgress();
+
+    // Cinematic letterboxing bars top & bottom
+    Rect(0, 0, 1600, 48, FLinearColor(0.f, 0.f, 0.f, 0.90f));
+    Rect(0, 852, 1600, 48, FLinearColor(0.f, 0.f, 0.f, 0.90f));
+
+    // Live Broadcast bug in top left
+    Rect(40, 14, 8, 20, Crimson);
+    Text(TEXT("LIVE BROADCAST"), 56, 17, 13, WhiteAthletic, 0, false);
+
+    // Skip button in top right
+    Btn(TEXT("skip"), TEXT("TAP TO SKIP  >"), 1380, 10, 180, 32, 0);
+    // Skip progress hairline
+    Rect(1380, 42, 180 * Progress, 2, Gold);
+
+    // Contextual broadcast cards
+    if (Def.OverlayType == TEXT("TossCard"))
+    {
+        const float BoxW = 860.f, BoxH = 110.f;
+        const float BoxX = (1600.f - BoxW) * 0.5f, BoxY = 720.f;
+        Panel(BoxX, BoxY, BoxW, BoxH, HairlineSoft);
+        Rect(BoxX, BoxY, 6, BoxH, Gold);
+
+        Eyebrow(TEXT("OFFICIAL TOSS CEREMONY // SUPER OVER"), BoxX + 24, BoxY + 16);
+        Text(Match->TossText.IsEmpty() ? TEXT("TOSS DECISION IN PROGRESS") : Match->TossText,
+             BoxX + 24, BoxY + 42, 24, WhiteAthletic, 1, false);
+
+        FVector CoinPos; FRotator CoinRot;
+        if (PD->GetTossCoinState(CoinPos, CoinRot))
+        {
+            Text(TEXT("COIN IN FLIGHT..."), BoxX + 24, BoxY + 76, 15, Gold, 0, false);
+        }
+        else
+        {
+            Text(TEXT("PITCH REPORT: HARD TURF, EXCELLENT CARRY"), BoxX + 24, BoxY + 76, 14, SlateMuted, 0, false);
+        }
+    }
+    else if (Def.OverlayType == TEXT("MilestoneFifty") || Def.OverlayType == TEXT("MilestoneCentury"))
+    {
+        const bool bCentury = (Def.OverlayType == TEXT("MilestoneCentury"));
+        const float BoxW = 760.f, BoxH = 130.f;
+        const float BoxX = (1600.f - BoxW) * 0.5f, BoxY = 700.f;
+        Panel(BoxX, BoxY, BoxW, BoxH, HairlineGleam);
+        Rect(BoxX, BoxY, 8, BoxH, Gold);
+
+        Rect(BoxX + 16, BoxY + 15, 100, 100, SurfaceWell);
+        Text(bCentury ? TEXT("100") : TEXT("50"), BoxX + 66, BoxY + 42, 44, Gold, 3, true);
+
+        const int32 StrikerIdx = FMath::Clamp(Match->Rules.Now().Striker, 0, 2);
+        const FString Name = Match->BatterName();
+        const int32 Runs = Match->Rules.Now().BatterRuns[StrikerIdx];
+        const int32 Balls = Match->Rules.Now().BatterBalls[StrikerIdx];
+        const float SR = Balls > 0 ? (float(Runs) / float(Balls) * 100.f) : 0.f;
+
+        Eyebrow(bCentury ? TEXT("MILESTONE // CENTURY") : TEXT("MILESTONE // HALF CENTURY"), BoxX + 130, BoxY + 20);
+        Text(Name.ToUpper(), BoxX + 130, BoxY + 46, 28, WhiteAthletic, 2, false);
+
+        const FString StatStr = FString::Printf(TEXT("%d RUNS  /  %d BALLS  /  SR %.1f"), Runs, Balls, SR);
+        Text(StatStr, BoxX + 130, BoxY + 84, 16, SilverCool, 0, false);
+    }
+    else if (Def.OverlayType == TEXT("WicketCard"))
+    {
+        const float BoxW = 820.f, BoxH = 125.f;
+        const float BoxX = (1600.f - BoxW) * 0.5f, BoxY = 705.f;
+        Panel(BoxX, BoxY, BoxW, BoxH, HairlineSoft);
+        Rect(BoxX, BoxY, 8, BoxH, Crimson);
+
+        Rect(BoxX + 24, BoxY + 18, 120, 32, Crimson);
+        Text(TEXT("WICKET"), BoxX + 84, BoxY + 24, 18, WhiteAthletic, 3, true);
+
+        const FString Bowler = Match->BowlerName();
+        const FString Batter = Match->BatterName();
+        Text(FString::Printf(TEXT("%s OUT"), *Batter.ToUpper()), BoxX + 160, BoxY + 22, 24, WhiteAthletic, 1, false);
+
+        const FString SubStr = FString::Printf(TEXT("BOWLER: %s  |  FALL OF WICKET: %d/%d (BALL %d)"),
+                                              *Bowler.ToUpper(), Match->Rules.Now().Runs, Match->Rules.Now().Wickets, Match->Rules.Now().LegalBalls);
+        Text(SubStr, BoxX + 24, BoxY + 70, 16, SilverCool, 0, false);
+    }
+    else if (Def.OverlayType == TEXT("OverSummary"))
+    {
+        const float BoxW = 800.f, BoxH = 115.f;
+        const float BoxX = (1600.f - BoxW) * 0.5f, BoxY = 715.f;
+        Panel(BoxX, BoxY, BoxW, BoxH, HairlineSoft);
+        Rect(BoxX, BoxY, 6, BoxH, TurfGreen);
+
+        Eyebrow(TEXT("OVER SUMMARY // SUPER OVER"), BoxX + 24, BoxY + 18);
+        const FString ScoreStr = FString::Printf(TEXT("TOTAL: %s %d/%d"), *Match->TeamShort(Match->BattingTeam()), Match->Rules.Now().Runs, Match->Rules.Now().Wickets);
+        Text(ScoreStr, BoxX + 24, BoxY + 44, 26, WhiteAthletic, 1, false);
+
+        const FString DetailStr = FString::Printf(TEXT("BOWLER: %s  |  TARGET: %d"), *Match->BowlerName(), Match->Rules.Target());
+        Text(DetailStr, BoxX + 24, BoxY + 80, 15, SlateMuted, 0, false);
+    }
+    else if (Def.OverlayType == TEXT("NewBatterCard"))
+    {
+        const float BoxW = 700.f, BoxH = 105.f;
+        const float BoxX = (1600.f - BoxW) * 0.5f, BoxY = 725.f;
+        Panel(BoxX, BoxY, BoxW, BoxH, HairlineSoft);
+        Rect(BoxX, BoxY, 6, BoxH, ElectricCyan);
+
+        Eyebrow(TEXT("NEW BATTER INCOMING"), BoxX + 24, BoxY + 16);
+        Text(Match->BatterName().ToUpper(), BoxX + 24, BoxY + 42, 26, WhiteAthletic, 1, false);
+        Text(TEXT("RIGHT HAND BAT  |  AGGRESSIVE TOP-ORDER"), BoxX + 24, BoxY + 74, 14, SlateMuted, 0, false);
+    }
+    else if (Def.OverlayType == TEXT("MatchResult") || Def.OverlayType == TEXT("PlayerOfMatch"))
+    {
+        const float BoxW = 860.f, BoxH = 130.f;
+        const float BoxX = (1600.f - BoxW) * 0.5f, BoxY = 700.f;
+        Panel(BoxX, BoxY, BoxW, BoxH, HairlineGleam);
+        Rect(BoxX, BoxY, 8, BoxH, Gold);
+
+        Eyebrow(TEXT("MATCH RESULT // POST-MATCH PRESENTATION"), BoxX + 24, BoxY + 16);
+        Text(Match->Callout, BoxX + 24, BoxY + 42, 32, Gold, 3, false);
+        Text(Match->Detail, BoxX + 24, BoxY + 82, 18, WhiteAthletic, 1, false);
+    }
+}
+
+void AC26HUD::DrawPresentationDebug()
+{
+    if (!Match || !Match->PresentationDirector) return;
+    UC26PresentationDirector* PD = Match->PresentationDirector;
+
+    const float BoxX = 20.f, BoxY = 60.f, BoxW = 440.f, BoxH = 260.f;
+    Panel(BoxX, BoxY, BoxW, BoxH, HairlineGleam);
+    Rect(BoxX, BoxY, BoxW, 4, ElectricCyan);
+
+    float Y = BoxY + 14.f;
+    const bool bActive = PD->IsPresentationActive();
+
+    Text(TEXT("PRESENTATION DIRECTOR // DEBUG OVERLAY"), BoxX + 16, Y, 13, ElectricCyan, 0, false);
+    Y += 22.f;
+
+    const FString StatusStr = FString::Printf(TEXT("STATUS: %s  |  QUEUE: %d ITEMS"),
+                                             bActive ? TEXT("PLAYING") : TEXT("IDLE"), PD->GetQueueCount());
+    Text(StatusStr, BoxX + 16, Y, 13, bActive ? TurfGreen : SlateMuted, 0, false);
+    Y += 18.f;
+
+    if (bActive)
+    {
+        const FC26PresentationSceneDefinition& Def = PD->GetCurrentSceneDef();
+        const FString EvtStr = FString::Printf(TEXT("EVENT: %d  |  VARIANT: %s"), int32(PD->GetCurrentEvent()), *Def.VariantId.ToString());
+        Text(EvtStr, BoxX + 16, Y, 12, WhiteAthletic, 0, false);
+        Y += 18.f;
+
+        const FString TimeStr = FString::Printf(TEXT("TIME: %.2fs / %.2fs  (%.0f%%)"),
+                                               PD->GetSceneTime(), PD->GetSceneDuration(), PD->GetSceneProgress() * 100.f);
+        Text(TimeStr, BoxX + 16, Y, 12, Gold, 0, false);
+        Y += 18.f;
+
+        const FString CamStr = FString::Printf(TEXT("CAMERA: Lens %d  |  OVERLAY: %s"), int32(Def.CameraAngle), *Def.OverlayType);
+        Text(CamStr, BoxX + 16, Y, 12, SilverCool, 0, false);
+        Y += 18.f;
+    }
+
+    const float Pressure = PD->CalculateMatchPressure(Match->Rules.Target(), Match->Rules.Now().Runs,
+                                                      Match->Rules.Config.Balls - Match->Rules.Now().LegalBalls,
+                                                      Match->Rules.Now().Wickets);
+    const FString TensionStr = FString::Printf(TEXT("MATCH TENSION: %.2f  |  PACING: %d"), Pressure, int32(PD->GetPacing()));
+    Text(TensionStr, BoxX + 16, Y, 12, Pressure > 0.6f ? Crimson : SlateMuted, 0, false);
+    Y += 24.f;
+
+    HairRule(BoxX + 16, Y, BoxW - 32.f);
+    Y += 8.f;
+
+    Text(TEXT("HOTKEYS: [T]oss [W]kt Bowled [K]Caught [5]Fifty [0]Cent"), BoxX + 16, Y, 11, SlateMuted, 0, false);
+    Y += 16.f;
+    Text(TEXT("         [B]owler/Capt [N]ewBatter [O]verEnd [M]Win [P]Close"), BoxX + 16, Y, 11, SlateMuted, 0, false);
 }
