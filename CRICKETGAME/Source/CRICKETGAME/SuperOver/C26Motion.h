@@ -732,4 +732,82 @@ namespace C26Motion
         Out.FingerCurl = FMath::Lerp(0.20f, 0.40f, Recover);
         return Out;
     }
+
+    /** Authentic diving stop / slide biomechanics */
+    inline FFielderPose SolveFielderDive(
+        float ActionTime,
+        const FVector& BallRelativePos,
+        float AnkleZ,
+        float ShoulderZ,
+        float PalmReach)
+    {
+        FFielderPose Out;
+        // Phase 1: Launch & horizontal lunge (0.0 to 0.28s)
+        // Phase 2: Turf slide & impact knockdown (0.28 to 0.65s)
+        // Phase 3: Push-up and knee tuck recovery (0.65 to 1.10s)
+        if (ActionTime < 0.28f)
+        {
+            const float T = ActionTime / 0.28f;
+            Out.Crouch = FMath::Lerp(-15.f, -55.f, T);
+            Out.LeanForward = FMath::Lerp(20.f, 75.f, T);
+            Out.LeanRight = FMath::Clamp(BallRelativePos.Y * 0.08f, -25.f, 25.f);
+
+            // Trailing leg extended backward, lead knee bent forward
+            Out.LeftFoot = Rig(-45.f * T, -18.f, AnkleZ + 12.f * T);
+            Out.RightFoot = Rig(25.f * (1.f - T), 18.f, AnkleZ);
+            Out.PitchL = 35.f * T;
+            Out.PitchR = -20.f * T;
+
+            // Both hands stretching toward ground ball
+            const FVector LeadTarget = Rig(55.f, FMath::Clamp(BallRelativePos.Y * 0.5f, -40.f, 40.f), 15.f);
+            Out.RightHand = LeadTarget;
+            Out.LeftHand = LeadTarget + Rig(-8.f, -12.f, 5.f);
+            Out.PoleR = Rig(0.4f, 0.7f, -0.4f);
+            Out.PoleL = Rig(0.4f, -0.7f, -0.4f);
+            Out.FingerCurl = 0.25f;
+        }
+        else if (ActionTime < 0.65f)
+        {
+            const float T = (ActionTime - 0.28f) / 0.37f;
+            Out.Crouch = FMath::Lerp(-55.f, -70.f, T);
+            Out.LeanForward = FMath::Lerp(75.f, 85.f, T);
+            Out.LeanRight = FMath::Clamp(BallRelativePos.Y * 0.06f, -18.f, 18.f);
+
+            // Sliding on turf on stomach/hip
+            Out.LeftFoot = Rig(-60.f, -15.f, AnkleZ + 8.f);
+            Out.RightFoot = Rig(-50.f, 15.f, AnkleZ + 10.f);
+            Out.PitchL = 40.f;
+            Out.PitchR = 38.f;
+
+            // Arms gathered around ball on turf
+            const FVector GatherPoint = Rig(42.f, FMath::Clamp(BallRelativePos.Y * 0.2f, -20.f, 20.f), 8.f);
+            Out.RightHand = GatherPoint + Rig(0.f, 6.f, 0.f);
+            Out.LeftHand = GatherPoint + Rig(0.f, -6.f, 0.f);
+            Out.PoleR = Rig(0.2f, 0.8f, -0.2f);
+            Out.PoleL = Rig(0.2f, -0.8f, -0.2f);
+            Out.FingerCurl = 0.65f;
+        }
+        else
+        {
+            const float T = FMath::Clamp((ActionTime - 0.65f) / 0.45f, 0.f, 1.f);
+            // Push-up into knee kneeling stance
+            Out.Crouch = FMath::Lerp(-70.f, -32.f, T);
+            Out.LeanForward = FMath::Lerp(85.f, 30.f, T);
+            Out.LeanRight = 0.f;
+
+            Out.LeftFoot = Rig(FMath::Lerp(-50.f, -10.f, T), -20.f, AnkleZ);
+            Out.RightFoot = Rig(FMath::Lerp(-40.f, 15.f, T), 20.f, AnkleZ);
+            Out.PitchL = FMath::Lerp(35.f, 10.f, T);
+            Out.PitchR = FMath::Lerp(30.f, -5.f, T);
+
+            // Hands pushing up off turf
+            Out.RightHand = Rig(18.f, 22.f, FMath::Lerp(12.f, 65.f, T));
+            Out.LeftHand = Rig(18.f, -22.f, FMath::Lerp(12.f, 65.f, T));
+            Out.PoleR = Rig(0.1f, 0.6f, -0.1f);
+            Out.PoleL = Rig(0.1f, -0.6f, -0.1f);
+            Out.FingerCurl = 0.40f;
+        }
+
+        return Out;
+    }
 }

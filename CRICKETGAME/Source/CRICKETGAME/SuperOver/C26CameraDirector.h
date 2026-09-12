@@ -2,6 +2,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "C26Types.h"
+#include "C26PresentationTypes.h"
 #include "C26CameraDirector.generated.h"
 class UCameraComponent;
 class UStaticMeshComponent;
@@ -13,7 +14,7 @@ enum class EC26CameraMode : uint8
     Establishing, PreDeliveryBroadcast, BatterGameplay, BowlerGameplay, BowlerRunup,
     Release, BatContact, GroundShotTracking, LoftedShotTracking, BoundaryTracking,
     Catch, RunOut, Wicket, Running, ReplayPitch, ReplayClose, ReplayBoundary,
-    Celebration, InningsTransition, MatchResult
+    Celebration, InningsTransition, MatchResult, FieldPlanning, Presentation
 };
 
 /** All lenses live in the director. Phase logic supplies context, never view transforms. */
@@ -85,6 +86,13 @@ public:
     float ReplayOutroTime = 0.f;
     float ReplayOutroDuration = 0.85f;
     float ReplayProgress() const { return ReplayEnd > 0 ? FMath::Clamp(ReplayClock / ReplayEnd, 0.f, 1.f) : 0.f; }
+
+    /** Field planning tactical view mode flag */
+    UPROPERTY(BlueprintReadOnly) bool bFieldPlanning = false;
+    void SetFieldPlanning(bool bActive) { bFieldPlanning = bActive; }
+
+    /** Presentation cinematic camera director */
+    void DirectPresentation(EC26CinematicCamera Lens, const FVector& FocusPrimary, const FVector& FocusSecondary, float NormalizedProgress, float Dt, bool bCut = false);
 
 private:
     TArray<FC26ReplayFrame> Frames;

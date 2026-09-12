@@ -2,6 +2,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/GameModeBase.h"
 #include "C26Types.h"
+#include "C26FieldingSystem.h"
 #include "C26Simulation.h"
 #include "C26Commentary.h"
 #include "C26CommentaryTypes.h"
@@ -12,6 +13,7 @@ class AC26CameraDirector;
 class AC26Effects;
 class UC26Audio;
 class UC26CommentaryDirector;
+class UC26PresentationDirector;
 class UC26Settings;
 class UStaticMeshComponent;
 DECLARE_MULTICAST_DELEGATE(FOnC26MatchChanged);
@@ -30,6 +32,7 @@ public:
     UPROPERTY() TObjectPtr<UC26Settings> Preferences;
     UPROPERTY() TObjectPtr<UC26Audio> Audio;
     UPROPERTY() TObjectPtr<UC26CommentaryDirector> CommentaryDirector;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Presentation") TObjectPtr<UC26PresentationDirector> PresentationDirector;
     UPROPERTY() TObjectPtr<AC26CameraDirector> Director;
     UPROPERTY() TObjectPtr<AC26Stadium> Venue;
     UPROPERTY() TObjectPtr<AC26Effects> Effects;
@@ -256,10 +259,73 @@ public:
     void SetScreen(int S);
     void GoBack();
     void Toast(const FString& S);
+
+    // ---- Advanced Gameplay Control Systems ----
+    // System 1: Delivery History & Pitch Target Presets
+    UPROPERTY(Transient)
+    TArray<FC26DeliveryRecord> RecentDeliveries;
+    void RecordDeliveryOutcome(const FC26DeliveryRecord& Record);
+    void ApplyBowlingPresetTarget(FName PresetTarget);
+
+    // System 2: Field Planning Mode & Tactical Presets
+    bool bFieldPlanningMode = false;
+    EC26FieldPreset CurrentFieldPreset = EC26FieldPreset::Balanced;
+    int32 SelectedFielderIdx = -1;
+    FString FieldLegalityWarning;
+    bool bFieldIsLegal = true;
+    bool bCustomFieldApplied = false;
+
+    void ToggleFieldPlanning();
+    void SetFieldPlanning(bool bActive);
+    void ApplyFieldPreset(EC26FieldPreset Preset);
+    void SelectFielderForReposition(int32 AthleteIndex);
+    void MoveFielderToLocation(int32 AthleteIndex, const FVector& NewTurfLocation);
+    bool ValidateCurrentField();
+    const TArray<FVector>& GetFieldPositions() const { return FieldPositions; }
+
+    // System 3 & 4: Manual Fielding, Diving, Throwing & Catching
+    int ActiveFielder = -1, BackupFielder = -1;
+    FVector2D ManualFieldingStick = FVector2D::ZeroVector;
+    float FieldingAssistLevel = 0.30f;
+    bool bDivePromptActive = false;
+    bool bDiveRequested = false;
+    float DiveCooldown = 0.f;
+
+    void SetManualFielderInput(const FVector2D& Stick);
+    void TriggerManualDive();
+
+    bool bCatchOpportunityActive = false;
+    float CatchPromptTimer = 0.f;
+    float CatchOptimalTime = 0.f;
+    EC26CatchTiming LastCatchTiming = EC26CatchTiming::None;
+    float LastCatchQuality = 0.f;
+    void AttemptManualCatch();
+
+    bool bThrowTargetActive = false;
+    EC26ThrowTarget SelectedThrowTarget = EC26ThrowTarget::KeepersEnd;
+    float ThrowPowerCharge = 0.f;
+    bool bThrowCharging = false;
+    void SetThrowTarget(EC26ThrowTarget Target);
+    void StartThrowCharge();
+    void ReleaseThrowCharge();
+
+    // System 6: Match Presentation Callbacks
+    void OnPresentationCompleted();
+    void TriggerPresentationForOutcome(const C26::DeliveryOutcome& Outcome);
+    bool bFiftyCelebrated[3] = { false, false, false };
+    bool bCenturyCelebrated[3] = { false, false, false };
+    int32 ConsecutiveBoundaries = 0;
+    int32 ConsecutiveDots = 0;
+
+    // System 5: Batting Timing Feedback Meter
+    float LastTimingDeltaMs = 0.f;
+    FString LastShotName;
+    float LastTimingQualityPct = 0.f;
+    float ContactFeedbackTimer = 0.f;
 private:
     C26::DeliveryOutcome Pending;
     uint32 DeliveryId=0;
-    int ActiveFielder=-1,BackupFielder=-1,RunnerAId=0,RunnerBId=1;
+    int RunnerAId=0,RunnerBId=1;
     float RunVelocity=0,CatchClock=-1;
     bool ThrowReleased=false;
     bool BallReleased=false,ResettingMatch=false,KeeperTake=false;
@@ -297,6 +363,7 @@ private:
     void Collect(int Fielder,bool Catch);
     void Resolve();
     void AfterPresentation();
+
     void BuildMatchActors();
     void UpdateBallVisual();
     void BreakWicket(float WicketY);

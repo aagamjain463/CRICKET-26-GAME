@@ -163,4 +163,14 @@ public:
     void DrawBowlingTarget();
     void DrawBattingGestureCue();
     void DrawControlDebug();
+
+    // ---- Control Systems Overhaul ----
+    void DrawDeliveryHistory();
+    void DrawFieldPlanning();
+    void DrawFieldingHUD();
+    void DrawBattingTimingMeter();
+
+    // ---- Presentation & Cinematic Overlays ----
+    void DrawPresentationOverlay();
+    void DrawPresentationDebug();
 };
