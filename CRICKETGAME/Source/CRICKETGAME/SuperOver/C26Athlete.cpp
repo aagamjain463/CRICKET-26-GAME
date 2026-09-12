@@ -84,14 +84,13 @@ AC26Athlete::AC26Athlete()
     if(Player.Succeeded())Mesh->SetSkinnedAssetAndUpdate(Player.Object);
     static ConstructorHelpers::FObjectFinder<UAnimSequence> RunAsset(TEXT("/Game/Cricket26/Animations/A_Run.A_Run"));
     static ConstructorHelpers::FObjectFinder<UAnimSequence> IdleAsset(TEXT("/Game/Cricket26/Animations/A_Idle.A_Idle"));
-    // The two authored one-shot actions. Nothing else in the project animated a bat swing or a
-    // bowling action: both were procedural pose targets, which is why they read as positions
-    // rather than as motion. These are the first clips that actually key the action.
-    static ConstructorHelpers::FObjectFinder<UAnimSequence> BattingAsset(TEXT("/Game/Cricket26/Animations/A_C26_BattingDrive.A_C26_BattingDrive"));
-    static ConstructorHelpers::FObjectFinder<UAnimSequence> BowlingAsset(TEXT("/Game/Cricket26/Animations/A_C26_BowlingPace.A_C26_BowlingPace"));
     static ConstructorHelpers::FObjectFinder<UMaterialInterface> SkinAsset(TEXT("/Game/Cricket26/Materials/M_C26_PlayerSkin.M_C26_PlayerSkin"));
     RunClip=RunAsset.Object;IdleClip=IdleAsset.Object;TexturedSkin=SkinAsset.Object;
-    BattingClip=BattingAsset.Object;BowlingClip=BowlingAsset.Object;
+    // NOTE: the authored clips (incl. the two original family bases, BattingDrive and
+    // BowlingPace) are NOT loaded here -- they come through LoadShotLibrary()'s lazy
+    // LoadObject, so a checkout that has not yet run Tools/ImportAnimations.py boots
+    // clean and degrades to the procedural actions instead of logging import errors
+    // for every athlete CDO.
     Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);Mesh->SetCastShadow(false);
     Mesh->SetVisibility(false);Mesh->SetHiddenInGame(true);
     // Equipment rides in mesh space so it shares one frame with the posed skeleton.
@@ -1349,6 +1348,8 @@ void AC26Athlete::LoadShotLibrary()
         if(!Out)Out=LoadObject<UAnimSequence>(nullptr,Path);
         if(!Out)UE_LOG(LogTemp,Warning,TEXT("C26_SHOTLIB missing %s (run Tools/ImportAnimations.py)"),Path);
     };
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingDrive.A_C26_BattingDrive"),BattingClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_BowlingPace.A_C26_BowlingPace"),BowlingClip);
     Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingPull.A_C26_BattingPull"),BattingPullClip);
     Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingCut.A_C26_BattingCut"),BattingCutClip);
     Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingSweep.A_C26_BattingSweep"),BattingSweepClip);

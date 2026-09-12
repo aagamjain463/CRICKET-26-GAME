@@ -197,7 +197,7 @@ importer has done its own conversion. If it fails with an asset error, run
 
 ## 4. What is wired in C++ (and the safety rails)
 
-- `AC26Athlete::Animate` applies both clips through `ApplyAuthoredClip` (re-enabled 2026-09-13):
+- `AC26Athlete::Animate` applies the SELECTED clip through `ApplyAuthoredClip` (re-enabled 2026-09-13):
   delta-from-clip-rest retarget, weight-blended, with the two-phase time warp pinning the
   clips' defining frames to the match's own timing authority (`BatContactPoseTime`,
   `ReleasePoseTime`). Full clip authority through the stroke, short ramps at entry/exit.
