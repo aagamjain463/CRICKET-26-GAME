@@ -181,11 +181,13 @@ bool FC26GestureControlsTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("Pull vector"), PullVector(FVector2D(100, 100), FVector2D(160, 40)) == FVector2D(60, -60));
     TestEqual(TEXT("Dead zone swallows micro pulls"), PullMagnitude01(FVector2D(5, 5), 12.f, 220.f), 0.f);
     TestTrue(TEXT("Full pull saturates"), PullMagnitude01(FVector2D(400, 0), 12.f, 220.f) >= 0.999f);
-    // Aim: right = off side (+), left = leg side (-), up straightens.
-    TestTrue(TEXT("Off-side pull aims off"), AimAngleFromPull(FVector2D(120, 0), 12.f, 1.f, false) > 40.f);
-    TestTrue(TEXT("Leg-side pull aims leg"), AimAngleFromPull(FVector2D(-120, 0), 12.f, 1.f, false) < -40.f);
+    // Aim follows the SCREEN: the batting camera is behind the bowler, so a
+    // right-hander's off side is on the left of the screen. Drag right = leg
+    // side (-), drag left = off side (+), up straightens.
+    TestTrue(TEXT("Leg-side pull aims leg"), AimAngleFromPull(FVector2D(120, 0), 12.f, 1.f, false) < -40.f);
+    TestTrue(TEXT("Off-side pull aims off"), AimAngleFromPull(FVector2D(-120, 0), 12.f, 1.f, false) > 40.f);
     TestTrue(TEXT("Straight pull stays central"), FMath::Abs(AimAngleFromPull(FVector2D(0, -150), 12.f, 1.f, false)) < 8.f);
-    TestTrue(TEXT("Left-handed batter mirrors"), AimAngleFromPull(FVector2D(120, 0), 12.f, 1.f, true) < -40.f);
+    TestTrue(TEXT("Left-handed batter mirrors"), AimAngleFromPull(FVector2D(120, 0), 12.f, 1.f, true) > 40.f);
     // Power curve is bounded and monotonic.
     const float P0 = PowerFromPull(0.f, 0.35f, 1.f), P1 = PowerFromPull(1.f, 0.35f, 1.f);
     TestTrue(TEXT("Power bounded"), P0 >= 0.349f && P1 <= 1.001f && P1 > PowerFromPull(0.5f, 0.35f, 1.f));
@@ -252,12 +254,14 @@ bool FC26GestureControlsTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("Release out of reach"), ReleaseTimingFromDelta(900.f, 25.f, 83.f, 190.f, 250.f) == EC26ReleaseTiming::NoShot);
     TestTrue(TEXT("A run-up release reads very early"),
         ReleaseTimingFromDelta(-3200.f, 25.f, 83.f, 190.f, 250.f) == EC26ReleaseTiming::NoShot);
-    // Direction naming is batter-relative and mirrors cleanly.
-    TestTrue(TEXT("Cover named"), FString(DirectionZoneName(AimAngleFromPull(FVector2D(90, -90), 16.f, 1.f, false))) == TEXT("COVER"));
-    TestTrue(TEXT("Midwicket named"), FString(DirectionZoneName(AimAngleFromPull(FVector2D(-90, -90), 16.f, 1.f, false))) == TEXT("MIDWICKET"));
+    // Direction naming is batter-relative and mirrors cleanly. A right-hander
+    // drags LEFT to reach cover; a left-hander reaches the same zone by dragging
+    // RIGHT, because their off side is the other way round on screen.
+    TestTrue(TEXT("Cover named"), FString(DirectionZoneName(AimAngleFromPull(FVector2D(-90, -90), 16.f, 1.f, false))) == TEXT("COVER"));
+    TestTrue(TEXT("Midwicket named"), FString(DirectionZoneName(AimAngleFromPull(FVector2D(90, -90), 16.f, 1.f, false))) == TEXT("MIDWICKET"));
     TestTrue(TEXT("Left-hander sees the same zone for the same intent"),
-        FString(DirectionZoneName(AimAngleFromPull(FVector2D(-90, -90), 16.f, 1.f, true)))
-            == FString(DirectionZoneName(AimAngleFromPull(FVector2D(90, -90), 16.f, 1.f, false))));
+        FString(DirectionZoneName(AimAngleFromPull(FVector2D(90, -90), 16.f, 1.f, true)))
+            == FString(DirectionZoneName(AimAngleFromPull(FVector2D(-90, -90), 16.f, 1.f, false))));
     // Shot family: the SAME drag direction produces different strokes by length.
     TestTrue(TEXT("Off-side drag to a full ball drives"),
         FString(ShotFamily(35.f, 620.f, 42.f, .75f, -20.f, false, false)) == TEXT("COVER DRIVE"));

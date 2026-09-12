@@ -204,7 +204,9 @@ void AC26PlayerController::EndGesture(int Index,FVector2D P)
         if(M->PlayerBatting()&&(M->Phase==EC26Phase::Delivery||M->Phase==EC26Phase::RunUp))
         {
             FC26ShotIntent Shot=M->Intent;
-            if(Delta.Size()>18){Shot.Angle=FMath::Clamp(FMath::RadiansToDegrees(FMath::Atan2(Delta.X,-Delta.Y)),-135.f,135.f);Shot.Power=FMath::Clamp(.5f+Delta.Size()/380.f,.45f,1.f);}
+            // Screen-right is the batter's leg side (the camera is behind the
+            // bowler), so X is negated here exactly as in AimAngleFromPull.
+            if(Delta.Size()>18){Shot.Angle=FMath::Clamp(FMath::RadiansToDegrees(FMath::Atan2(-Delta.X,-Delta.Y)),-135.f,135.f);Shot.Power=FMath::Clamp(.5f+Delta.Size()/380.f,.45f,1.f);}
             M->Shot(Shot);
         }
     }

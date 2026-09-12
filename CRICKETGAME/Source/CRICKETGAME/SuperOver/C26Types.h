@@ -172,7 +172,10 @@ struct FC26ReleaseBar
     GENERATED_BODY()
     UPROPERTY(EditAnywhere, BlueprintReadWrite) float EarlyStart = 0.42f;
     UPROPERTY(EditAnywhere, BlueprintReadWrite) float GoodStart = 0.62f;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite) float PerfectStart = 0.855f;
+    /** Deliberately narrow: at Normal the live bar runs to a no-ball line of
+        0.957, so 0.90 leaves the PERFECT band 5.7% of the bar wide. A smaller
+        Perfect band is the difficulty knob - the top reward is a tighter target. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) float PerfectStart = 0.90f;
     UPROPERTY(EditAnywhere, BlueprintReadWrite) float NoBallStart = 0.945f;
     /** Widen (Easy) or narrow (Hard) Good+Perfect around the no-ball line. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite) float DifficultyWidth = 1.f;
