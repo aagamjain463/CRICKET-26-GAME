@@ -1436,8 +1436,11 @@ UAnimSequence* AC26Athlete::SelectSignalClip()
 
 TSet<int32>& AC26Athlete::DrivenFor(UAnimSequence* Clip)
 {
-    if(TSet<int32>* Found=ClipDriven.Find(Clip))return *Found;
-    TSet<int32>& Out=ClipDriven.Add(Clip);
+    static TSet<int32> Empty;
+    if(!Clip)return Empty;
+    const FName Key=Clip->GetFName();
+    if(TSet<int32>* Found=ClipDriven.Find(Key))return *Found;
+    TSet<int32>& Out=ClipDriven.Add(Key);
     GatherDrivenBones(Clip,Out);
     return Out;
 }

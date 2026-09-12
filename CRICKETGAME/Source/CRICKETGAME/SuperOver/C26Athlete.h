@@ -185,8 +185,13 @@ private:
         Measured once and cached: the answer never changes, and testing per frame would flicker
         every time a bone passed through its own rest pose. */
     void GatherDrivenBones(UAnimSequence* Clip,TSet<int32>& Out);
-    /** Driven-bone sets per clip pointer, so the shot library shares one cache. */
-    UPROPERTY(Transient) TMap<TObjectPtr<UAnimSequence>,TSet<int32>> ClipDriven;
+    /** Driven-bone sets per clip, so the shot library shares one cache. Keyed by
+        clip NAME, not pointer: a re-import swaps the UAnimSequence object but
+        keeps its name, so the cache survives it. Deliberately NOT a UPROPERTY --
+        UHT does not support TSet as a TMap value; GC safety comes from the
+        UPROPERTY clip members themselves (the map only ever holds clips those
+        members already reference). */
+    TMap<FName,TSet<int32>> ClipDriven;
     /** True once the shot library has had its one load attempt. */
     bool ShotLibraryLoaded=false;
     /** Pick the batting clip for the shot the simulation actually played: defence first,
