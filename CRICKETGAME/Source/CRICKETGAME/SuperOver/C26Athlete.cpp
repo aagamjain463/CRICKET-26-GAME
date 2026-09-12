@@ -1919,15 +1919,18 @@ void AC26Athlete::Animate(float Dt)
         // Full authority through the stroke, with a short ramp at each end so the entry out of the
         // stance and the exit into the follow-through are travelled rather than cut.
         const float Weight=FMath::Min(FMath::SmoothStep(0.f,.05f,ActionTime),FMath::SmoothStep(0.f,.09f,Length-ActionTime));
-        // DISABLED. A_C26_BattingDrive was keyed against the 67-bone KitBase rig, but it lands here
-        // on top of a fully solved procedural stroke and at full weight, so it does not refine that
-        // stroke -- it replaces every bone it drives. Measured on a capture, that is what produced
-        // the batter's contorted stance and the bowler's folded-in-half delivery: the clip wins the
-        // last write, and its arm keys put the bowling arm down by the hip, which reads as underarm.
-        // The procedural action is the one that is actually correct against this rig, so it keeps
-        // ownership. Re-enable only once the clip is verified pose-by-pose on SK_Cricketer_Match
-        // and applied as an ADDITIVE refinement rather than a replacement.
-        (void)ClipTime;(void)Weight;
+        // Re-enabled 2026-09-13. The original disable was correct: the first export of this clip
+        // was keyed under a wrong rig-facing assumption (the authoring script claimed +Y forward;
+        // the rig faces -Y in armature space), so its swing arc ran through the batter's back and
+        // replacing the procedural stroke with it produced the contorted stance seen on capture.
+        // The clip has since been re-solved with the facing repair (c26_anim_author.py::
+        // repair_facing) and expressed on this skeleton by Tools/rebuild_authored_clips.py +
+        // Tools/correct_authored_anim.py, whose geometric verification passes (feet planted,
+        // athletic crouch, hands together on the handle, hands 81 cm IN FRONT of the hips at
+        // contact, backlift behind the body). The clip owns the driven bones through the stroke
+        // by design; the procedural solve remains the blend basis at each end and the fallback
+        // if the clip ever fails to load.
+        ApplyAuthoredClip(BattingClip,BattingDriven,ClipTime,Weight);
     }
     if(Role==EC26Role::Bowler&&Action==EC26Action::Bowling&&BowlingClip)
     {
@@ -1941,9 +1944,11 @@ void AC26Athlete::Animate(float Dt)
             ?(Release>UE_KINDA_SMALL_NUMBER?(ActionTime/Release)*ClipRelease:ClipRelease)
             :ClipRelease+(ClipLength-ClipRelease)*FMath::Clamp((ActionTime-Release)/FMath::Max(UE_KINDA_SMALL_NUMBER,Length-Release),0.f,1.f);
         const float Weight=FMath::Min(FMath::SmoothStep(0.f,.06f,ActionTime),FMath::SmoothStep(0.f,.10f,Length-ActionTime));
-        // DISABLED for the same reason as the batting clip above: it overwrites the overarm circle
-        // C26Motion::BowlArm solves, and its own arm keys never get above the shoulder.
-        (void)ClipTime;(void)Weight;
+        // Re-enabled with the corrected clip (see the batting branch above for the history). The
+        // corrected release frame has the bowling hand fully extended above the head and slightly
+        // in front of the shoulder, the mark/gather keys hold the ball in both hands, and the hips
+        // carry the bowler 71 cm down the pitch through the action.
+        ApplyAuthoredClip(BowlingClip,BowlingDriven,ClipTime,Weight);
     }
     AimHead();
     // One filter stands between every authored pose in this function and the screen. Nothing above

@@ -46,11 +46,25 @@ cd ArtSource/Blender/Characters
 building its bone map, which is why the C++ refers to `Hips`, `LeftArm`, `RightForeArm` and so on.
 
 ```
-+Y = the character's FORWARD (toes point +Y)
+-Y = the character's FORWARD (toes point -Y in armature space)
 +X = the character's LEFT   (LeftArm tail is at +X)
 +Z = up
 Rest pose is a T-pose: arms straight out along +/-X, legs straight down.
 ```
+
+> **Facing correction (2026-09-13).** The block above originally claimed `+Y` forward. It was
+> wrong: measured against the shipped rig (toe vector in armature space is `(2.7, -21.4, 24.3)`),
+> the character faces **-Y**. Every keyframe was authored under the wrong assumption, so the
+> entire action arc — backlift, contact, the front-foot stride, the bowling release — landed on
+> the character's BACK: the batter drove the ball through his own spine. No rigid transform or
+> mirror of the solved poses can repair that (torso and limbs need different fixes); the keys are
+> repaired at solve time instead: `repair_facing()` in `c26_anim_author.py` conjugates the spine
+> twists by rotZ(180) (leans negate, turns keep) and rotates every IK target by
+> `(x,y,z) -> (-x,-y,z)` (poles keep x/z, negate y). The keys themselves stay readable as
+> authored (forward = +Y in the key comments); the repair is applied in `build_action` and by
+> `Tools/rebuild_authored_clips.py` offline. Verified results on the corrected clips: contact
+> hands **81 cm in front** of the hips, backlift **12 cm behind** them, bowler travels
+> **71 cm down the pitch**, release hand **71 cm above** the head origin.
 
 ## Two things that cost real time — do not rediscover them
 
@@ -94,15 +108,56 @@ Numeric, via `dump_pose.py` — not by eye:
 - Bowling front foot plants at the crease (`y 0.64`) and **stays planted** while the hips travel
   over it to `y 0.35`.
 
+## The pipeline (current, 2026-09-13)
+
+```
+c26_anim_author.py            the keys + solve + repair_facing (single source of truth)
+  |
+  +- Blender path:  Blender --background C26_KitBase_v002.blend --python c26_anim_author.py
+  |                 -> bake -> export_anim_fbx.py -> ArtSource/Exports/Animations/*.fbx
+  |
+  +- Offline path (no Blender needed; same keys, same solve -- reproduces the Blender
+     result bit-exactly on the frame-1 Hips rotation):
+       Tools/rebuild_authored_clips.py   solve + bake every frame  -> Animations/Solved/*.fbx
+       Tools/correct_authored_anim.py    v2->v1 retarget + ground pin + 11-point
+                                          geometric verification    -> Animations/Corrected/*.fbx
+       Tools/ImportAnimations.py         UE import onto the shipped skeleton
+```
+
+The offline path exists because the rig-facing repair had to be proven without a Blender
+install: `rebuild_authored_clips.py` imports the authoring module through a mathutils shim
+(`Tools/c26_mathutils_shim.py`), rebuilds the TRUE v2 T-pose rest from the shipped asset rig
+(`C26_KitBase_v001.fbx` scaled by 1/223.739 into the armature frame -- the anim FBX's own Model
+defaults hold the frame-1 POSE, not the rest), re-solves every key with `repair_facing`, and
+interpolates at 24 fps. `correct_authored_anim.py` then expresses the result on the shipped
+skeleton (world-relative orientation copy + hips delta at the measured rig ratio 2.23739 +
+per-frame ground pin) and refuses to emit anything that fails verification.
+
+## Verification actually performed (offline, on the CORRECTED clips)
+
+All 11 checks pass on both clips (`python3 Tools/correct_authored_anim.py <solved files>`):
+
+- BattingDrive (36 keys): stance ankles 24.7/29.3 cm PASS, hips 193 cm PASS, hands 17.9 cm apart
+  on the handle PASS, contact span 18.5 cm PASS, contact hands **+81.2 cm in front** of the hips
+  PASS, backlift hands **-12.1 cm behind** the hips PASS.
+- BowlingPace (46 keys): ankles 25.0/24.7 PASS, hips 196 PASS, mark: hands 2.7 cm apart on the
+  ball PASS, release hand 398 cm vs head 327 (71 cm above) PASS, hips 71.5 cm down the pitch PASS.
+
+The same facts are re-asserted IN ENGINE by `Cricket26.Anim.AuthoredClips`
+(`Tests/C26ProductionTests.cpp`), which samples the imported AnimSequences through
+`GetBoneTransform` after the FBX importer has done its own conversion.
+
 ## What is NOT done
 
-1. **Not imported into Unreal.** The FBX are in `ArtSource/Exports/Animations/`; there is no
-   `Tools/ImportAnimations.py` yet and no `AnimSequence` asset under `Content/Cricket26/Animations/`.
-2. **Not wired into the athlete.** `AC26Athlete::ApplyRecordedMotion()` exists but **nothing calls
-   it** — verified by grep; it is dead code. It also only handles run/idle, not a batting stroke or
-   a bowling action. Wiring these clips means new code, and `UPoseableMeshComponent` has no
-   `PlayAnimation`, so the clips must be sampled through `UAnimSequence::GetBoneTransform()` into
-   `Pose` the way `ApplyRecordedMotion` already does for run/idle.
+1. **UE-side import + in-match playtest of the corrected clips.** The corrected FBX exist and
+   pass offline verification; `Tools/ImportAnimations.py` now imports from `Corrected/`, and
+   `AC26Athlete::Animate` applies both clips (re-enabled 2026-09-13, see the branch comments at
+   the two `ApplyAuthoredClip` call sites), but the import + build + playtest must run on a Mac
+   with UE 5.8. The in-engine gate is `Cricket26.Anim.AuthoredClips` plus the BatLab/BowlLab
+   playtests.
+2. **Only two clips.** The shot library (pull, cut, sweep, glance, defence) and the bowling
+   variations (off-spin, leg-spin) are not authored yet; with the offline pipeline each new
+   clip is a pure-Python key-list addition to `c26_anim_author.py` away.
 3. **Timing authority.** `C26MatchGameMode` owns release and contact timing. The clips must be
    *driven* by those instants, not allowed to own them — the same rule the audio director follows.
    `A_C26_BattingDrive` contact is at frame 23 of 36 (0.958 s in) and `A_C26_BowlingPace` release is

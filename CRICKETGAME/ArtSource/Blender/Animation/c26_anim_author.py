@@ -11,10 +11,17 @@ play on the existing skeleton with no retargeting.
 
 Coordinate convention of this rig (measured, not assumed)
 --------------------------------------------------------
-    +Y = the character's FORWARD (toes point +Y)
+    -Y = the character's FORWARD (toes point -Y in armature space)
     +X = the character's LEFT   (LeftArm tail is at +X)
     +Z = up
 Rest pose is a T-pose: arms straight out along +/-X, legs straight down.
+This was measured against the shipped rig (C26_KitBase_v002 -> the exported
+FBX): the toe vector in armature space is (2.7, -21.4, 24.3), i.e. toes point
+-Y. The first version of this file assumed +Y was forward, which placed every
+IK target on the character's BACK (the drive went through the body). The keys
+below are still written in the original authoring frame (forward = +Y); the
+function repair_facing() transplants them onto the rig's true orientation at
+solve time, so the numbers stay readable as authored.
 
 Why the pose is specified with IK targets, not joint angles
 -----------------------------------------------------------
@@ -72,6 +79,52 @@ def R(*ops):
     for axis, deg in ops:
         out = Quaternion(AXES[axis], RAD(deg)) @ out
     return out
+
+
+# The rig's true forward in armature space (toes point -Y; see the header).
+RIG_FORWARD = Vector((0.0, -1.0, 0.0))
+
+
+def repair_facing(spec, hips_loc, ik):
+    """Transplant authored keys from the assumed frame (+Y forward) onto the
+    rig's real frame (-Y forward). Called at solve time, so the keys stay
+    readable as authored while the solve lands on the character's FRONT.
+
+    What it does, and why each part is what it is:
+      * spine spec quaternions conjugate by rotZ(180): the imagined forward is
+        the actual backward, so x-rotations (leans) and y-rotations negate,
+        while z-rotations (turn/chest twists) keep their body-relative meaning.
+      * IK targets, shoulder-relative offsets and hips offsets rotate by
+        (x, y, z) -> (-x, -y, z): the swing arc, the stride and the weight
+        transfer move to the front; left/right sides swap exactly as a proper
+        180-degree rotation swaps them, so a right-hander stays a right-hander.
+      * IK poles keep x and z and negate y: the pole x was iterated against
+        real renders of this rig (elbow OUTWARD), while its y was authored in
+        the imagined frame. The chain defaults baked into Rig.apply are
+        injected here as explicit, repaired poles so they can never fight this.
+    """
+    R180 = Quaternion(Vector((0.0, 0.0, 1.0)), 180.0)
+    spec = {name: (R180 @ q @ R180.conjugated()) for name, q in spec.items()}
+    if hips_loc is not None:
+        hips_loc = Vector((-hips_loc[0], -hips_loc[1], hips_loc[2]))
+    out = dict(ik) if ik else {}
+    # apply()'s baked-in chain poles, injected explicitly so they go through
+    # the same pole repair as authored poles (raw values; the loop below
+    # repairs them). Arms: elbows back and slightly down. Legs: knees forward.
+    defaults = {
+        'left_hand_pole': Vector((0.0, -1.0, -0.35)),
+        'right_hand_pole': Vector((0.0, -1.0, -0.35)),
+        'left_foot_pole': Vector((0.0, 1.0, 0.0)),
+        'right_foot_pole': Vector((0.0, 1.0, 0.0)),
+    }
+    for k, v in defaults.items():
+        out.setdefault(k, v)
+    for k, v in list(out.items()):
+        if k.endswith('_pole'):
+            out[k] = Vector((v[0], -v[1], v[2]))
+        else:
+            out[k] = Vector((-v[0], -v[1], v[2]))
+    return spec, hips_loc, out
 
 
 class Rig:
@@ -253,6 +306,7 @@ def build_action(rig, name, keys):
     arm.animation_data.action = action
 
     for f, spec, hips, ik in keys:
+        spec, hips, ik = repair_facing(spec, hips, ik)
         CURRENT_FRAME = f
         rig.apply(f, spec, hips, ik)
 
@@ -381,12 +435,14 @@ def bowling_keys():
     # Measured on this rig: the right shoulder sits at z=1.341 and the whole arm only reaches
     # 0.4745 m. So the highest a wrist can possibly get is about z=1.82, and an overhead release
     # has to be authored as "fully extended, almost straight up" -- there is no more arm to give.
-    # At the mark: tall, square, ball in both hands at chest height.
-    keys.append(K(1, 8, 4, 0, 0, 0, (-0.02, 0.14, -0.06), (-0.02, 0.14, -0.06),
+    # At the mark: tall, square, ball in both hands at chest height. The right hand crosses to
+    # the left (x -0.36 ~= shoulder width) so the two hands actually meet on the ball;
+    # relative-to-own-shoulder targets at the same offset would hold them 34 cm apart.
+    keys.append(K(1, 8, 4, 0, 0, 0, (-0.36, 0.14, -0.06), (-0.02, 0.14, -0.06),
                   (0.10, 0.10, 0.10), (-0.10, 0.08, 0.10), -0.06, 0.0,
                   (-1.0, -0.30, -0.20)))
     # Gather: weight sinks, hands drop together low in front.
-    keys.append(K(8, 12, 12, -4, 2, -4, (-0.02, 0.16, -0.34), (-0.02, 0.16, -0.34),
+    keys.append(K(8, 12, 12, -4, 2, -4, (-0.36, 0.16, -0.34), (-0.02, 0.16, -0.34),
                   (0.10, 0.24, 0.10), (-0.10, 0.30, 0.10), -0.19, 0.0,
                   (-1.0, -0.30, -0.30)))
     # Bound: airborne, the bowling arm swings back and down behind the hip.

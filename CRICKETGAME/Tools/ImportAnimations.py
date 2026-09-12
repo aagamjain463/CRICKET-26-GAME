@@ -2,9 +2,20 @@
 
 Run:  UnrealEditor-Cmd CRICKETGAME.uproject -run=pythonscript -script=Tools/ImportAnimations.py
 
-Sources: ArtSource/Exports/Animations/A_C26_BattingDrive.fbx and A_C26_BowlingPace.fbx,
-authored by ArtSource/Blender/Animation/c26_anim_author.py on the same 67-bone rig that
-SK_Cricketer_Match skins to (see Docs/AUTHORED_ANIMATION.md).
+Sources: ArtSource/Exports/Animations/Corrected/A_C26_BattingDrive.fbx and
+A_C26_BowlingPace.fbx. Pipeline (all offline, no Blender needed):
+
+  1. ArtSource/Blender/Animation/c26_anim_author.py holds the keyframes (one source of
+     truth). Its repair_facing() transplants the authored keys from the assumed frame
+     (+Y forward) onto the rig's true frame (-Y forward in armature space).
+  2. Tools/rebuild_authored_clips.py re-runs the authoring solve in pure Python and
+     bakes every frame into ArtSource/Exports/Animations/Solved/ (the v2 rig frame,
+     byte-compatible with a Blender bake+export).
+  3. Tools/correct_authored_anim.py retargets those onto the shipped skeleton and
+     writes Corrected/, with an 11-point geometric verification (feet planted, crouch,
+     hands on the handle, contact IN FRONT of the body, backlift behind it, bowling
+     release above the head, bowler travelling down the pitch). It exits non-zero if
+     any check fails, so never import unverified curves.
 
 These are ANIMATION-ONLY FBX (armature, no mesh). They are bound to the skeleton that
 SK_Cricketer_Match already uses, so the clips play on the existing mesh with no retargeting.
@@ -16,7 +27,7 @@ import os
 LIB = u.EditorAssetLibrary
 DEST = '/Game/Cricket26/Animations'
 MESH = '/Game/Cricket26/Characters/SK_Cricketer_Match'
-SRC_DIR = u.Paths.project_dir() + 'ArtSource/Exports/Animations/'
+SRC_DIR = u.Paths.project_dir() + 'ArtSource/Exports/Animations/Corrected/'
 
 CLIPS = ['A_C26_BattingDrive', 'A_C26_BowlingPace']
 
