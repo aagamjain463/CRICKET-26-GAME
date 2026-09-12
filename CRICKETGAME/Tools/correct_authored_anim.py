@@ -435,6 +435,7 @@ def main():
         'Solved/A_C26_BattingCut.fbx', 'Solved/A_C26_BattingSweep.fbx',
         'Solved/A_C26_BattingDefence.fbx', 'Solved/A_C26_BattingHook.fbx',
         'Solved/A_C26_BattingLoftedDrive.fbx', 'Solved/A_C26_BattingGlance.fbx',
+        'Solved/A_C26_BattingBackFootDefence.fbx', 'Solved/A_C26_BattingUpperCut.fbx',
         'Solved/A_C26_UmpireSignalWide.fbx', 'Solved/A_C26_UmpireSignalSix.fbx',
         'Solved/A_C26_UmpireSignalOut.fbx', 'Solved/A_C26_UmpireSignalFour.fbx',
         'Solved/A_C26_BowlingPace.fbx',
@@ -596,6 +597,31 @@ def main():
             checks.append(('follow: hands finish overhead', 29,
                            lambda m, w, t: (hands_height(m) > 355.0,
                                             'hands %.1f cm absolute' % hands_height(m))))
+        if 'BattingBackFootDefence' in f:
+            # Blocked BESIDE the body on the back foot: the hands stay close to
+            # the line (the forward defence presses 56 cm out in front), the bat
+            # is vertical at chest height, and the absorb frame is dead still.
+            checks.append(('contact: blocked beside the body', CONTACT_FRAME,
+                           lambda m, w, t: (-10.0 < hands_forward(m) < 30.0,
+                                            'hands %.1f cm in front of hips' % hands_forward(m))))
+            checks.append(('contact: bat vertical at chest height', CONTACT_FRAME,
+                           lambda m, w, t: (20.0 < hands_height(m) - hips_height(m) < 60.0,
+                                            'hands %.1f cm above hips' % (hands_height(m) - hips_height(m)))))
+            checks.append(('absorb: dead hands', 29,
+                           lambda m, w, t: (hands_height(m) - hips_height(m) < 60.0,
+                                            'hands %.1f cm above hips' % (hands_height(m) - hips_height(m)))))
+        if 'BattingUpperCut' in f:
+            # Head-height contact off side, level with or behind the body, and a
+            # finish steered up and away over the slips.
+            checks.append(('contact: met high on the off side', CONTACT_FRAME,
+                           lambda m, w, t: (hands_offside(m) > 10.0 and hands_height(m) - hips_height(m) > 85.0,
+                                            '%.1f cm off side, %.1f cm above hips' % (hands_offside(m), hands_height(m) - hips_height(m)))))
+            checks.append(('contact: behind the body line', CONTACT_FRAME,
+                           lambda m, w, t: (hands_forward(m) < 20.0,
+                                            'hands %.1f cm in front of hips' % hands_forward(m))))
+            checks.append(('follow: steered up and over the slips', 29,
+                           lambda m, w, t: (hands_offside(m) > 30.0 and hands_height(m) - hips_height(m) > 80.0,
+                                            '%.1f cm off side, %.1f cm above hips' % (hands_offside(m), hands_height(m) - hips_height(m)))))
         if 'BattingGlance' in f:
             # The quietest shot: low contact off the hip, and a deflection rather
             # than a swing -- the hands cross to fine leg and stay low.

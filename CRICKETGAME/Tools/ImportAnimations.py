@@ -37,7 +37,8 @@ SRC_DIR = u.Paths.project_dir() + 'ArtSource/Exports/Animations/Corrected/'
 
 CLIPS = [
     'A_C26_BattingDrive', 'A_C26_BattingPull', 'A_C26_BattingCut',
-    'A_C26_BattingSweep', 'A_C26_BattingDefence', 'A_C26_BattingHook',
+    'A_C26_BattingSweep', 'A_C26_BattingDefence', 'A_C26_BattingBackFootDefence',
+    'A_C26_BattingUpperCut', 'A_C26_BattingHook',
     'A_C26_BattingLoftedDrive', 'A_C26_BattingGlance',
     'A_C26_UmpireSignalWide', 'A_C26_UmpireSignalSix', 'A_C26_UmpireSignalOut',
     'A_C26_UmpireSignalFour',

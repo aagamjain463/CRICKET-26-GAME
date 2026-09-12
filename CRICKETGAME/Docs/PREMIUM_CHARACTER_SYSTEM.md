@@ -117,7 +117,7 @@ c26_anim_author.py            keyframes + IK solve + repair_facing  (single sour
   orientation copy per bone, hips delta at the measured rig ratio (2.23739), per-frame ground
   pin, root rename to `Armature.001`, v1 Lcl defaults. It **exits non-zero if any check fails**.
 
-### Verification (offline, 120 checks across 15 clips, all PASS)
+### Verification (offline, 138 checks across 17 clips, all PASS)
 
 | Clip | Check | Result |
 |---|---|---|
@@ -147,7 +147,9 @@ never by a visual guess:
 | BattingPull | leg side, weight back (short ball) | +83.2 front, 73.1 above hips, follow 48.5 leg side |
 | BattingCut | off side, weight back (short/wide) | 57.9 off side, 15.9 front (late, beside the body) |
 | BattingSweep | leg side, weight forward (full ball) | hips 124 (deep crouch), hands 18.1 above hips, 60.9 in front |
-| BattingDefence | `Defending` intent | +56 front, bat 17.5 above hips, absorb frame static |
+| BattingDefence | `Defending`, contact <108 cm (full ball) | +56 front, bat 17.5 above hips, absorb frame static |
+| BattingBackFootDefence | `Defending`, contact >108 cm (short ball) | blocked 17.1 in front (beside the body), bat 37 above hips |
+| BattingUpperCut | short ball, off side, contact >148 cm | 66.9 off side at 104.1 above hips, -1.9 front (behind the line) |
 | BattingHook | short ball, leg side, contact >148 cm high | contact 93.0 above hips (head height), follow -68.3 leg side / +122.6 above |
 | BattingLoftedDrive | `Loft`, contact <108 cm, straight/off | contact 78.4 front / 42.3 above (a drive's own), finish 361.8 overhead |
 | BattingGlance | angle <= -75 deg, full ball | contact 7.3 above hips (low), deflect -53.8 to fine leg at 21.7 above |
@@ -214,9 +216,9 @@ importer has done its own conversion. If it fails with an asset error, run
 1. **Mac verification of this session's changes.** The corrected FBX pass 11/11 offline checks,
    but the UE import + build + in-match playtest of the *corrected* clips has not run yet
    (sandbox has no UE). The exact sequence is in §6.
-2. **Shot library breadth.** Batting: drive, lofted drive, pull, hook, cut, sweep,
-   glance, defence. Bowling: pace, off-spin, leg-spin. Umpire: wide, six, out, four
-   signals. Pickup/catch/dive/throw and the keeper's take are deliberately
+2. **Shot library breadth.** Batting: drive, lofted drive, pull, hook, square cut,
+   upper cut, sweep, glance, forward + back-foot defence. Bowling: pace, off-spin,
+   leg-spin. Umpire: wide, six, out, four signals. Pickup/catch/dive/throw and the keeper's take are deliberately
    procedural (they aim at the live ball). Not yet: upper cut / late cut split,
    back-foot defence, keeper crouch idle. Each is a key-list addition to
    `c26_anim_author.py` — no Blender round-trip needed.

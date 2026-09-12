@@ -804,6 +804,65 @@ def bowling_legspin_keys():
     return keys
 
 
+def batting_backfoot_defence_keys():
+    """BACK-FOOT DEFENCE: the defensive answer to the short ball. Weight stays
+    ON THE BACK FOOT (no press forward), the bat stays vertical and CLOSE to the
+    body, and the ball is blocked beside the hip rather than under the eyes out
+    in front. The contrast with the forward defence IS the shot: same intent,
+    opposite footwork."""
+    keys = []
+    K = _batting_key_builder()
+    keys.append(_stance_key(K))
+    # Rock back onto the back foot; the hands rise with the bat.
+    keys.append(K(7, 56, 0, -10, -10, -26, (0.10, 0.06, 0.96), (0.10, 0.20, 0.09),
+                  (-0.14, 0.04, 0.09), -0.115, -0.01))
+    # The bat comes up vertical, beside the back shoulder.
+    keys.append(K(13, 54, 2, -8, -8, -22, (0.16, -0.02, 1.10), (0.10, 0.18, 0.09),
+                  (-0.14, 0.02, 0.09), -0.118, -0.02))
+    # Weight settles back; the front foot comes back toward the body line.
+    keys.append(K(18, 56, -2, -4, -6, -16, (0.12, 0.05, 1.02), (0.10, 0.18, 0.09),
+                  (-0.14, 0.03, 0.09), -0.12, -0.02))
+    # CONTACT: bat vertical, ball blocked BESIDE the body -- not pressed out in
+    # front as in the forward defence.
+    keys.append(K(23, 58, -2, -2, -4, -14, (0.10, 0.06, 0.98), (0.10, 0.18, 0.09),
+                  (-0.14, 0.03, 0.09), -0.12, -0.01))
+    # Absorb: dead hands, the ball drops away.
+    keys.append(K(29, 56, -2, 0, -2, -12, (0.10, 0.05, 0.96), (0.10, 0.18, 0.09),
+                  (-0.14, 0.03, 0.09), -0.12, -0.01))
+    keys.append(K(36, 50, -6, 0, -4, -14, (0.09, 0.16, 0.94), (0.10, 0.20, 0.09),
+                  (-0.14, 0.05, 0.09), -0.115, 0.0))
+    return keys
+
+
+def batting_uppercut_keys():
+    """Right-handed UPPER CUT: the hook's mirror. A short ball climbing past the
+    shoulder on the off side is ramped UP and OVER, behind the body line, the
+    bat finishing high and away toward the slips. Contact is HIGH (head height,
+    like the hook) -- which is what separates it from the square cut's slash at
+    chest height beside the hip."""
+    keys = []
+    K = _batting_key_builder()
+    keys.append(_stance_key(K))
+    # Rock back hard, hands lift early.
+    keys.append(K(7, 42, 0, -20, -12, -30, (0.14, -0.02, 1.14), (0.10, 0.20, 0.09),
+                  (-0.14, 0.02, 0.09), -0.11, -0.04))
+    # The coil: backlift at its highest, over the OFF shoulder this time.
+    keys.append(K(13, 30, 4, -26, -10, -26, (0.24, -0.10, 1.44), (0.11, 0.14, 0.09),
+                  (-0.15, -0.02, 0.09), -0.12, -0.05))
+    # The chest opens toward point.
+    keys.append(K(18, 22, -4, -14, -8, -18, (0.22, -0.02, 1.30), (0.12, 0.16, 0.09),
+                  (-0.14, 0.00, 0.09), -0.11, -0.03))
+    # CONTACT: high, off side, level with the body or fractionally behind it.
+    keys.append(K(23, 15, -2, -8, -2, -6, (0.30, -0.04, 1.30), (0.13, 0.18, 0.09),
+                  (-0.14, 0.00, 0.09), -0.10, -0.02))
+    # FOLLOW: the ball is steered up and away, over the slips.
+    keys.append(K(29, 10, -2, -12, 2, -2, (0.34, -0.16, 1.44), (0.13, 0.20, 0.09),
+                  (-0.13, 0.04, 0.09), -0.10, -0.01))
+    keys.append(K(36, 26, -7, 0, -4, -10, (0.14, 0.10, 1.02), (0.12, 0.22, 0.09),
+                  (-0.14, 0.05, 0.09), -0.115, 0.0))
+    return keys
+
+
 def _umpire_key_builder():
     """The umpire K: upright, facing down the pitch, hands targeted RELATIVE TO
     THEIR OWN SHOULDER (signals need the hands far apart, which the batting
@@ -971,6 +1030,8 @@ def main():
         ('A_C26_BattingCut', batting_cut_keys(), 1, 36),
         ('A_C26_BattingSweep', batting_sweep_keys(), 1, 36),
         ('A_C26_BattingDefence', batting_defence_keys(), 1, 36),
+        ('A_C26_BattingBackFootDefence', batting_backfoot_defence_keys(), 1, 36),
+        ('A_C26_BattingUpperCut', batting_uppercut_keys(), 1, 36),
         ('A_C26_BattingHook', batting_hook_keys(), 1, 36),
         ('A_C26_BattingLoftedDrive', batting_lofted_drive_keys(), 1, 36),
         ('A_C26_BattingGlance', batting_glance_keys(), 1, 36),

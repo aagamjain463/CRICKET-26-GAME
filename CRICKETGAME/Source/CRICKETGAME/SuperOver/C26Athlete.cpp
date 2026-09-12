@@ -1342,6 +1342,8 @@ void AC26Athlete::LoadShotLibrary()
     Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingCut.A_C26_BattingCut"),BattingCutClip);
     Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingSweep.A_C26_BattingSweep"),BattingSweepClip);
     Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingDefence.A_C26_BattingDefence"),BattingDefenceClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingBackFootDefence.A_C26_BattingBackFootDefence"),BattingBackFootDefenceClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingUpperCut.A_C26_BattingUpperCut"),BattingUpperCutClip);
     Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingHook.A_C26_BattingHook"),BattingHookClip);
     Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingLoftedDrive.A_C26_BattingLoftedDrive"),BattingLoftedDriveClip);
     Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingGlance.A_C26_BattingGlance"),BattingGlanceClip);
@@ -1364,13 +1366,19 @@ UAnimSequence* AC26Athlete::SelectBattingClip()
     // names the stroke from, so the clip shows the shot the scorecard printed.
     // Visual only: no branch below can change what the simulation scored.
     const float BallHeight=ContactTarget.IsZero()?60.f:ContactTarget.Z-GetActorLocation().Z;
-    if(Defending&&BattingDefenceClip)return BattingDefenceClip;
+    if(Defending&&BattingDefenceClip)
+        // The defensive answer to a short ball stays on the back foot; only a
+        // full ball is pressed forward under the eyes.
+        return (BallHeight>108.f&&BattingBackFootDefenceClip)?BattingBackFootDefenceClip:BattingDefenceClip;
     if(BallHeight>108.f)  // a short ball: the swing goes horizontal, not through
     {
         if(ShotAngle<=0.f)  // leg side: hook if it is up at the head, pull at the chest
             return BallHeight>148.f?(BattingHookClip?BattingHookClip:BattingPullClip)
                                    :(BattingPullClip?BattingPullClip:BattingClip);
-        return BattingCutClip?BattingCutClip:BattingClip;  // square/upper cut share the slash
+        // off side: upper cut if it is climbing past the shoulder, square cut at
+        // the chest.
+        return BallHeight>148.f&&BattingUpperCutClip?BattingUpperCutClip
+            :(BattingCutClip?BattingCutClip:BattingClip);
     }
     if(Loft&&FMath::Abs(ShotAngle)<40.f&&BattingLoftedDriveClip)return BattingLoftedDriveClip;
     if(ShotAngle<=-75.f)return BattingGlanceClip?BattingGlanceClip:BattingClip;  // leg glance
