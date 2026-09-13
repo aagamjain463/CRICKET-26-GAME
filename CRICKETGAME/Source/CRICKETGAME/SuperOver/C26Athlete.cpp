@@ -8,6 +8,7 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/Texture2D.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Components/TextRenderComponent.h"
 #include "ProceduralMeshComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -2130,6 +2131,9 @@ void AC26Athlete::Animate(float Dt)
     PlaceKit(Grip,Dir,Batting,Running);
     UpdateContactShadow();
 }
+
+USkinnedMeshComponent* AC26Athlete::VisualBody() const
+{return Presentation&&Presentation->IsActive()?static_cast<USkinnedMeshComponent*>(Presentation->Body.Get()):Mesh.Get();}
 
 UStaticMeshComponent* AC26Athlete::VisualBat() const
 {return Presentation&&Presentation->IsActive()?Presentation->GetBat():Bat.Get();}

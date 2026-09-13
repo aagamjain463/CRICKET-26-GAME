@@ -8,6 +8,41 @@
 #include "Engine/SkeletalMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "Materials/Material.h"
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FC26VisualConfigurationTest,"Cricket26.Characters.VisualConfiguration",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
+bool FC26VisualConfigurationTest::RunTest(const FString& Parameters)
+{
+    auto* Profile=NewObject<UC26CharacterProfile>();
+    Profile->Body=NewObject<USkeletalMesh>();Profile->UmpireBody=NewObject<USkeletalMesh>();
+    auto* Variant=NewObject<USkeletalMesh>();Profile->BodyPresets.Add(TEXT("Tall"),Variant);
+    TestTrue(TEXT("Unknown preset uses existing body"),Profile->ResolveBody(EC26VisualRole::Batter,TEXT("Unknown"))==Profile->Body);
+    TestTrue(TEXT("Named preset selects only the visual body"),Profile->ResolveBody(EC26VisualRole::Fielder,TEXT("Tall"))==Variant);
+    TestTrue(TEXT("Umpire body takes precedence over player preset"),Profile->ResolveBody(EC26VisualRole::Umpire,TEXT("Tall"))==Profile->UmpireBody);
+
+    FC26EquipmentDefinition Item;Item.Socket=TEXT("Grip_R");Item.Offset.SetLocation(FVector(1,2,3));
+    Item.LeftHandedOffset.SetLocation(FVector(4,5,6));
+    TestEqual(TEXT("Missing left socket retains right socket"),Item.ResolveSocket(true),Item.Socket);
+    TestTrue(TEXT("Missing left socket also retains right offset"),Item.ResolveOffset(true).Equals(Item.Offset));
+    Item.LeftHandedSocket=TEXT("Grip_L");
+    TestEqual(TEXT("Left socket selected"),Item.ResolveSocket(true),Item.LeftHandedSocket);
+    TestTrue(TEXT("Left offset selected with left socket"),Item.ResolveOffset(true).Equals(Item.LeftHandedOffset));
+    TestTrue(TEXT("Right hand retains original offset"),Item.ResolveOffset(false).Equals(Item.Offset));
+
+    TArray<FString> Errors;
+    TestTrue(TEXT("Empty material overrides preserve existing profiles"),Profile->ValidateMaterialOverrides(Errors));
+    const FName Slot=TEXT("HeadSurface");
+    auto* Material=UMaterial::GetDefaultMaterial(MD_Surface);
+    for(auto* Model:{Profile->Body.Get(),Profile->UmpireBody.Get(),Variant})
+        Model->GetMaterials().Add(FSkeletalMaterial(Material,true,false,Slot));
+    Profile->MaterialOverrides.Add(Slot,Material);
+    TestTrue(TEXT("Named head/body material slot accepted on every body"),Profile->ValidateMaterialOverrides(Errors));
+    Variant->GetMaterials().Reset();
+    TestFalse(TEXT("Preset missing named material slot rejected"),Profile->ValidateMaterialOverrides(Errors));
+    Errors.Reset();Profile->MaterialOverrides[Slot]=nullptr;
+    TestFalse(TEXT("Null override rejected"),Profile->ValidateMaterialOverrides(Errors));
+    return true;
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FC26CharacterRoleTest,"Cricket26.Characters.RoleIsolation",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
 bool FC26CharacterRoleTest::RunTest(const FString& Parameters)

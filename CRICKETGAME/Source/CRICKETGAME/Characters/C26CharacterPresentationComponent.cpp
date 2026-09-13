@@ -34,11 +34,15 @@ void FC26LocomotionSample::Update(const FTransform& Transform,float Dt)
     const float NewYaw=Transform.Rotator().Yaw;TurnRate=FMath::FindDeltaAngleDegrees(Yaw,NewYaw)/Dt;
     Distance+=Delta.Size2D();Position=Next;Yaw=NewYaw;
 }
-UC26CharacterPresentationComponent::UC26CharacterPresentationComponent(){PrimaryComponentTick.bCanEverTick=false;}
+UC26CharacterPresentationComponent::UC26CharacterPresentationComponent()
+{
+    PrimaryComponentTick.bCanEverTick=false;
+    ProfileAsset=TSoftObjectPtr<UC26CharacterProfile>(FSoftObjectPath(TEXT("/Game/Cricket26/Characters/Data/DA_C26_DefaultPlayer.DA_C26_DefaultPlayer")));
+}
 bool UC26CharacterPresentationComponent::TryActivate(AC26Athlete* Athlete)
 {
     if(bActive)return true;if(!Athlete)return false;
-    FString Path=TEXT("/Game/Cricket26/Characters/Data/DA_C26_DefaultPlayer.DA_C26_DefaultPlayer");
+    FString Path=ProfileAsset.ToSoftObjectPath().ToString();
     bool Slice=false;
 #if !UE_BUILD_SHIPPING
     Slice=FParse::Param(FCommandLine::Get(),TEXT("C26CharacterSlice"));
@@ -46,7 +50,7 @@ bool UC26CharacterPresentationComponent::TryActivate(AC26Athlete* Athlete)
 #endif
     static TSet<FString> Rejected;
     if(Rejected.Contains(Path))return false;
-    Profile=LoadObject<UC26CharacterProfile>(nullptr,*Path);
+    Profile=Path.IsEmpty()?nullptr:LoadObject<UC26CharacterProfile>(nullptr,*Path);
     TArray<FString> Errors;
     if(!Profile)Errors.Add(TEXT("No complete approved character profile at ")+Path);
     else Profile->Validate(Errors,!Slice);
@@ -73,7 +77,7 @@ bool UC26CharacterPresentationComponent::TryActivate(AC26Athlete* Athlete)
     Body->SetCollisionEnabled(ECollisionEnabled::NoCollision);Body->SetCastShadow(true);
     Body->SetVisibility(false);Body->SetHiddenInGame(true);
     Body->SetRelativeRotation(Profile->MeshToGameplayRotation);
-    Body->SetSkeletalMesh(Profile->Body);Body->SetAnimationMode(EAnimationMode::AnimationBlueprint);
+    AssignBodyMesh(Profile->Body);Body->SetAnimationMode(EAnimationMode::AnimationBlueprint);
     Body->SetAnimInstanceClass(UC26CricketerAnimInstance::StaticClass());
     Body->bEnableUpdateRateOptimizations=false;
     Body->VisibilityBasedAnimTickOption=EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
@@ -82,7 +86,7 @@ bool UC26CharacterPresentationComponent::TryActivate(AC26Athlete* Athlete)
     {
         auto* Part=NewObject<UStaticMeshComponent>(Athlete);
         Athlete->AddInstanceComponent(Part);Part->SetStaticMesh(Item.Mesh);
-        Part->SetupAttachment(Body,Item.Socket);Part->SetRelativeTransform(Item.Offset);
+        Part->SetupAttachment(Body,Item.ResolveSocket(false));Part->SetRelativeTransform(Item.ResolveOffset(false));
         Part->SetCollisionEnabled(ECollisionEnabled::NoCollision);Part->SetVisibility(false);Part->SetHiddenInGame(true);
         Part->RegisterComponent();Equipment.Add(Item.Slot,Part);
     }
@@ -119,32 +123,54 @@ void UC26CharacterPresentationComponent::Configure(AC26Athlete* Athlete)
     default:break;
     }
     ApplyVisualRole(Role);
-    if(Role!=EC26VisualRole::Umpire&&Profile->TeamMaterials.IsValidIndex(Athlete->TeamId))
+    ApplyBodyMaterials(Athlete->TeamId);
+}
+void UC26CharacterPresentationComponent::AssignBodyMesh(USkeletalMesh* Model)
+{
+    if(Body->GetSkeletalMeshAsset()==Model)return;
+    // Mesh assignment must clear the previous mesh's slot-index overrides. The existing native
+    // animation instance remains the pose driver; mesh selection does not select gameplay state.
+    Body->EmptyOverrideMaterials();Body->SetSkeletalMesh(Model);
+    ApplyMaterialOverrides();
+}
+void UC26CharacterPresentationComponent::ApplyMaterialOverrides()
+{
+    for(const auto& Override:Profile->MaterialOverrides)
+    {
+        const int32 Slot=Body->GetMaterialIndex(Override.Key);
+        if(Slot>=0&&Override.Value)Body->SetMaterial(Slot,Override.Value);
+    }
+}
+void UC26CharacterPresentationComponent::ApplyBodyMaterials(int32 Team)
+{
+    ApplyMaterialOverrides();
+    if(VisualRole!=EC26VisualRole::Umpire&&Profile->TeamMaterials.IsValidIndex(Team))
     {
         const int32 Slot=Body->GetMaterialIndex(Profile->JerseyMaterialSlot);
-        if(Slot>=0)Body->SetMaterial(Slot,Profile->TeamMaterials[Athlete->TeamId]);
+        if(Slot>=0)Body->SetMaterial(Slot,Profile->TeamMaterials[Team]);
     }
 }
 void UC26CharacterPresentationComponent::ApplyVisualRole(EC26VisualRole Role)
 {
     if(!bActive||uint8(Role)>uint8(EC26VisualRole::Umpire))return;
     VisualRole=Role;
-    USkeletalMesh* Model=Role==EC26VisualRole::Umpire?Profile->UmpireBody:Profile->Body;
-    if(Role!=EC26VisualRole::Umpire)if(auto* Variant=Profile->BodyPresets.Find(Appearance.BodyPreset))Model=*Variant;
-    if(Body->GetSkeletalMeshAsset()!=Model){Body->EmptyOverrideMaterials();Body->SetSkeletalMesh(Model);}
+    AssignBodyMesh(Profile->ResolveBody(Role,Appearance.BodyPreset));
     // Explicitly set BOTH visible and hidden flags on every role change, regardless of LOD.
     for(const auto& Pair:Equipment)
     {
         const bool Visible=C26Character::Allows(Role,Pair.Key);
         Pair.Value->SetVisibility(Visible);Pair.Value->SetHiddenInGame(!Visible);
     }
+    RefreshEquipmentAttachments();
+    CurrentClip=nullptr;CurrentState=NAME_None;Transition=NAME_None;TransitionAge=0;
+}
+void UC26CharacterPresentationComponent::RefreshEquipmentAttachments()
+{
     for(const auto& Item:Profile->Equipment)if(auto* Part=Equipment.Find(Item.Slot))
     {
-        const bool Left=Appearance.LeftHandedBat&&!Item.LeftHandedSocket.IsNone();
-        (*Part)->AttachToComponent(Body,FAttachmentTransformRules::KeepRelativeTransform,Left?Item.LeftHandedSocket:Item.Socket);
-        (*Part)->SetRelativeTransform(Left?Item.LeftHandedOffset:Item.Offset);
+        (*Part)->AttachToComponent(Body,FAttachmentTransformRules::KeepRelativeTransform,Item.ResolveSocket(Appearance.LeftHandedBat));
+        (*Part)->SetRelativeTransform(Item.ResolveOffset(Appearance.LeftHandedBat));
     }
-    CurrentClip=nullptr;CurrentState=NAME_None;Transition=NAME_None;TransitionAge=0;
 }
 FName UC26CharacterPresentationComponent::ReadyKey() const
 {

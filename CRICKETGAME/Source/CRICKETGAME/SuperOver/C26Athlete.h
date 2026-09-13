@@ -9,6 +9,7 @@ class UStaticMeshComponent;
 class UTextRenderComponent;
 class UAnimSequence;
 class UC26CharacterPresentationComponent;
+class USkinnedMeshComponent;
 
 UCLASS()
 class CRICKETGAME_API UC26PoseMesh : public UPoseableMeshComponent
@@ -32,6 +33,9 @@ public:
     FString ShotLabel=TEXT("COVER DRIVE");
     bool LeftHandedBat=false,LeftArmBowl=false;
     UStaticMeshComponent* VisualBat() const;
+    /** Presentation-only access, independent of the active mesh implementation. Gameplay hand,
+        receiving and bat queries retain their existing authoritative paths. */
+    UFUNCTION(BlueprintPure,Category="C26|Presentation") USkinnedMeshComponent* VisualBody() const;
     virtual void BeginPlay() override;
     UPROPERTY(VisibleAnywhere) TObjectPtr<UC26PoseMesh> Mesh;
     /** Legacy component retained for serialized levels; live players use the skinned mesh. */
