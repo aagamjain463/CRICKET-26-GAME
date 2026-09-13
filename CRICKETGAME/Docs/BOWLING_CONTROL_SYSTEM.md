@@ -36,17 +36,27 @@ SELECT DELIVERY TYPE -> SELECT EXACT PITCH TARGET -> SET MOVEMENT DIRECTION
 Every control is owned by the pointer that grabbed it, so two fingers drive two
 controls without stealing each other, and a second finger cannot re-release the ball.
 
+The delivery **type carousel is the only selectable option** on the planning
+screen (`STOCK PACE` is the default, and it is the first entry of every seam
+bowler's locker). The six quick preset buttons — YORKER, 4TH OFF, BOUNCER,
+WIDE Y, SL CUT, IN YORK — and the four-line delivery-plan readout were removed:
+they duplicated what the carousel, the pitch drag and the dial already say.
+
 ## The release bar
 
 Bands, left to right, at Normal difficulty (`ActiveBar`):
 
 ```
 TOO EARLY | EARLY | GOOD | PERFECT | NO BALL
-  0.00      0.42    0.62   0.855     0.957
+  0.00      0.42    0.62   0.90      0.957
 ```
 
 - **NO BALL sits directly next to PERFECT.** The reward and the risk are one
   decision apart, which is the whole point.
+- **The PERFECT band is deliberately narrow** — 5.7% of the bar (it was 10.2%
+  before `PerfectStart` moved from 0.855 to 0.90). Narrowing it is the difficulty
+  knob: the top reward is a tighter target, and `DifficultyWidth` scales it
+  further (Easy x1.45, Hard x0.72, Expert x0.55).
 - The bar is snapped to the bowling animation, not a UI timer: `NoBallStart` is
   derived from the front-foot plant, and the meter is `PhaseTime / RunUpDuration`.
 - Quality is a continuous curve, never a bucket. The peak sits 18% into the

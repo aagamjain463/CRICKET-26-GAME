@@ -10,6 +10,10 @@ class CRICKETGAME_API UC26Settings : public USaveGame
 public:
     UPROPERTY() int32 Difficulty=1;
     UPROPERTY() int32 Quality=2;
+    /** Broadcast session: 0 = Clear Day, 1 = Late Afternoon, 2 = Night (default). */
+    UPROPERTY() int32 EnvironmentProfile=2;
+    /** Prepared surface: 0 = Fresh, 1 = Used (default), 2 = Dry, 3 = Worn. */
+    UPROPERTY() int32 PitchCondition=1;
     UPROPERTY() float SoundVolume=.75f;
     UPROPERTY() float MusicVolume=.5f;
     UPROPERTY() float CommentaryVolume=.95f;

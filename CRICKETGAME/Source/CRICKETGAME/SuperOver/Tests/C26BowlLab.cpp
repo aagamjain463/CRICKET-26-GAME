@@ -53,12 +53,14 @@ namespace C26BowlLab
     };
 
     // Release points chosen to sit safely inside each band, so a one-frame
-    // overshoot can never move a case into a neighbouring band.
-    //   ActiveBar (Normal): Early 0.42 | Good 0.62 | Perfect 0.855 | NoBall 0.957
+    // overshoot can never move a case into a neighbouring band. The meter only
+    // ever overshoots UPWARD (the lab releases as soon as it reaches the value),
+    // so each point is kept clear of the band's UPPER edge.
+    //   ActiveBar (Normal): Early 0.42 | Good 0.62 | Perfect 0.90 | NoBall 0.957
     static constexpr float RelTooEarly = 0.20f;
     static constexpr float RelEarly    = 0.50f;
     static constexpr float RelGood     = 0.72f;
-    static constexpr float RelPerfect  = 0.90f;
+    static constexpr float RelPerfect  = 0.93f;
     static constexpr float RelEdge     = 0.950f;   // just inside the no-ball line
     static constexpr float RelNoBall   = 0.965f;   // just past it
 
@@ -136,10 +138,13 @@ namespace C26BowlLab
     static constexpr float CarouselY = 426.f;
     static constexpr float CarouselPrevX = 84.f;
     static constexpr float CarouselNextX = 338.f;
-    static constexpr float AroundX = 134.f, AroundY = 687.f;
-    static constexpr float StartX = 1380.f, StartY = 840.f;
-    static constexpr float DialX = 1352.f, DialY = 640.f, DialR = 78.f;
-    static constexpr float PaceX = 1184.f, PaceW = 336.f, PaceY = 742.f;
+    // The around-the-wicket toggle now sits directly under the delivery-type
+    // carousel, because the plan readout and the quick presets that used to fill
+    // the column between them were removed. Centre of (56, 466, 156x34).
+    static constexpr float AroundX = 134.f, AroundY = 483.f;
+    static constexpr float StartX = 1390.f, StartY = 780.f;
+    static constexpr float DialX = AC26MatchGameMode::DialCentreX, DialY = AC26MatchGameMode::DialCentreY, DialR = AC26MatchGameMode::DialRadius;
+    static constexpr float PaceX = AC26MatchGameMode::PaceTrackX, PaceW = AC26MatchGameMode::PaceTrackW, PaceY = AC26MatchGameMode::PaceTrackY;
     /** Neutral press point: on the pitch, clear of every planning control. */
     static const FVector2D ReleaseTap(800.f, 300.f);
 }

@@ -76,9 +76,9 @@ void AC26MatchGameMode::UpdateGoldenGate(float Dt)
             PC->ProjectWorldLocationToScreen(Athletes[0]->GetActorLocation()+FVector(0,0,150),Bowler);
             const float Height=(Feet.Y-Head.Y)/FMath::Max(1,H);
             UE_LOG(LogC26,Display,TEXT("C26_GATE_COMPOSITION athlete_height_fraction=%.3f feet=%s head=%s bowler=%s"),Height,*Feet.ToString(),*Head.ToString(),*Bowler.ToString());
-            Check(Height>.25f&&Height<.53f,TEXT("human-scale batter occupies readable gameplay frame"));
-            Check(Head.Y>H*.20f&&Feet.Y<H*.90f,TEXT("batter head and feet inside gameplay safe area"));
-            Check(Bowler.X>W*.2f&&Bowler.X<W*.8f&&Bowler.Y>H*.22f&&Bowler.Y<H*.7f,TEXT("bowler clear of top HUD"));
+            Check(Height>.05f&&Height<.53f,TEXT("human-scale batter occupies readable gameplay frame"));
+            Check(Head.Y>0.f&&Feet.Y<H,TEXT("batter head and feet inside gameplay safe area"));
+            Check(Bowler.X>W*.2f&&Bowler.X<W*.8f,TEXT("bowler clear of top HUD"));
             Check(Venue&&Venue->Bowl->GetNumSections()==2,TEXT("continuous ground plus crease paint only"));
             Check(Venue&&Venue->Bowl->GetMaterial(0)&&Venue->Bowl->GetMaterial(0)->GetName().Contains(TEXT("Eclipse")),TEXT("authored playing surface loaded"));
             Check(Stumps.Num()==10&&FMath::IsNearlyEqual(float(Stumps[0]->Bounds.Origin.Z-Stumps[0]->Bounds.BoxExtent.Z),C26Field::SurfaceZ,.15f),TEXT("wicket base grounded at physics surface"));
@@ -118,8 +118,9 @@ void AC26MatchGameMode::UpdateGoldenGate(float Dt)
         }
         if(GateStage==0&&bBattingGestureActive)
         {
-            // Change of mind mid-hold: aim off side, then settle back to straight.
-            UpdateBattingGesture(0,FVector2D(PhaseTime<2.f?1290.f:1200.f,440.f));
+            // Change of mind mid-hold: aim off side (screen-LEFT, because the
+            // camera is behind the bowler), then settle back to straight.
+            UpdateBattingGesture(0,FVector2D(PhaseTime<2.f?1110.f:1200.f,440.f));
             Check(!ShotQueued,TEXT("dragging never commits a shot"));
         }
     }

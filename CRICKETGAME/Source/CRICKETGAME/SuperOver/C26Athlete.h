@@ -151,6 +151,31 @@ private:
         -- so they drive this mesh directly with no retargeting step. See Docs/AUTHORED_ANIMATION.md. */
     UPROPERTY() TObjectPtr<UAnimSequence> BattingClip;
     UPROPERTY() TObjectPtr<UAnimSequence> BowlingClip;
+    /** The shot library. Every batting clip shares the drive's frame layout (36 frames,
+        contact at 23) and every bowling clip the pace layout (46 frames, release at 31),
+        so the same time-warp constants pin them all to the match's own timing. These are
+        loaded lazily on first use (not via ConstructorHelpers) so a checkout that has not
+        run Tools/ImportAnimations.py yet still boots; a null clip falls back to its
+        family's base clip, then to the procedural action. */
+    UPROPERTY() TObjectPtr<UAnimSequence> BattingPullClip;
+    UPROPERTY() TObjectPtr<UAnimSequence> BattingCutClip;
+    UPROPERTY() TObjectPtr<UAnimSequence> BattingSweepClip;
+    UPROPERTY() TObjectPtr<UAnimSequence> BattingDefenceClip;
+    UPROPERTY() TObjectPtr<UAnimSequence> BattingBackFootDefenceClip;
+    UPROPERTY() TObjectPtr<UAnimSequence> BattingHookClip;
+    UPROPERTY() TObjectPtr<UAnimSequence> BattingUpperCutClip;
+    UPROPERTY() TObjectPtr<UAnimSequence> BattingLateCutClip;
+    UPROPERTY() TObjectPtr<UAnimSequence> BattingLoftedDriveClip;
+    UPROPERTY() TObjectPtr<UAnimSequence> BattingGlanceClip;
+    UPROPERTY() TObjectPtr<UAnimSequence> BowlingOffSpinClip;
+    UPROPERTY() TObjectPtr<UAnimSequence> BowlingLegSpinClip;
+    /** Umpire signals: target-free pose actions (unlike pickup/catch/dive/throw,
+        which solve toward the LIVE ball and must stay procedural). Every signal
+        clip ends ON the signal pose, so the runtime can hold it indefinitely. */
+    UPROPERTY() TObjectPtr<UAnimSequence> UmpireWideClip;
+    UPROPERTY() TObjectPtr<UAnimSequence> UmpireSixClip;
+    UPROPERTY() TObjectPtr<UAnimSequence> UmpireOutClip;
+    UPROPERTY() TObjectPtr<UAnimSequence> UmpireFourClip;
     UPROPERTY() TObjectPtr<UMaterialInterface> TexturedSkin;
     void ApplyRecordedMotion(bool Running, bool Batting);
     /** Sample a whole-body authored action over Pose. This is the same bind-by-name retarget
@@ -165,9 +190,30 @@ private:
         Measured once and cached: the answer never changes, and testing per frame would flicker
         every time a bone passed through its own rest pose. */
     void GatherDrivenBones(UAnimSequence* Clip,TSet<int32>& Out);
-    TSet<int32> BattingDriven,BowlingDriven;
-    /** True once the driven-bone sets have been measured for this athlete. */
-    bool DrivenBonesCached=false;
+    /** Driven-bone sets per clip, so the shot library shares one cache. Keyed by
+        clip NAME, not pointer: a re-import swaps the UAnimSequence object but
+        keeps its name, so the cache survives it. Deliberately NOT a UPROPERTY --
+        UHT does not support TSet as a TMap value; GC safety comes from the
+        UPROPERTY clip members themselves (the map only ever holds clips those
+        members already reference). */
+    TMap<FName,TSet<int32>> ClipDriven;
+    /** True once the shot library has had its one load attempt. */
+    bool ShotLibraryLoaded=false;
+    /** Pick the batting clip for the shot the simulation actually played: defence first,
+        then the shot angle (leg side vs off side) crossed with the stride intent (weight
+        back vs forward). Never null: falls back to the drive, then the caller's null check
+        falls back to the procedural stroke. */
+    UAnimSequence* SelectBattingClip();
+    /** Pick the bowling action for the delivery the match asked for: finger-spin types get
+        the low round-arm release, wrist-spin types the tall whippy one, seam/swing types
+        the pace action. */
+    UAnimSequence* SelectBowlingClip();
+    /** The clip for the signal the umpire is currently signalling, or null (the
+        procedural signal pose then stands, as it always has). */
+    UAnimSequence* SelectSignalClip();
+    /** Lazy load of the library clips (see the block above for why not the ctor). */
+    void LoadShotLibrary();
+    TSet<int32>& DrivenFor(UAnimSequence* Clip);
     // The Mixamo rig is a T-pose facing mesh +Y with mesh +X out to the character's LEFT.
     // Rig() is the only conversion used for posing: it turns (forward, right, up) in real
     // centimetres into that mesh space, so every authored target below reads as cricket

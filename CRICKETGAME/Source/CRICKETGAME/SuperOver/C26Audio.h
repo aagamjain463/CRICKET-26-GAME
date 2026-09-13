@@ -1,6 +1,7 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "C26CommentaryTypes.h"
 #include "C26Commentary.h"
 #include "C26Audio.generated.h"
 
@@ -31,10 +32,10 @@ public:
     virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
     // ---- legacy API (kept for existing call sites) ----
-    void Initialize();
-    void Cue(FName Name, float Volume = 1.f);
+    virtual void Initialize();
+    virtual void Cue(FName Name, float Volume = 1.f);
     void SetTension(float Amount, float Volume);
-    void Reset();
+    virtual void Reset();
     float Master = .75f;
 
     // ---- mix buses (0..1, each multiplied with Master) ----
@@ -46,23 +47,23 @@ public:
     void SyncVolumesFromSettings();
 
     // ---- spatial hero transients (broadcast field-mic treatment) ----
-    void CueAt(FName Name, const FVector& At, float Volume = 1.f);
+    virtual void CueAt(FName Name, const FVector& At, float Volume = 1.f);
 
     // ---- commentary director bridge ----
-    void PlayCommentarySound(USoundBase* Sound, const FString& SubtitleText, float Duration);
+    virtual void PlayCommentarySound(USoundBase* Sound, const FString& SubtitleText, float Duration);
     bool IsCommentaryPlaying() const;
     void StopCommentary();
 
     // ---- commentary event API (called exactly once per match event) ----
-    void NotifyMatchStart();
-    void NotifyPreBall(const FC26CommentaryContext& Ctx);
-    void NotifyFinalBallPre();
-    void NotifyDelivery(const FC26CommentaryContext& Ctx);
-    void NotifyResult(const FC26CommentaryContext& Ctx);
-    void NotifyWicket(const FC26CommentaryContext& Ctx);
-    void NotifyInningsBreak();
-    void NotifyChaseStart();
-    void NotifyMatchResult(bool bPlayerWon, bool bTie);
+    virtual void NotifyMatchStart();
+    virtual void NotifyPreBall(const FC26CommentaryContext& Ctx);
+    virtual void NotifyFinalBallPre();
+    virtual void NotifyDelivery(const FC26CommentaryContext& Ctx);
+    virtual void NotifyResult(const FC26CommentaryContext& Ctx);
+    virtual void NotifyWicket(const FC26CommentaryContext& Ctx);
+    virtual void NotifyInningsBreak();
+    virtual void NotifyChaseStart();
+    virtual void NotifyMatchResult(bool bPlayerWon, bool bTie);
     void NoteBallCompleted(int32 RunsScored, bool bWicket, bool bBoundary);
 
     // ---- debug ----
@@ -76,7 +77,7 @@ public:
     UPROPERTY() FString ActiveSubtitle;
     float SubtitleUntil = -1.f;
 
-private:
+protected:
     struct FQueuedLine
     {
         int32 Row = -1;

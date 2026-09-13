@@ -57,8 +57,9 @@ void AC26CameraDirector::Reset()
     IsReplaying=HasFielder=ShotAerial=Runners=false;
     IsReplayOutro=false;ReplayOutroTime=0.f;ReplayOutroAlpha=0.f;
     ContactPending=ReleasePending=OutcomePending=false;ReleaseStamp=-1;
-    HaveCamera=false;LastPhase=EC26Phase::Result;EventName=NAME_None;
+    HaveCamera=false;LastPhase=EC26Phase::Result;EventName=NAME_None;EventDetail=NAME_None;
     ContactPoint=FVector::ZeroVector;
+    bFieldPlanning=false;
 }
 
 void AC26CameraDirector::SetFieldingTarget(const FVector& Position,bool HasTarget,bool RunnersActive)
@@ -73,9 +74,9 @@ void AC26CameraDirector::MarkContact(float Quality,bool Aerial,const FVector& Wh
     UE_LOG(LogC26Camera,Verbose,TEXT("Contact stamped at %.2f quality %.2f"),ContactStamp,Quality);
 }
 
-void AC26CameraDirector::MarkOutcome(FName Event,const FVector& Focus)
+void AC26CameraDirector::MarkOutcome(FName Event,const FVector& Focus,FName Detail)
 {
-    EventName=Event;EventFocus=Focus;ReplayEnd=RecordClock;OutcomePending=true;
+    EventName=Event;EventDetail=Detail;EventFocus=Focus;ReplayEnd=RecordClock;OutcomePending=true;
 }
 
 void AC26CameraDirector::Look(EC26CameraMode NewMode,const FVector& From,const FVector& At,float Fov,bool Cut,float Dt,float TrackRate,float MaxDrop)
@@ -93,7 +94,7 @@ void AC26CameraDirector::Look(EC26CameraMode NewMode,const FVector& From,const F
             const float Need=Rise/FMath::Tan(FMath::DegreesToRadians(MaxDrop));
             FVector Flat(Safe.X-At.X,Safe.Y-At.Y,0);
             const float Have=Flat.Size();
-            if(Have<Need)
+            if(Have<Need)\
             {
                 Flat=Have>1.f?Flat/Have:FVector(0,1,0);
                 Safe.X=At.X+Flat.X*Need;Safe.Y=At.Y+Flat.Y*Need;
@@ -139,6 +140,20 @@ void AC26CameraDirector::Direct(EC26Phase Phase,float Time,bool PlayerBatting,co
     }
 #endif
     const bool Cut=LastPhase!=Phase;LastPhase=Phase;
+    if(bFieldPlanning)
+    {
+        // Elevated tactical camera framing the whole cricket ground cleanly:
+        // Eye at Z = 23500 with FOV 50 frames the entire ground boundary oval
+        // at a compact, readable scale (~550px circle diameter) comfortably centered on screen,
+        // leaving clean breathing margins from the top status header and the bottom formation bar.
+        // All 11 players and the boundary rope are 100% visible and easily draggable.
+        // ROTATION ONLY: the eye sits south of the aim (same height/FOV as before) so the
+        // top-down view settles yaw-north: striker/north at the top, bowler/south at the
+        // bottom, matching the broadcast behind-the-bowler view. A perfectly vertical
+        // eye==aim leaves yaw ambiguous (defaults east-up) and reads as rotated.
+        Look(EC26CameraMode::FieldPlanning,FVector(0.f,-1750.f,23500.f),FVector(0.f,250.f,0.f),50.f,Mode!=EC26CameraMode::FieldPlanning,Dt,6.f,90.f);
+        return;
+    }
     if(Phase==EC26Phase::Menu)
     {
         const float A=-.62f+Time*.0055f;
@@ -170,7 +185,7 @@ void AC26CameraDirector::Direct(EC26Phase Phase,float Time,bool PlayerBatting,co
     {
         // TELEVISION LIVE BROADCAST CAMERA (BOTH WHILE BATTING AND BOWLING):
         // Stationed generously backward and above so the entire bowler (from head to spikes)
-        // is completely visible on the pitch, looking straight down the 22 yards of the pitch.
+        // is completely visible on the turf, looking straight down the 22 yards of the pitch.
         // Dollies forward smoothly in lockstep with the bowler's run-up with zero jump cuts.
         const FVector BowlerPos = BowlerActor ? BowlerActor->GetActorLocation() : FVector(-20.f, -2700.f, 5.f);
         const FVector StrikerTarget = StrikerActor ? StrikerActor->GetActorLocation() + FVector(0, 0, 65.f) : FVector(-10.f, 900.f, 65.f);
@@ -356,18 +371,41 @@ bool AC26CameraDirector::PlayReplay(float Dt,FVector& Ball,const TArray<TObjectP
     }
     else
     {
-        // Smooth variable playback curve: 0.52x dramatic slow-motion during delivery and impact
-        const bool DeliveryZone = ReleaseStamp >= 0 && ReplayClock >= ReleaseStamp - 0.20f && ReplayClock <= ReleaseStamp + 0.35f;
-        const bool ImpactZone = ContactStamp >= 0 && ReplayClock >= ContactStamp - 0.15f && ReplayClock <= ContactStamp + 0.50f;
-        const float TargetRate = (DeliveryZone || ImpactZone) ? 0.48f : 0.68f;
-        PlaybackRate = FMath::FInterpTo(PlaybackRate, TargetRate, Dt, 4.0f);
-
+        // Event-tailored slow motion playback rate curve:
+        // Run-up: 0.95x | Delivery stride: 0.45x | Contact/Wicket impact: 0.22x | Outfield flight: 0.58x | Outro: 0.75x
+        float TargetRate = 0.68f;
+        if (ReleaseStamp >= 0 && ReplayClock < ReleaseStamp - 0.25f)
+        {
+            TargetRate = 0.95f;
+        }
+        else if (ReleaseStamp >= 0 && ReplayClock < ReleaseStamp + 0.15f)
+        {
+            TargetRate = 0.45f;
+        }
+        else if (ContactStamp >= 0 && FMath::Abs(ReplayClock - ContactStamp) < 0.22f)
+        {
+            TargetRate = 0.22f;
+        }
+        else if (Wicket && ContactStamp < 0 && ReleaseStamp >= 0 && FMath::Abs(ReplayClock - (ReleaseStamp + 0.55f)) < 0.25f)
+        {
+            TargetRate = 0.20f;
+        }
+        else if (ReplayShot == 1)
+        {
+            TargetRate = 0.58f;
+        }
+        else
+        {
+            TargetRate = 0.72f;
+        }
+        PlaybackRate = FMath::FInterpTo(PlaybackRate, TargetRate, Dt, 4.5f);
         ReplayClock += Dt * PlaybackRate;
     }
 
     bool Cut=false;
-    if(ReplayShot==0&&ContactStamp>=0&&ReplayClock>ContactStamp+.70f){ReplayShot=1;Cut=true;}
-    if(ReplayShot==1&&ReplayEnd>ReplayClock+1.35f&&ReplayClock>ContactStamp+1.5f)
+    if(ReplayShot==0&&ContactStamp>=0&&ReplayClock>ContactStamp+.65f){ReplayShot=1;Cut=true;}
+    else if(ReplayShot==0&&Wicket&&ContactStamp<0&&ReleaseStamp>=0&&ReplayClock>ReleaseStamp+.85f){ReplayShot=1;Cut=true;}
+    if(ReplayShot==1&&ReplayEnd>ReplayClock+1.35f&&ReplayClock>(ContactStamp>=0?ContactStamp:ReleaseStamp)+1.5f)
     {ReplayClock=FMath::Max(ReplayClock,ReplayEnd-1.5f);ReplayShot=2;Cut=true;}
 
     const float SampleTime = FMath::Min(ReplayClock, Window);
@@ -397,22 +435,65 @@ bool AC26CameraDirector::PlayReplay(float Dt,FVector& Ball,const TArray<TObjectP
     }
     else if(ReplayShot==1&&Wicket)
     {
-        Look(EC26CameraMode::ReplayPitch,EventFocus+FVector(-380,-420,95),FMath::Lerp(EventFocus+FVector(0,0,48),Ball,.30f),35,Cut,Dt,5.5f);
+        if(EventDetail==TEXT("BOWLED"))
+        {
+            // Reverse-pitch stump camera looking back toward the bowler through broken timber
+            const FVector ReverseStumpEye(18.f,1140.f,58.f);
+            const FVector ReverseStumpAim=FMath::Lerp(FVector(0.f,-400.f,120.f),Ball,0.20f);
+            Look(EC26CameraMode::ReplayPitch,ReverseStumpEye,ReverseStumpAim,34.f,Cut,Dt,6.0f);
+        }
+        else if(EventDetail==TEXT("CAUGHT"))
+        {
+            // Fielder intercept camera: tightly framed on catching fielder
+            const FVector FielderCam=EventFocus+FVector(320.f,-380.f,110.f);
+            Look(EC26CameraMode::Catch,FielderCam,EventFocus+FVector(0.f,0.f,70.f),32.f,Cut,Dt,5.5f);
+        }
+        else
+        {
+            Look(EC26CameraMode::RunOut,EventFocus+FVector(-380.f,-420.f,95.f),FMath::Lerp(EventFocus+FVector(0.f,0.f,48.f),Ball,0.30f),35.f,Cut,Dt,5.5f);
+        }
+    }
+    else if(ReplayShot==1&&EventName==TEXT("SIX"))
+    {
+        // High soaring tracking arc: elevated deep mid-wicket camera tracking ball into the illuminated upper stands
+        const FVector SixCam=FVector(3800.f,1800.f,1400.f);
+        const float ElevFov=FMath::Clamp(44.f-(Ball.Z-300.f)*0.008f,30.f,48.f);
+        Look(EC26CameraMode::LoftedShotTracking,SixCam,Ball,ElevFov,Cut,Dt,5.0f,40.f);
+    }
+    else if(ReplayShot==1&&EventName==TEXT("FOUR"))
+    {
+        // Low turf rail camera: skimming across striped lawn chasing the skidding ball into LED boundary
+        const FVector Trajectory=FVector(Ball.X-Striker.X,Ball.Y-Striker.Y,0.f).GetSafeNormal(UE_SMALL_NUMBER,FVector(0.f,1.f,0.f));
+        const FVector Side(-Trajectory.Y,Trajectory.X,0.f);
+        const FVector TurfCam=Ball-Trajectory*820.f+Side*360.f+FVector(0.f,0.f,38.f);
+        Look(EC26CameraMode::BoundaryTracking,TurfCam,Ball,36.f,Cut,Dt,6.0f,18.f);
     }
     else if(ReplayShot==1)
     {
-        Look(EC26CameraMode::ReplayPitch,FVector(-20,-1450,195),FMath::Lerp(Anchor,Ball,.50f),34,Cut,Dt,5.5f);
+        Look(EC26CameraMode::ReplayPitch,FVector(-20.f,-1450.f,195.f),FMath::Lerp(Anchor,Ball,0.50f),34.f,Cut,Dt,5.5f);
     }
     else // ReplayShot == 2
     {
         if(Boundary)
         {
             const FVector Radial=FVector(Ball.X,Ball.Y,0).GetSafeNormal(UE_SMALL_NUMBER,FVector(0,-1,0));
-            Look(EC26CameraMode::ReplayBoundary,Ball-Radial*1450.f+FVector(-Radial.Y,Radial.X,0)*850.f+FVector(0,0,420),Ball,38,Cut,Dt,4.5f);
+            Look(EC26CameraMode::ReplayBoundary,Ball-Radial*1450.f+FVector(-Radial.Y,Radial.X,0)*850.f+FVector(0,0,420.f),Ball,38.f,Cut,Dt,4.5f);
+        }
+        else if(Wicket)
+        {
+            Look(EC26CameraMode::Celebration,FVector(-20.f,-1100.f,160.f),FVector(-20.f,-700.f,120.f),32.f,Cut,Dt,4.0f);
         }
         else
         {
-            Look(EC26CameraMode::Celebration,CameraStrikerMark+FVector(300,-400,170),CameraStrikerMark+FVector(0,-20,125),32,Cut,Dt,4.0f);
+Look(
+    EC26CameraMode::Celebration,
+    Striker + FVector(300.f, -400.f, 170.f),
+    Striker + FVector(0.f, -20.f, 125.f),
+    32.f,
+    Cut,
+    Dt,
+    4.0f
+);
         }
     }
     return true;
@@ -429,6 +510,7 @@ void AC26CameraDirector::Restore(const TArray<TObjectPtr<AC26Athlete>>& Actors)
     LastPhase=EC26Phase::Menu;
     PlaybackRate=1;
     ReplayShot=0;
+    bFieldPlanning=false;
 }
 
 void AC26CameraDirector::ApplyFrame(const FC26ReplayFrame& A,const FC26ReplayFrame& B,float T,const TArray<TObjectPtr<AC26Athlete>>& Actors)
@@ -471,4 +553,126 @@ void AC26CameraDirector::ApplyFrame(const FC26ReplayFrame& A,const FC26ReplayFra
         Tr.SetScale3D(FMath::Lerp(A.Props[I].GetScale3D(),B.Props[I].GetScale3D(),T));
         if(ReplayProps[I])ReplayProps[I]->SetWorldTransform(Tr);
     }
+}
+
+void AC26CameraDirector::DirectPresentation(EC26CinematicCamera Lens, const FVector& FocusPrimary, const FVector& FocusSecondary, float NormalizedProgress, float Dt, bool bCut)
+{
+    FVector Eye = FVector::ZeroVector;
+    FVector Aim = FocusPrimary + FVector(0, 0, 140.f);
+    float Fov = 38.f;
+    float TrackRate = 5.5f;
+
+    FVector Separation = FocusSecondary - FocusPrimary;
+    Separation.Z = 0.f;
+    const float SepDist = Separation.Size();
+    const FVector Forward = SepDist > 10.f ? (Separation / SepDist) : FVector(0, 1, 0);
+    const FVector Right = FVector(-Forward.Y, Forward.X, 0.f);
+
+    switch (Lens)
+    {
+    case EC26CinematicCamera::StadiumWide:
+    {
+        Eye = FVector(2800.f, -5400.f, 3200.f);
+        Aim = FocusPrimary.IsZero() ? FVector(0.f, 0.f, 100.f) : FocusPrimary + FVector(0, 0, 80.f);
+        Fov = 56.f;
+        TrackRate = 3.5f;
+        break;
+    }
+    case EC26CinematicCamera::HighAngleToss:
+    {
+        Eye = FocusPrimary + FVector(220.f, -280.f, 480.f);
+        Aim = FocusPrimary + FVector(0.f, 0.f, 90.f);
+        Fov = 42.f;
+        TrackRate = 4.5f;
+        break;
+    }
+    case EC26CinematicCamera::TwoShot:
+    {
+        const FVector Midpoint = (FocusPrimary + FocusSecondary) * 0.5f;
+        const float OffsetSide = FMath::Max(320.f, SepDist * 1.5f);
+        Eye = Midpoint + Right * OffsetSide + FVector(0, 0, 145.f);
+        Aim = Midpoint + FVector(0, 0, 135.f);
+        Fov = 35.f;
+        TrackRate = 5.0f;
+        break;
+    }
+    case EC26CinematicCamera::CloseUpFace:
+    {
+        const FVector CamDir = Forward.IsZero() ? FVector(0, -1, 0) : -Forward;
+        Eye = FocusPrimary + CamDir * 190.f + Right * 35.f + FVector(0, 0, 160.f);
+        Aim = FocusPrimary + FVector(0, 0, 165.f);
+        Fov = 26.f;
+        TrackRate = 6.0f;
+        break;
+    }
+    case EC26CinematicCamera::LowAngleDramatic:
+    {
+        const FVector CamDir = Forward.IsZero() ? FVector(0, -1, 0) : -Forward;
+        Eye = FocusPrimary + CamDir * 230.f + Right * 40.f + FVector(0, 0, 32.f);
+        Aim = FocusPrimary + FVector(0, 0, 150.f);
+        Fov = 42.f;
+        TrackRate = 5.0f;
+        break;
+    }
+    case EC26CinematicCamera::OrbitCelebration:
+    {
+        const float Angle = NormalizedProgress * 2.f * PI * 0.65f + 0.4f;
+        const float OrbitRadius = 340.f;
+        Eye = FocusPrimary + FVector(FMath::Cos(Angle) * OrbitRadius, FMath::Sin(Angle) * OrbitRadius, 155.f);
+        Aim = FocusPrimary + FVector(0, 0, 135.f);
+        Fov = 36.f;
+        TrackRate = 7.0f;
+        break;
+    }
+    case EC26CinematicCamera::OverShoulderBatter:
+    {
+        Eye = FocusPrimary - Forward * 180.f + Right * 55.f + FVector(0, 0, 168.f);
+        Aim = FocusSecondary + FVector(0, 0, 140.f);
+        Fov = 32.f;
+        TrackRate = 5.5f;
+        break;
+    }
+    case EC26CinematicCamera::OverShoulderBowler:
+    {
+        Eye = FocusPrimary - Forward * 190.f + Right * 55.f + FVector(0, 0, 175.f);
+        Aim = FocusSecondary + FVector(0, 0, 135.f);
+        Fov = 30.f;
+        TrackRate = 5.5f;
+        break;
+    }
+    case EC26CinematicCamera::PitchTrackWalking:
+    {
+        const float TrackY = FMath::Lerp(-400.f, 400.f, NormalizedProgress);
+        Eye = FVector(FocusPrimary.X + 360.f, FocusPrimary.Y + TrackY, 150.f);
+        Aim = FocusPrimary + FVector(0, 0, 130.f);
+        Fov = 38.f;
+        TrackRate = 4.5f;
+        break;
+    }
+    case EC26CinematicCamera::UmpirePOV:
+    {
+        Eye = FocusPrimary + FVector(0.f, -50.f, 178.f);
+        Aim = FocusSecondary + FVector(0.f, 0.f, 130.f);
+        Fov = 36.f;
+        TrackRate = 6.0f;
+        break;
+    }
+    case EC26CinematicCamera::DugoutReaction:
+    {
+        Eye = FVector(-4400.f, -2700.f, 210.f);
+        Aim = FVector(-4100.f, -2400.f, 145.f);
+        Fov = 28.f;
+        TrackRate = 4.0f;
+        break;
+    }
+    default:
+    {
+        Eye = FocusPrimary + FVector(350.f, -400.f, 200.f);
+        Aim = FocusPrimary + FVector(0, 0, 130.f);
+        Fov = 40.f;
+        break;
+    }
+    }
+
+    Look(EC26CameraMode::Presentation, Eye, Aim, Fov, bCut, Dt, TrackRate);
 }

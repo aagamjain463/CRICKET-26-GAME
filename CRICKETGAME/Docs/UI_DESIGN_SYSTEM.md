@@ -136,26 +136,24 @@ and Result.
 - Sharp dark athletic typography (`DarkLabel`).
 - Instant tactile depression feedback on click/touch.
 
-### 5.3 Broadcast Score Bug (`Score()`)
-- Fixed top-left docked chassis (`480px × 56px`):
-  - Left: Solid Club Flag (`MUM` / `MEL`) with club color backing.
-  - Center-Left: DIN Condensed bold score (`23 / 0`).
-  - Center-Right: Overs indicator (`5/6b`).
-  - Right: Context pill (Target Chase `NEED 18 (4b)` in Gold, or `CRR 14.2` in 1st innings).
-- Docked Striker/Bowler sub-strip (`480px × 28px`):
-  - Striker: `★ A. RAO 14* (5b)`
-  - Bowler: `⚡ N. ARCHER 0.5 - 0/14`
-
-### 5.4 Ball-by-Ball Over Strip
-- Docked top-right (`420px × 48px`):
-  - Header: `THIS OVER`
-  - 6 dedicated capsules:
-    - **Dot (`•`)**: Recessed dark pill with subtle dot.
-    - **Runs (1-3)**: Crisp athletic white capsule with dark bold digit.
-    - **Boundary 4**: Turf green capsule with white `4`.
-    - **Maximum 6**: Championship Gold capsule with black `6`.
-    - **Wicket (W)**: Cricket Crimson capsule with white `W`.
-    - **Extras (Wd/Nb)**: Amber technical capsule.
+### 5.3 Broadcast Lower-Third Score Bar (`Score()`)
+- Full-bleed bottom bar (`1600px × 56px` at `Y=844`), Cricket-24 style. The top
+  of the screen stays empty for the bowler/batter read; only pause remains up top.
+- Left: Batting-club badge + two batter rows (`NAME  runs balls`) with amber
+  underlines; the striker carries a solid arrow marker.
+- Center: DIN Condensed score (`8-0`) baselined with overs (`0.2 OVERS`), with
+  `RUN RATE x.xx` beneath (or `NEED x (yb)` in amber during the chase), framed
+  by hairline dividers and a crimson slant accent.
+- Right: Bowler name + figures (`0-8 (0.2)`) with amber underline, plus six
+  this-over ball slots (newest right, unplayed hollow):
+    - **Dot**: Hollow outline.
+    - **Runs (1-3, 5)**: White disc with dark digit.
+    - **Boundary 4**: Turf green disc with white `4`.
+    - **Maximum 6**: Amber/gold disc with dark `6`.
+    - **Wicket (W)**: Cricket Crimson disc with white `W`.
+    - **Extras (Wd/Nb)**: Light-amber disc with dark label.
+- Far right: Fielding-club shield. While the bowling `START RUN-UP` button is up,
+  the bar stops 16px short of it instead of sliding underneath.
 
 ### 5.5 Batting Controls
 - **Footwork Pad (Left)**: Translucent disc at `(140, 740)`, radius 52, with compass crosshair

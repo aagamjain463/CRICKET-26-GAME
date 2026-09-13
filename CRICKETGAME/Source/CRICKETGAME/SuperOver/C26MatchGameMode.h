@@ -2,6 +2,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/GameModeBase.h"
 #include "C26Types.h"
+#include "C26FieldingSystem.h"
 #include "C26Simulation.h"
 #include "C26Commentary.h"
 #include "C26CommentaryTypes.h"
@@ -12,6 +13,7 @@ class AC26CameraDirector;
 class AC26Effects;
 class UC26Audio;
 class UC26CommentaryDirector;
+class UC26PresentationDirector;
 class UC26Settings;
 class UStaticMeshComponent;
 DECLARE_MULTICAST_DELEGATE(FOnC26MatchChanged);
@@ -30,6 +32,7 @@ public:
     UPROPERTY() TObjectPtr<UC26Settings> Preferences;
     UPROPERTY() TObjectPtr<UC26Audio> Audio;
     UPROPERTY() TObjectPtr<UC26CommentaryDirector> CommentaryDirector;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Presentation") TObjectPtr<UC26PresentationDirector> PresentationDirector;
     UPROPERTY() TObjectPtr<AC26CameraDirector> Director;
     UPROPERTY() TObjectPtr<AC26Stadium> Venue;
     UPROPERTY() TObjectPtr<AC26Effects> Effects;
@@ -57,6 +60,7 @@ public:
     FString TeamName(int Team) const;
     FString TeamShort(int Team) const;
     FString BatterName() const;
+    FString NonStrikerName() const;
     FString BowlerName() const;
     void StartMatch();
     void Menu();
@@ -196,7 +200,6 @@ public:
     void RefreshBowlerProfile();
     void CycleDelivery(int Direction);
     void SelectDelivery(EC26Delivery Type);
-    void ApplyBowlingPreset(FName Preset);
     bool BeginMovementDrag(int32 PointerId, FVector2D DesignPos);
     void UpdateMovementDrag(int32 PointerId, FVector2D DesignPos);
     void EndMovementDrag(int32 PointerId);
@@ -256,10 +259,90 @@ public:
     void SetScreen(int S);
     void GoBack();
     void Toast(const FString& S);
+
+    // ---- Advanced Gameplay Control Systems ----
+    // System 1: Delivery History & Pitch Target Presets
+    UPROPERTY(Transient)
+    TArray<FC26DeliveryRecord> RecentDeliveries;
+    void RecordDeliveryOutcome(const FC26DeliveryRecord& Record);
+    void ApplyBowlingPresetTarget(FName PresetTarget);
+
+    // System 2: Field Planning Mode & Tactical Presets
+    bool bFieldPlanningMode = false;
+    EC26FieldPreset CurrentFieldPreset = EC26FieldPreset::Balanced;
+    int32 SelectedFielderIdx = -1;
+    FString FieldLegalityWarning;
+    bool bFieldIsLegal = true;
+    bool bCustomFieldApplied = false;
+    bool bInningsBreakPresented = false;
+    bool bMatchEndPresented = false;
+
+    void ToggleFieldPlanning();
+    void SetFieldPlanning(bool bActive);
+    void ApplyFieldPreset(EC26FieldPreset Preset);
+    void SelectFielderForReposition(int32 AthleteIndex);
+    void MoveFielderToLocation(int32 AthleteIndex, const FVector& NewTurfLocation);
+    bool ValidateCurrentField();
+    const TArray<FVector>& GetFieldPositions() const { return FieldPositions; }
+
+    // System 3 & 4: Manual Fielding, Diving, Throwing & Catching
+    int ActiveFielder = -1, BackupFielder = -1;
+    FVector2D ManualFieldingStick = FVector2D::ZeroVector;
+    float FieldingAssistLevel = 0.30f;
+    bool bDivePromptActive = false;
+    bool bDiveRequested = false;
+    float DiveCooldown = 0.f;
+
+    void SetManualFielderInput(const FVector2D& Stick);
+    void TriggerManualDive();
+
+    bool bCatchOpportunityActive = false;
+    float CatchPromptTimer = 0.f;
+    float CatchOptimalTime = 0.f;
+    EC26CatchTiming LastCatchTiming = EC26CatchTiming::None;
+    float LastCatchQuality = 0.f;
+    void AttemptManualCatch();
+
+    bool bThrowTargetActive = false;
+    EC26ThrowTarget SelectedThrowTarget = EC26ThrowTarget::KeepersEnd;
+    float ThrowPowerCharge = 0.f;
+    bool bThrowCharging = false;
+    void SetThrowTarget(EC26ThrowTarget Target);
+    void StartThrowCharge();
+    void ReleaseThrowCharge();
+    /** Manual-throw decision pause + execution (fielding-side interaction). */
+    bool bFieldingDecisionPaused = false;
+    void ExecuteFielderThrow();
+    void SetThrowStyle(bool bDirectHit);
+
+    // System 6: Match Presentation Callbacks
+    void OnPresentationCompleted();
+    void TriggerPresentationForOutcome(const C26::DeliveryOutcome& Outcome);    bool bFiftyCelebrated[3] = { false, false, false };
+    bool bCenturyCelebrated[3] = { false, false, false };
+    int32 ConsecutiveBoundaries = 0;
+    int32 ConsecutiveDots = 0;
+
+    // ---- Broadcast lower-third graphics queue (presentation only; scoring untouched) ----
+    /** Single active lower-third. The HUD draws it; expiry is on the match Clock. */
+    FString GraphicTitle, GraphicSub;
+    FLinearColor GraphicAccent = FLinearColor(1.f, 1.f, 1.f, 1.f);
+    float GraphicStartAt = -99.f, GraphicDuration = 0.f;
+    /** Push a restrained broadcast lower-third (new batter, milestone, bowler figures, ...). */
+    void PushGraphic(const FString& Title, const FString& Sub, const FLinearColor& Accent, float Duration = 2.6f);
+    /** Active graphic + fade alpha for the HUD. False when none is live. */
+    bool GetActiveGraphic(FString& Title, FString& Sub, FLinearColor& Accent, float& Alpha) const;
+    void UpdateBroadcastGraphics(const C26::DeliveryOutcome& Outcome);
+    int32 GraphicStriker = -1, GraphicOver = -1;
+
+    // System 5: Batting Timing Feedback Meter
+    float LastTimingDeltaMs = 0.f;
+    FString LastShotName;
+    float LastTimingQualityPct = 0.f;
+    float ContactFeedbackTimer = 0.f;
 private:
     C26::DeliveryOutcome Pending;
     uint32 DeliveryId=0;
-    int ActiveFielder=-1,BackupFielder=-1,RunnerAId=0,RunnerBId=1;
+    int RunnerAId=0,RunnerBId=1;
     float RunVelocity=0,CatchClock=-1;
     bool ThrowReleased=false;
     bool BallReleased=false,ResettingMatch=false,KeeperTake=false;
@@ -297,16 +380,19 @@ private:
     void Collect(int Fielder,bool Catch);
     void Resolve();
     void AfterPresentation();
+
     void BuildMatchActors();
     void UpdateBallVisual();
+    /** Seam-axis state for believable ball rotation; presentation only. */
+    FVector BallSeamAxis = FVector(0.f, 1.f, 0.f);
+    float BallSeamWobble = 0.f;
     void BreakWicket(float WicketY);
     void ResetStumps();
     void Haptic(float Strength);
     FC26CommentaryContext MakeCommentaryContext() const;
     FC26CommentaryEvent MakeCommentaryEvent(ECommentaryEventType Type, int32 Runs=0, bool bBoundary=false, bool bSix=false, bool bWicket=false, uint8 Dismissal=0) const;
     /** Dust and turf response for one ball's worth of contact events. */
-    void Spark(const FVector& At,bool Struck);
-    /** Momentary time pinch on a well-struck ball, and the real-time stamp it ends at. */
+    void Spark(const FVector& At,bool Struck);    /** Momentary time pinch on a well-struck ball, and the real-time stamp it ends at. */
     void HitStop(float Quality);
     void ClearHitStop();
     double HitStopUntil=0;

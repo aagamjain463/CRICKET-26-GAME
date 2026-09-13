@@ -3,6 +3,7 @@
 #include "GameFramework/Actor.h"
 #include "C26Types.h"
 #include "Characters/C26CharacterPresentationComponent.h"
+#include "C26PresentationTypes.h"
 #include "C26CameraDirector.generated.h"
 class UCameraComponent;
 class UStaticMeshComponent;
@@ -14,7 +15,7 @@ enum class EC26CameraMode : uint8
     Establishing, PreDeliveryBroadcast, BatterGameplay, BowlerGameplay, BowlerRunup,
     Release, BatContact, GroundShotTracking, LoftedShotTracking, BoundaryTracking,
     Catch, RunOut, Wicket, Running, ReplayPitch, ReplayClose, ReplayBoundary,
-    Celebration, InningsTransition, MatchResult
+    Celebration, InningsTransition, MatchResult, FieldPlanning, Presentation
 };
 
 /** All lenses live in the director. Phase logic supplies context, never view transforms. */
@@ -71,7 +72,7 @@ public:
     void SetFieldingTarget(const FVector& Position,bool HasTarget,bool RunnersActive=false);
     void MarkContact(float Quality,bool Aerial,const FVector& Where);
     void MarkRelease(){ReleasePending=true;}
-    void MarkOutcome(FName Event,const FVector& Focus);
+    void MarkOutcome(FName Event,const FVector& Focus,FName Detail=NAME_None);
     void Record(float Dt,const FVector& Ball,const TArray<TObjectPtr<AC26Athlete>>& Actors);
     bool BeginReplay(const TArray<TObjectPtr<AC26Athlete>>& Actors,const FVector& Ball);
     bool PlayReplay(float Dt,FVector& Ball,const TArray<TObjectPtr<AC26Athlete>>& Actors);
@@ -89,6 +90,13 @@ public:
     float ReplayOutroDuration = 0.85f;
     float ReplayProgress() const { return ReplayEnd > 0 ? FMath::Clamp(ReplayClock / ReplayEnd, 0.f, 1.f) : 0.f; }
 
+    /** Field planning tactical view mode flag */
+    UPROPERTY(BlueprintReadOnly) bool bFieldPlanning = false;
+    void SetFieldPlanning(bool bActive) { bFieldPlanning = bActive; }
+
+    /** Presentation cinematic camera director */
+    void DirectPresentation(EC26CinematicCamera Lens, const FVector& FocusPrimary, const FVector& FocusSecondary, float NormalizedProgress, float Dt, bool bCut = false);
+
 private:
     TArray<FC26ReplayFrame> Frames;
     FC26ReplayFrame Live;
@@ -100,6 +108,7 @@ private:
     float ReleaseStamp=-1.f;
     FVector SmoothedAim=FVector::ZeroVector,Fielder=FVector::ZeroVector,EventFocus=FVector::ZeroVector,ContactPoint=FVector::ZeroVector;
     FName EventName;
+    FName EventDetail;
     EC26Phase LastPhase=EC26Phase::Result;
     FC26ReplayFrame CaptureState(const FVector& Ball,const TArray<TObjectPtr<AC26Athlete>>& Actors) const;
     void ApplyFrame(const FC26ReplayFrame& A,const FC26ReplayFrame& B,float T,const TArray<TObjectPtr<AC26Athlete>>& Actors);

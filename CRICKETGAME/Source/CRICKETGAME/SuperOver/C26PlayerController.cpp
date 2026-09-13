@@ -1,4 +1,5 @@
 #include "C26PlayerController.h"
+#include "C26PresentationDirector.h"
 #include "C26MatchGameMode.h"
 #include "C26HUD.h"
 #include "C26Settings.h"
@@ -29,6 +30,21 @@ void AC26PlayerController::SetupInputComponent()
     InputComponent->BindKey(EKeys::L,IE_Pressed,this,&AC26PlayerController::Loft);
     InputComponent->BindKey(EKeys::Escape,IE_Pressed,this,&AC26PlayerController::PauseMatch);
     InputComponent->BindKey(EKeys::P,IE_Pressed,this,&AC26PlayerController::PauseMatch);
+    InputComponent->BindKey(EKeys::D,IE_Pressed,this,&AC26PlayerController::DiveKey);
+    InputComponent->BindKey(EKeys::F,IE_Pressed,this,&AC26PlayerController::FieldKey);
+    InputComponent->BindKey(EKeys::One,IE_Pressed,this,&AC26PlayerController::ThrowBowlerKey);
+    InputComponent->BindKey(EKeys::Two,IE_Pressed,this,&AC26PlayerController::ThrowKeeperKey);
+    InputComponent->BindKey(EKeys::F8,IE_Pressed,this,&AC26PlayerController::TogglePresentationDebug);
+    InputComponent->BindKey(EKeys::T,IE_Pressed,this,&AC26PlayerController::DebugTriggerToss);
+    InputComponent->BindKey(EKeys::W,IE_Pressed,this,&AC26PlayerController::DebugTriggerWicket);
+    InputComponent->BindKey(EKeys::K,IE_Pressed,this,&AC26PlayerController::DebugTriggerCaught);
+    InputComponent->BindKey(EKeys::Five,IE_Pressed,this,&AC26PlayerController::DebugTriggerFifty);
+    InputComponent->BindKey(EKeys::Zero,IE_Pressed,this,&AC26PlayerController::DebugTriggerCentury);
+    InputComponent->BindKey(EKeys::B,IE_Pressed,this,&AC26PlayerController::DebugTriggerBowlerCaptain);
+    InputComponent->BindKey(EKeys::N,IE_Pressed,this,&AC26PlayerController::DebugTriggerNewBatter);
+    InputComponent->BindKey(EKeys::O,IE_Pressed,this,&AC26PlayerController::DebugTriggerEndOfOver);
+    InputComponent->BindKey(EKeys::M,IE_Pressed,this,&AC26PlayerController::DebugTriggerMatchWin);
+    InputComponent->BindKey(EKeys::H,IE_Pressed,this,&AC26PlayerController::DebugTriggerHandshakes);
     InputComponent->BindTouch(IE_Pressed,this,&AC26PlayerController::TouchStart);
     InputComponent->BindTouch(IE_Repeat,this,&AC26PlayerController::TouchMove);
     InputComponent->BindTouch(IE_Released,this,&AC26PlayerController::TouchEnd);
@@ -52,6 +68,74 @@ void AC26PlayerController::BeginGesture(int Index,FVector2D P)
     const FName Button=H->ActionAt(P);
     if(!Button.IsNone()){G.Consumed=true;M->UIAction(Button);return;}
     if(M->Paused||M->SettingsOpen||M->ControlsOpen){G.Consumed=true;return;}
+    if(M->Phase==EC26Phase::Interval){G.Consumed=true;M->Skip();return;}
+
+    // Fielding controls belong to the bowling side only.
+    if(M->bFieldPlanningMode && !M->PlayerBatting())
+    {
+        const FVector2D DesignPos = H->ToDesign(P);
+        int32 ClickedFielder = -1;
+        float BestScreenDist = 52.f;
+        const auto& Positions = M->GetFieldPositions();
+        for(int32 I = 2; I <= 10 && I < Positions.Num(); ++I)
+        {
+            FVector2D Screen;
+            if(ProjectWorldLocationToScreen(Positions[I] + FVector(0.f, 0.f, 10.f), Screen))
+            {
+                const FVector2D D = H->ToDesign(Screen);
+                const float Dist = FVector2D::Distance(DesignPos, D);
+                if(Dist < BestScreenDist)
+                {
+                    BestScreenDist = Dist;
+                    ClickedFielder = I;
+                }
+            }
+        }
+
+        FVector Origin, Dir;
+        const bool bHitTurf = DeprojectScreenPositionToWorld(P.X, P.Y, Origin, Dir) && FMath::Abs(Dir.Z) > 0.001f;
+        const FVector Hit = bHitTurf ? (Origin + Dir * ((0.f - Origin.Z) / Dir.Z)) : FVector::ZeroVector;
+
+        if(ClickedFielder < 2 && bHitTurf)
+        {
+            float BestDistSq = 1200.f * 1200.f;
+            for(int32 I = 2; I <= 10 && I < M->Athletes.Num(); ++I)
+            {
+                if(M->Athletes[I])
+                {
+                    const float D = FVector::DistSquared2D(M->Athletes[I]->GetActorLocation(), Hit);
+                    if(D < BestDistSq)
+                    {
+                        BestDistSq = D;
+                        ClickedFielder = I;
+                    }
+                }
+            }
+        }
+
+        if(ClickedFielder >= 2)
+        {
+            M->SelectFielderForReposition(ClickedFielder);
+            G.FieldDrag = true;
+            return;
+        }
+        else if(bHitTurf && M->SelectedFielderIdx >= 2)
+        {
+            M->MoveFielderToLocation(M->SelectedFielderIdx, Hit);
+            G.FieldDrag = true;
+            return;
+        }
+    }
+
+    // Manual fielding stick belongs to the bowling side only.
+    if(M->Phase == EC26Phase::InPlay && M->ActiveFielder >= 0 && !M->PlayerBatting())
+    {
+        const FVector2D Delta = (P - G.Start);
+        if(Delta.Size() > 15.f)
+        {
+            M->SetManualFielderInput(Delta.GetSafeNormal());
+        }
+    }
 
     const bool bGesturePro = (!M->Preferences || M->Preferences->ControlScheme == 0);
     const FVector2D DesignPos = H->ToDesign(P);
@@ -117,6 +201,21 @@ void AC26PlayerController::MoveGesture(int Index,FVector2D P)
     auto& G=Gestures[Index];if(!G.Active||G.Consumed)return;G.Last=P;
     if(M->Paused||M->SettingsOpen||M->ControlsOpen)return;
 
+    // Fielding controls belong to the bowling side only.
+    if(M->bFieldPlanningMode && !M->PlayerBatting())
+    {
+        if(G.FieldDrag && M->SelectedFielderIdx >= 2)
+        {
+            FVector Origin, Dir;
+            if(DeprojectScreenPositionToWorld(P.X, P.Y, Origin, Dir) && FMath::Abs(Dir.Z) > 0.001f)
+            {
+                const FVector Hit = Origin + Dir * ((0.f - Origin.Z) / Dir.Z);
+                M->MoveFielderToLocation(M->SelectedFielderIdx, Hit);
+            }
+        }
+        return;
+    }
+
     const bool bGesturePro = (!M->Preferences || M->Preferences->ControlScheme == 0);
     const FVector2D DesignPos = H->ToDesign(P);
 
@@ -179,6 +278,21 @@ void AC26PlayerController::EndGesture(int Index,FVector2D P)
     G.Active=false;G.Mouse=false;
     const bool bWasBatting=G.Batting;G.Batting=false;
     if(BattingPointer==Index)BattingPointer=-1;
+    if(G.FieldDrag)
+    {
+        if(M->bFieldPlanningMode && !M->PlayerBatting() && M->SelectedFielderIdx >= 2)
+        {
+            FVector Origin, Dir;
+            if(DeprojectScreenPositionToWorld(P.X, P.Y, Origin, Dir) && FMath::Abs(Dir.Z) > 0.001f)
+            {
+                const FVector Hit = Origin + Dir * ((0.f - Origin.Z) / Dir.Z);
+                M->MoveFielderToLocation(M->SelectedFielderIdx, Hit);
+            }
+        }
+        G.FieldDrag = false;
+        return;
+    }
+    if(M->Phase == EC26Phase::InPlay) { M->SetManualFielderInput(FVector2D::ZeroVector); }
     if(G.Consumed){G.Pace=G.Movement=G.Target=false;return;}
 
     const bool bGesturePro = (!M->Preferences || M->Preferences->ControlScheme == 0);
@@ -204,7 +318,9 @@ void AC26PlayerController::EndGesture(int Index,FVector2D P)
         if(M->PlayerBatting()&&(M->Phase==EC26Phase::Delivery||M->Phase==EC26Phase::RunUp))
         {
             FC26ShotIntent Shot=M->Intent;
-            if(Delta.Size()>18){Shot.Angle=FMath::Clamp(FMath::RadiansToDegrees(FMath::Atan2(Delta.X,-Delta.Y)),-135.f,135.f);Shot.Power=FMath::Clamp(.5f+Delta.Size()/380.f,.45f,1.f);}
+            // Screen-right is the batter's leg side (the camera is behind the
+            // bowler), so X is negated here exactly as in AimAngleFromPull.
+            if(Delta.Size()>18){Shot.Angle=FMath::Clamp(FMath::RadiansToDegrees(FMath::Atan2(-Delta.X,-Delta.Y)),-135.f,135.f);Shot.Power=FMath::Clamp(.5f+Delta.Size()/380.f,.45f,1.f);}
             M->Shot(Shot);
         }
     }
@@ -239,6 +355,16 @@ void AC26PlayerController::Action()
 {
     auto* M=Cast<AC26MatchGameMode>(GetWorld()->GetAuthGameMode());if(!M||M->Paused||M->SettingsOpen||M->ControlsOpen)return;
     if(M->Phase==EC26Phase::Menu||M->Phase==EC26Phase::Result)M->StartMatch();
+    else if(M->Phase==EC26Phase::InPlay)
+    {
+        // Manual fielding (catch / dive / throw) belongs to the bowling side only.
+        if(!M->PlayerBatting())
+        {
+            if(M->bCatchOpportunityActive) { M->AttemptManualCatch(); return; }
+            if(M->bDivePromptActive) { M->TriggerManualDive(); return; }
+            if(M->bFieldingDecisionPaused) { M->ExecuteFielderThrow(); return; }
+        }
+    }
     else if(M->Phase==EC26Phase::Ready)M->StartDelivery();
     else if(M->Phase==EC26Phase::RunUp&&!M->PlayerBatting())M->BowlRelease();
     else if(M->Phase==EC26Phase::Delivery&&M->PlayerBatting())M->Shot(M->Intent);
@@ -275,4 +401,132 @@ void AC26PlayerController::C26LeftHand()
 void AC26PlayerController::C26Controls()
 {
     if(auto* M=Cast<AC26MatchGameMode>(GetWorld()->GetAuthGameMode())){M->bDebugControls=!M->bDebugControls;}
+}
+
+void AC26PlayerController::DiveKey()
+{
+    if(auto* M=Cast<AC26MatchGameMode>(GetWorld()->GetAuthGameMode())) { if(!M->PlayerBatting()) M->TriggerManualDive(); }
+}
+void AC26PlayerController::FieldKey()
+{
+    if(auto* M=Cast<AC26MatchGameMode>(GetWorld()->GetAuthGameMode())) { if(!M->PlayerBatting()) M->ToggleFieldPlanning(); }
+}
+void AC26PlayerController::ThrowBowlerKey()
+{
+    if(auto* M=Cast<AC26MatchGameMode>(GetWorld()->GetAuthGameMode()))
+    {
+        if(M->PlayerBatting()) return;
+        M->SetThrowTarget(EC26ThrowTarget::BowlersEnd);
+        if(M->bFieldingDecisionPaused) M->Toast(TEXT("TARGET: BOWLER'S END  (PRESS SPACE TO THROW)"));
+    }
+}
+void AC26PlayerController::ThrowKeeperKey()
+{
+    if(auto* M=Cast<AC26MatchGameMode>(GetWorld()->GetAuthGameMode()))
+    {
+        if(M->PlayerBatting()) return;
+        M->SetThrowTarget(EC26ThrowTarget::KeepersEnd);
+        if(M->bFieldingDecisionPaused) M->Toast(TEXT("TARGET: KEEPER'S END  (PRESS SPACE TO THROW)"));
+    }
+}
+
+void AC26PlayerController::TogglePresentationDebug()
+{
+    if(auto* M=Cast<AC26MatchGameMode>(GetWorld()->GetAuthGameMode()))
+    {
+        if(M->PresentationDirector)
+            M->PresentationDirector->bDebugOverlayVisible = !M->PresentationDirector->bDebugOverlayVisible;
+    }
+}
+void AC26PlayerController::C26PresentationDebug()
+{
+    TogglePresentationDebug();
+}
+void AC26PlayerController::DebugTriggerToss()
+{
+    if(auto* M=Cast<AC26MatchGameMode>(GetWorld()->GetAuthGameMode()))
+        if(M->PresentationDirector)
+            M->PresentationDirector->TriggerDebugScene(EC26PresentationEvent::TossCoinFlip, M->Athletes.IsValidIndex(0)?M->Athletes[0]:nullptr, M->Athletes.IsValidIndex(11)?M->Athletes[11]:nullptr);
+}
+void AC26PlayerController::DebugTriggerWicket()
+{
+    if(auto* M=Cast<AC26MatchGameMode>(GetWorld()->GetAuthGameMode()))
+        if(M->PresentationDirector)
+            M->PresentationDirector->TriggerDebugScene(EC26PresentationEvent::WicketCelebrationBowled, M->Athletes.IsValidIndex(0)?M->Athletes[0]:nullptr, M->Athletes.IsValidIndex(11)?M->Athletes[11]:nullptr);
+}
+void AC26PlayerController::DebugTriggerCaught()
+{
+    if(auto* M=Cast<AC26MatchGameMode>(GetWorld()->GetAuthGameMode()))
+        if(M->PresentationDirector)
+            M->PresentationDirector->TriggerDebugScene(EC26PresentationEvent::WicketCelebrationCaught, M->Athletes.IsValidIndex(0)?M->Athletes[0]:nullptr, M->Athletes.IsValidIndex(2)?M->Athletes[2]:nullptr);
+}
+void AC26PlayerController::DebugTriggerFifty()
+{
+    if(auto* M=Cast<AC26MatchGameMode>(GetWorld()->GetAuthGameMode()))
+        if(M->PresentationDirector)
+            M->PresentationDirector->TriggerDebugScene(EC26PresentationEvent::FiftyCelebration, M->Athletes.IsValidIndex(11)?M->Athletes[11]:nullptr, M->Athletes.IsValidIndex(12)?M->Athletes[12]:nullptr);
+}
+void AC26PlayerController::DebugTriggerCentury()
+{
+    if(auto* M=Cast<AC26MatchGameMode>(GetWorld()->GetAuthGameMode()))
+        if(M->PresentationDirector)
+            M->PresentationDirector->TriggerDebugScene(EC26PresentationEvent::CenturyCelebration, M->Athletes.IsValidIndex(11)?M->Athletes[11]:nullptr, M->Athletes.IsValidIndex(12)?M->Athletes[12]:nullptr);
+}
+void AC26PlayerController::DebugTriggerBowlerCaptain()
+{
+    if(auto* M=Cast<AC26MatchGameMode>(GetWorld()->GetAuthGameMode()))
+        if(M->PresentationDirector)
+            M->PresentationDirector->TriggerDebugScene(EC26PresentationEvent::BowlerCaptainDiscussion, M->Athletes.IsValidIndex(0)?M->Athletes[0]:nullptr, M->Athletes.IsValidIndex(2)?M->Athletes[2]:nullptr);
+}
+void AC26PlayerController::DebugTriggerNewBatter()
+{
+    if(auto* M=Cast<AC26MatchGameMode>(GetWorld()->GetAuthGameMode()))
+        if(M->PresentationDirector)
+            M->PresentationDirector->TriggerDebugScene(EC26PresentationEvent::NewBatterEntry, M->Athletes.IsValidIndex(11)?M->Athletes[11]:nullptr, nullptr);
+}
+void AC26PlayerController::DebugTriggerEndOfOver()
+{
+    if(auto* M=Cast<AC26MatchGameMode>(GetWorld()->GetAuthGameMode()))
+        if(M->PresentationDirector)
+            M->PresentationDirector->TriggerDebugScene(EC26PresentationEvent::EndOfOverSummaryCard, M->Athletes.IsValidIndex(11)?M->Athletes[11]:nullptr, M->Athletes.IsValidIndex(12)?M->Athletes[12]:nullptr);
+}
+void AC26PlayerController::DebugTriggerMatchWin()
+{
+    if(auto* M=Cast<AC26MatchGameMode>(GetWorld()->GetAuthGameMode()))
+        if(M->PresentationDirector)
+            M->PresentationDirector->TriggerDebugScene(EC26PresentationEvent::MatchWinningCelebration, M->Athletes.IsValidIndex(11)?M->Athletes[11]:nullptr, M->Athletes.IsValidIndex(12)?M->Athletes[12]:nullptr);
+}
+void AC26PlayerController::DebugTriggerHandshakes()
+{
+    if(auto* M=Cast<AC26MatchGameMode>(GetWorld()->GetAuthGameMode()))
+        if(M->PresentationDirector)
+            M->PresentationDirector->TriggerDebugScene(EC26PresentationEvent::PostMatchHandshakes, M->Athletes.IsValidIndex(11)?M->Athletes[11]:nullptr, M->Athletes.IsValidIndex(0)?M->Athletes[0]:nullptr);
+}
+void AC26PlayerController::C26TriggerScene(const FString& SceneName)
+{
+    if (SceneName.Equals(TEXT("Toss"), ESearchCase::IgnoreCase)) DebugTriggerToss();
+    else if (SceneName.Equals(TEXT("Wicket"), ESearchCase::IgnoreCase)) DebugTriggerWicket();
+    else if (SceneName.Equals(TEXT("Caught"), ESearchCase::IgnoreCase)) DebugTriggerCaught();
+    else if (SceneName.Equals(TEXT("Fifty"), ESearchCase::IgnoreCase)) DebugTriggerFifty();
+    else if (SceneName.Equals(TEXT("Century"), ESearchCase::IgnoreCase)) DebugTriggerCentury();
+    else if (SceneName.Equals(TEXT("BowlerCaptain"), ESearchCase::IgnoreCase)) DebugTriggerBowlerCaptain();
+    else if (SceneName.Equals(TEXT("NewBatter"), ESearchCase::IgnoreCase)) DebugTriggerNewBatter();
+    else if (SceneName.Equals(TEXT("EndOfOver"), ESearchCase::IgnoreCase)) DebugTriggerEndOfOver();
+    else if (SceneName.Equals(TEXT("Win"), ESearchCase::IgnoreCase)) DebugTriggerMatchWin();
+    else if (SceneName.Equals(TEXT("Handshakes"), ESearchCase::IgnoreCase)) DebugTriggerHandshakes();
+}
+void AC26PlayerController::C26Pacing(const FString& Mode)
+{
+    if(auto* M=Cast<AC26MatchGameMode>(GetWorld()->GetAuthGameMode()))
+    {
+        if(M->PresentationDirector)
+        {
+            if(Mode.Equals(TEXT("Quick"), ESearchCase::IgnoreCase))
+                M->PresentationDirector->SetPacing(EC26PresentationPacing::Quick);
+            else if(Mode.Equals(TEXT("Full"), ESearchCase::IgnoreCase))
+                M->PresentationDirector->SetPacing(EC26PresentationPacing::Full);
+            else
+                M->PresentationDirector->SetPacing(EC26PresentationPacing::Balanced);
+        }
+    }
 }
