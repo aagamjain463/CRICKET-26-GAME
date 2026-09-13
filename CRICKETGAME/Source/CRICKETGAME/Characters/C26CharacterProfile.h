@@ -54,6 +54,9 @@ struct FC26CricketClip
     UPROPERTY(EditAnywhere, meta=(ClampMin="0.02", ClampMax="0.4")) float BlendSeconds = .12f;
     UPROPERTY(EditAnywhere, meta=(ClampMin="1")) float GroundSpeed = 450.f;
     UPROPERTY(EditAnywhere) bool Loop = false;
+    /** Mesh-space hand travel from stance to the contact frame (measured offline
+        per shot). Lets the contact warp predict where the authored hands land. */
+    UPROPERTY(EditAnywhere) FVector ContactDelta = FVector::ZeroVector;
     float EventTime() const;
 };
 

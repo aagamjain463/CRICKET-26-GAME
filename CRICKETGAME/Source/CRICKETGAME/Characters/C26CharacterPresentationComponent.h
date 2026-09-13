@@ -64,10 +64,15 @@ private:
     TSet<FName> ReportedMissing;
     FVector LastLeftFoot=FVector::ZeroVector,LastRightFoot=FVector::ZeroVector;
     float FrozenSeconds=0;
+    float WarpPrevTime=0.f;
+    void UpdateWarp(const AC26Athlete* Athlete,const FC26CricketClip* Clip);
+    void LearnWarp(const AC26Athlete* Athlete);
     UPROPERTY(Transient) TObjectPtr<ACameraActor> ReviewCamera;
     TMap<FName,int32> ReviewSamples;
     float ReviewTime=0,ReviewLastCapture=-1;
     void HideLegacy(AC26Athlete* Athlete);
+    void DressEquipment(int32 TeamId);
+    static int32 Dress(UStaticMeshComponent* Part,const TCHAR* Key,UMaterialInstanceDynamic* M);
     FName ReadyKey() const;
     FName SelectState(const AC26Athlete* Athlete,float Dt);
     void Debug(const AC26Athlete* Athlete,float Dt);

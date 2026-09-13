@@ -46,21 +46,21 @@ LIB.save_loaded_asset(skeleton, only_if_is_dirty=False)
 
 items = []
 for slot, asset, socket, mirrored, offset in [
-        ('Bat', 'SM_C26_Bat_Hero', 'BatGrip_L', 'BatGrip_R', BAT_OFFSET),
-        ('BattingGloveL', 'SM_C26_Glove_L', 'Glove_L', 'Glove_L', GLOVE_OFFSET),
-        ('BattingGloveR', 'SM_C26_Glove_R', 'Glove_R', 'Glove_R', GLOVE_OFFSET),
-        ('BattingPadL', 'SM_C26_Pad_L', 'PadMount_L', 'PadMount_L', PAD_OFFSET),
-        ('BattingPadR', 'SM_C26_Pad_R', 'PadMount_R', 'PadMount_R', PAD_OFFSET),
-        ('Helmet', 'SM_C26_Helmet_Hero', 'Helmet', 'Helmet', HELMET_OFFSET)]:
+        ('BAT', 'SM_C26_Bat_Hero', 'BatGrip_L', 'BatGrip_R', BAT_OFFSET),
+        ('BATTING_GLOVE_L', 'SM_C26_Glove_L', 'Glove_L', 'Glove_L', GLOVE_OFFSET),
+        ('BATTING_GLOVE_R', 'SM_C26_Glove_R', 'Glove_R', 'Glove_R', GLOVE_OFFSET),
+        ('BATTING_PAD_L', 'SM_C26_Pad_L', 'PadMount_L', 'PadMount_L', PAD_OFFSET),
+        ('BATTING_PAD_R', 'SM_C26_Pad_R', 'PadMount_R', 'PadMount_R', PAD_OFFSET),
+        ('HELMET', 'SM_C26_Helmet_Hero', 'Helmet', 'Helmet', HELMET_OFFSET)]:
     static = u.load_asset(GEAR + '/' + asset)
     assert static, asset
     assert mesh.find_socket(socket), socket
     item = u.C26EquipmentDefinition()
-    item.slot = getattr(u.C26EquipmentSlot, slot)
-    item.mesh = static
-    item.socket = socket
-    item.left_handed_socket = mirrored
-    item.offset = offset
+    item.set_editor_property('slot', getattr(u.C26EquipmentSlot, slot))
+    item.set_editor_property('mesh', static)
+    item.set_editor_property('socket', socket)
+    item.set_editor_property('left_handed_socket', mirrored)
+    item.set_editor_property('offset', offset)
     items.append(item)
 
 manifest = json.loads((ROOT / 'ArtSource/Premium/AnimationSources/Cricket/manifest.json').read_text())

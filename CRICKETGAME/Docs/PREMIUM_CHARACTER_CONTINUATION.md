@@ -117,9 +117,38 @@ are expected until their gates are built.
   waistband skin flash at full stride remains), keeper kit/crouch, umpire outfit,
   hair/face LODs, foot-lock/IK, mobile profiling on hardware.
 
-## 9. Next steps (not done)
-Run `BuildBatterReview.py`, iterate equipment offsets, validate batter in a real
-match (cover-drive contact sync is the hard gate). Then keeper kit + crouch,
-umpire outfit + signals, hem extension with dual-pose verification, hair/face
-LODs, foot-lock/IK pass, mobile profiling on hardware. Do not mass-migrate until
+## 9. Batter slice: equipment fit, honest contact metric, guard fix
+- `Tools/BuildBatterReview.py` creates `DA_C26_BatterReview` (28 clips, 6 gear
+  items, `InspectRole(BATTER)` passes; keeper/batter cross-checks still reject).
+  Sockets BatGrip/Glove/Helmet/PadMount live on the canonical skeleton.
+- Offsets are MEASURED, not guessed: `fit_batter_offsets.py` ports the legacy
+  PlaceKit formulas onto the posed review rig (round-trip 0.0cm), applied by
+  `ApplyBatterOffsets.py`. First in-match capture: bat blade down, gloves on
+  hands, pads on shins, helmet on head. Equipment materials dress per-slot
+  (`DressEquipment`, same keys/tones as legacy); only a nonexistent Crown key
+  misses (logged). Helmet shell's carbon-check look is its detail texture.
+- **Broken metric found and fixed.** The blade check sampled the ball a frame
+  AFTER contact (already travelled ~1m), so it could never pass for ANY system
+  (it never did, old included). It now measures blade vs `LastContact.ContactPoint`.
+- **Warp episode, honestly:** built per-ball visual root warping for the broken
+  metric, then measured it lurching/clamping and ripped it all out. The honest
+  `C26_CHARACTER_CONTACT` log (hands vs sim contact at the contact frame) is the
+  remaining instrumentation. `ContactDelta` stays as data for future use.
+- Facing verified correct at yaw -90 (clavicle-derived chest vector = proper
+  right-hander's stance). A +90 experiment faced the keeper; a Rotator-order
+  mishap laid the batter prone mid-experiment (fixed via named-field edits).
+- **Guard fix:** striker stood leg-stump guard (-38) while clips assume middle;
+  miss was almost entirely lateral. Guard moved to middle (+2) at all 4
+  hardcoded sites (spawn, per-over reset, controller ×2; footwork ±35 preserved).
+  Hands miss 105.6cm -> 81.0cm, true blade gap 100.4cm -> 73.8cm (stage 2: 60.4cm),
+  blade (83cm) now within reach. Gate failures back to baseline count of 2.
+  Batter on middle guard looks natural in broadcast framing.
+- Open: true gap ~60-74cm vs 3.6cm threshold. Needs line-varied stride variants
+  (straight-to-off-stump needs lateral stride the base clip lacks) and
+  depth-matched shot selection for low full balls. No per-ball visual warping.
+
+## 10. Next steps (not done)
+Line/depth-varied batting clips + selection, keeper kit + crouch, umpire outfit
++ signals, hem extension with dual-pose verification, hair/face LODs,
+foot-lock/IK pass, mobile profiling on hardware. Do not mass-migrate until
 those gates pass.
