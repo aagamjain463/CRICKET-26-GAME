@@ -8,3 +8,6 @@ DerivedDataCache/
 Build/Mac/
 Build/IOS/Resources/Graphics/
 Artifacts/
+
+# Regenerable cricket action FBX (rebuild: Blender --background --python ArtSource/Blender/Premium/author_cricket_actions.py)
+ArtSource/Premium/AnimationSources/Cricket/*.fbx
