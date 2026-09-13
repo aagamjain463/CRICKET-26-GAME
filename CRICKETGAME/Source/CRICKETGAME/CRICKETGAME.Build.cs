@@ -24,7 +24,9 @@ public class CRICKETGAME : ModuleRules
 			"DeveloperSettings",
 			"HTTP",
 			"Json",
-			"JsonUtilities"
+			"JsonUtilities",
+            "AnimGraphRuntime",
+            "RenderCore"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });

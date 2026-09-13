@@ -174,7 +174,7 @@ void AC26MatchGameMode::UpdateGoldenGate(float Dt)
     {
         if(PhaseTime==0&&CaptureFrame(TEXT("05_contact")))
         {
-            const FVector Local=Athletes[11]->Bat->GetComponentTransform().InverseTransformPosition(Simulation.Ball.Position);
+            const FVector Local=Athletes[11]->VisualBat()->GetComponentTransform().InverseTransformPosition(Simulation.Ball.Position);
             // Measure the actual rendered blade triangles, not just the simulation contact plane.
             // The bat is now an authored static mesh rather than a generated procedural section,
             // so the same assertion reads LOD0 of the imported willow. Keeping the measurement on
@@ -182,7 +182,7 @@ void AC26MatchGameMode::UpdateGoldenGate(float Dt)
             // on the toe of the old procedural blade rather than the middle.
             float Gap=BIG_NUMBER;
             int BladeTris=0;
-            if(const UStaticMesh* Willow=Athletes[11]->Bat->GetStaticMesh())
+            if(const UStaticMesh* Willow=Athletes[11]->VisualBat()->GetStaticMesh())
                 if(Willow->GetRenderData()&&Willow->GetRenderData()->LODResources.Num())
                 {
                     const FStaticMeshLODResources& LOD=Willow->GetRenderData()->LODResources[0];

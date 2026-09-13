@@ -1,4 +1,5 @@
 #include "C26Athlete.h"
+#include "Characters/C26CharacterPresentationComponent.h"
 #include "C26Types.h"
 #include "C26Motion.h"
 #include "Engine/SkeletalMesh.h"
@@ -13,6 +14,16 @@
 #include "UObject/ConstructorHelpers.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
+#include "Stats/Stats.h"
+// Perf instrumentation for the mobile budget: `stat Cricket26` on device shows
+// the per-frame cost of the pose solve, the authored-clip sampling inside it,
+// and the procedural garment rebuild. All three were the systems this overhaul
+// touched, so they are the three that have to be measurable before anyone
+// optimises them.
+DECLARE_STATS_GROUP(TEXT("Cricket26 Athletes"), STATGROUP_C26Athlete, STATCAT_Advanced);
+DECLARE_CYCLE_STAT(TEXT("Pose solve (Animate)"), STAT_C26_Animate, STATGROUP_C26Athlete);
+DECLARE_CYCLE_STAT(TEXT("Authored clip sample"), STAT_C26_AuthoredClip, STATGROUP_C26Athlete);
+DECLARE_CYCLE_STAT(TEXT("Garment rebuild (Uniform)"), STAT_C26_Uniform, STATGROUP_C26Athlete);
 
 namespace
 {
@@ -46,6 +57,7 @@ AC26Athlete::AC26Athlete()
 {
     PrimaryActorTick.bCanEverTick=false;
     RootComponent=CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
+    Presentation=CreateDefaultSubobject<UC26CharacterPresentationComponent>(TEXT("CharacterPresentation"));
     Mesh=CreateDefaultSubobject<UC26PoseMesh>(TEXT("Cricketer"));Mesh->SetupAttachment(RootComponent);
     HeroMesh=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HeroAthleteMesh"));
     HeroMesh->SetupAttachment(RootComponent);
@@ -74,14 +86,13 @@ AC26Athlete::AC26Athlete()
     if(Player.Succeeded())Mesh->SetSkinnedAssetAndUpdate(Player.Object);
     static ConstructorHelpers::FObjectFinder<UAnimSequence> RunAsset(TEXT("/Game/Cricket26/Animations/A_Run.A_Run"));
     static ConstructorHelpers::FObjectFinder<UAnimSequence> IdleAsset(TEXT("/Game/Cricket26/Animations/A_Idle.A_Idle"));
-    // The two authored one-shot actions. Nothing else in the project animated a bat swing or a
-    // bowling action: both were procedural pose targets, which is why they read as positions
-    // rather than as motion. These are the first clips that actually key the action.
-    static ConstructorHelpers::FObjectFinder<UAnimSequence> BattingAsset(TEXT("/Game/Cricket26/Animations/A_C26_BattingDrive.A_C26_BattingDrive"));
-    static ConstructorHelpers::FObjectFinder<UAnimSequence> BowlingAsset(TEXT("/Game/Cricket26/Animations/A_C26_BowlingPace.A_C26_BowlingPace"));
     static ConstructorHelpers::FObjectFinder<UMaterialInterface> SkinAsset(TEXT("/Game/Cricket26/Materials/M_C26_PlayerSkin.M_C26_PlayerSkin"));
     RunClip=RunAsset.Object;IdleClip=IdleAsset.Object;TexturedSkin=SkinAsset.Object;
-    BattingClip=BattingAsset.Object;BowlingClip=BowlingAsset.Object;
+    // NOTE: the authored clips (incl. the two original family bases, BattingDrive and
+    // BowlingPace) are NOT loaded here -- they come through LoadShotLibrary()'s lazy
+    // LoadObject, so a checkout that has not yet run Tools/ImportAnimations.py boots
+    // clean and degrades to the procedural actions instead of logging import errors
+    // for every athlete CDO.
     Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);Mesh->SetCastShadow(false);
     Mesh->SetVisibility(false);Mesh->SetHiddenInGame(true);
     // Equipment rides in mesh space so it shares one frame with the posed skeleton.
@@ -203,6 +214,7 @@ void AC26Athlete::Dress(UStaticMeshComponent* Part,const TCHAR* Key,UMaterialIns
 }
 void AC26Athlete::UpdateDetail(const FVector& ViewPoint)
 {
+    if(Presentation&&Presentation->IsActive()){Presentation->SetQualityForView(ViewPoint);return;}
     // The striker, the bowler and the keeper are hero wherever they stand: they are what the
     // presentation is about, and demoting them by distance would drop the grille off a batter
     // during a wide replay. Fielders earn hero quality by being near the play.
@@ -489,6 +501,13 @@ void AC26Athlete::ApplyHeroScan()
 }
 void AC26Athlete::Configure(EC26Role NewRole,int Team,int Number)
 {
+    if(Presentation)
+    {
+        const EC26Role OldRole=Role;const int32 OldTeam=TeamId,OldNumber=SquadNumber;
+        Role=NewRole;TeamId=Team;SquadNumber=Number;
+        if(Presentation->TryActivate(this)){Presentation->Configure(this);SetAction(EC26Action::Ready);return;}
+        Role=OldRole;TeamId=OldTeam;SquadNumber=OldNumber;
+    }
     if(Shirt&&Role==NewRole&&TeamId==Team&&SquadNumber==Number){SetAction(EC26Action::Ready);return;}
     Role=NewRole;TeamId=Team;
     // Squad number picks which of the six fielder scans this athlete wears, so it has to be current
@@ -713,6 +732,7 @@ void AC26Athlete::Configure(EC26Role NewRole,int Team,int Number)
 }
 void AC26Athlete::ApplyVisualRole()
 {
+    if(Presentation&&Presentation->IsActive()){Presentation->Configure(this);return;}
     // Exactly one visible body per athlete. Hero scans carry pads/helmet/bat baked in;
     // the animated kit shows team clothing with shoes, and role-appropriate separate
     // equipment is gated in ApplyDetail. Switching roles re-runs Configure, which lands
@@ -908,7 +928,7 @@ void AC26Athlete::CurlFingers(const FString& Side,float Amount)
 }
 void AC26Athlete::SetAction(EC26Action NewAction,bool ResetTime){if(NewAction!=Action||ResetTime)ActionTime=0;Action=NewAction;}
 void AC26Athlete::ResetAt(const FVector& Position,float Yaw)
-{SetActorLocationAndRotation(Position,FRotator(0,Yaw,0));MotionTime=0;MoveSpeed=0;GaitPhase=0;Trigger=0;ContactTarget=FVector::ZeroVector;SetAction(EC26Action::Ready);Animate(0);}
+{SetActorLocationAndRotation(Position,FRotator(0,Yaw,0));if(Presentation&&Presentation->IsActive())Presentation->ResetMotion();MotionTime=0;MoveSpeed=0;GaitPhase=0;Trigger=0;ContactTarget=FVector::ZeroVector;SetAction(EC26Action::Ready);Animate(0);}
 void AC26Athlete::SetShotContact(const FVector& Target,float Angle,bool bLoft)
 {ContactTarget=Target;ShotAngle=Angle;Loft=bLoft;SetAction(EC26Action::Batting);}
 FVector AC26Athlete::Palm(bool Right) const
@@ -926,12 +946,14 @@ FVector AC26Athlete::Palm(bool Right) const
 }
 FVector AC26Athlete::HandPosition() const
 {
+    if(Presentation&&Presentation->IsActive())return Presentation->BallHandPosition();
     const int I=Bone(TEXT("RightHand"));
     if(I<0||!Pose.IsValidIndex(I))return GetActorLocation()+FVector(0,0,210);
     return Mesh->GetComponentTransform().TransformPosition(Palm(true));
 }
 FVector AC26Athlete::ReceivingPosition() const
 {
+    if(Presentation&&Presentation->IsActive())return Presentation->ReceivePosition();
     const int L=Bone(TEXT("LeftHand")),R=Bone(TEXT("RightHand"));
     if(L<0||R<0)return HandPosition();
     return Mesh->GetComponentTransform().TransformPosition((Palm(false)+Palm(true))*.5f);
@@ -1044,6 +1066,7 @@ void AC26Athlete::PlaceKit(const FVector& Grip,const FVector& Dir,bool Batting,b
 }
 void AC26Athlete::UpdateUniform()
 {
+    SCOPE_CYCLE_COUNTER(STAT_C26_Uniform);
     if(bHeroVisual && HeroMesh && HeroMesh->GetStaticMesh())
     {
         Uniform->SetVisibility(false);
@@ -1327,8 +1350,117 @@ void AC26Athlete::GatherDrivenBones(UAnimSequence* Clip,TSet<int32>& Out)
         for(int32 I=0;I<Pose.Num();++I)
             if(Source.FindBoneIndex(Target.GetBoneName(I))>=0)Out.Add(I);
 }
+void AC26Athlete::LoadShotLibrary()
+{
+    if(ShotLibraryLoaded)return;
+    ShotLibraryLoaded=true;
+    // Lazy, not ConstructorHelpers: a missing asset must degrade to the base clip
+    // (and then to the procedural action), not stop the CDO from loading.
+    auto Load=[this](const TCHAR* Path,TObjectPtr<UAnimSequence>& Out)
+    {
+        if(!Out)Out=LoadObject<UAnimSequence>(nullptr,Path);
+        if(!Out)UE_LOG(LogTemp,Warning,TEXT("C26_SHOTLIB missing %s (run Tools/ImportAnimations.py)"),Path);
+    };
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingDrive.A_C26_BattingDrive"),BattingClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_BowlingPace.A_C26_BowlingPace"),BowlingClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingPull.A_C26_BattingPull"),BattingPullClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingCut.A_C26_BattingCut"),BattingCutClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingSweep.A_C26_BattingSweep"),BattingSweepClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingDefence.A_C26_BattingDefence"),BattingDefenceClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingBackFootDefence.A_C26_BattingBackFootDefence"),BattingBackFootDefenceClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingUpperCut.A_C26_BattingUpperCut"),BattingUpperCutClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingLateCut.A_C26_BattingLateCut"),BattingLateCutClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingHook.A_C26_BattingHook"),BattingHookClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingLoftedDrive.A_C26_BattingLoftedDrive"),BattingLoftedDriveClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_BattingGlance.A_C26_BattingGlance"),BattingGlanceClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_BowlingOffSpin.A_C26_BowlingOffSpin"),BowlingOffSpinClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_BowlingLegSpin.A_C26_BowlingLegSpin"),BowlingLegSpinClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_UmpireSignalWide.A_C26_UmpireSignalWide"),UmpireWideClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_UmpireSignalSix.A_C26_UmpireSignalSix"),UmpireSixClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_UmpireSignalOut.A_C26_UmpireSignalOut"),UmpireOutClip);
+    Load(TEXT("/Game/Cricket26/Animations/A_C26_UmpireSignalFour.A_C26_UmpireSignalFour"),UmpireFourClip);
+}
+
+UAnimSequence* AC26Athlete::SelectBattingClip()
+{
+    LoadShotLibrary();
+    // The simulation's own shot intent, not a visual guess. ShotAngle is the shot's
+    // horizontal direction (0 = straight, negative = leg side, positive = off side),
+    // StrideIntent says whether the weight went back or forward, Loft is the
+    // player's own loft toggle, and the ball's height at the contact point is
+    // measured off ContactTarget -- the same geometry C26Controls::ShotFamily()
+    // names the stroke from, so the clip shows the shot the scorecard printed.
+    // Visual only: no branch below can change what the simulation scored.
+    const float BallHeight=ContactTarget.IsZero()?60.f:ContactTarget.Z-GetActorLocation().Z;
+    if(Defending&&BattingDefenceClip)
+        // The defensive answer to a short ball stays on the back foot; only a
+        // full ball is pressed forward under the eyes.
+        return (BallHeight>108.f&&BattingBackFootDefenceClip)?BattingBackFootDefenceClip:BattingDefenceClip;
+    if(BallHeight>108.f)  // a short ball: the swing goes horizontal, not through
+    {
+        if(ShotAngle<=0.f)  // leg side: hook if it is up at the head, pull at the chest
+            return BallHeight>148.f?(BattingHookClip?BattingHookClip:BattingPullClip)
+                                   :(BattingPullClip?BattingPullClip:BattingClip);
+        // off side: upper cut if it is climbing past the shoulder, square cut at
+        // the chest.
+        return BallHeight>148.f&&BattingUpperCutClip?BattingUpperCutClip
+            :(BattingCutClip?BattingCutClip:BattingClip);
+    }
+    if(Loft&&FMath::Abs(ShotAngle)<40.f&&BattingLoftedDriveClip)return BattingLoftedDriveClip;
+    if(ShotAngle<=-75.f)return BattingGlanceClip?BattingGlanceClip:BattingClip;  // leg glance
+    if(ShotAngle<=-40.f)  // leg side, full: a low full ball on the toes is swept,
+        return BallHeight<45.f&&StrideIntent>=0.f  // anything higher is flicked
+            ?(BattingSweepClip?BattingSweepClip:BattingClip)
+            :(BattingPullClip?BattingPullClip:BattingClip);
+    if(ShotAngle>78.f)  // taken behind the hip line, steered fine
+        return BattingLateCutClip?BattingLateCutClip:(BattingCutClip?BattingCutClip:BattingClip);
+    if(ShotAngle>=40.f&&StrideIntent<0.f)
+        return BattingCutClip?BattingCutClip:BattingClip;
+    return BattingClip;
+}
+
+UAnimSequence* AC26Athlete::SelectBowlingClip()
+{
+    LoadShotLibrary();
+    switch(DeliveryStyle)
+    {
+        case EC26Delivery::OffBreak:case EC26Delivery::ArmBall:
+        case EC26Delivery::TopSpinner:case EC26Delivery::Doosra:
+            return BowlingOffSpinClip?BowlingOffSpinClip:BowlingClip;
+        case EC26Delivery::LegBreak:case EC26Delivery::Googly:
+        case EC26Delivery::Flipper:
+            return BowlingLegSpinClip?BowlingLegSpinClip:BowlingClip;
+        default:return BowlingClip;
+    }
+}
+
+UAnimSequence* AC26Athlete::SelectSignalClip()
+{
+    LoadShotLibrary();
+    switch(Action)
+    {
+        case EC26Action::SignalWide:return UmpireWideClip;
+        case EC26Action::SignalSix:return UmpireSixClip;
+        case EC26Action::SignalOut:return UmpireOutClip;
+        case EC26Action::SignalFour:return UmpireFourClip;
+        default:return nullptr;
+    }
+}
+
+TSet<int32>& AC26Athlete::DrivenFor(UAnimSequence* Clip)
+{
+    static TSet<int32> Empty;
+    if(!Clip)return Empty;
+    const FName Key=Clip->GetFName();
+    if(TSet<int32>* Found=ClipDriven.Find(Key))return *Found;
+    TSet<int32>& Out=ClipDriven.Add(Key);
+    GatherDrivenBones(Clip,Out);
+    return Out;
+}
+
 void AC26Athlete::ApplyAuthoredClip(UAnimSequence* Clip,const TSet<int32>& Driven,float Time,float Weight)
 {
+    SCOPE_CYCLE_COUNTER(STAT_C26_AuthoredClip);
     if(!Clip||Weight<=0.f||Driven.IsEmpty()||!Clip->GetSkeleton()||!Mesh||!Mesh->GetSkinnedAsset())return;
     const auto& Source=Clip->GetSkeleton()->GetReferenceSkeleton();
     const auto& Target=Mesh->GetSkinnedAsset()->GetRefSkeleton();
@@ -1378,6 +1510,15 @@ void AC26Athlete::ApplyAuthoredClip(UAnimSequence* Clip,const TSet<int32>& Drive
 }
 void AC26Athlete::Animate(float Dt)
 {
+    SCOPE_CYCLE_COUNTER(STAT_C26_Animate);
+
+    if (Presentation && Presentation->IsActive())
+    {
+        ActionTime += FMath::Max(0.f, Dt);
+        MotionTime += FMath::Max(0.f, Dt);
+        Presentation->UpdateFromMatch(this, Dt);
+        return;
+    }
     if(bHeroVisual && HeroMesh && HeroMesh->GetStaticMesh())
     {
         HeroMesh->SetVisibility(true);
@@ -1899,15 +2040,16 @@ void AC26Athlete::Animate(float Dt)
     // uniform scale would move the defining frame, which is the one thing authoring the clip was
     // for. Phase one runs from the start of the action to that frame, phase two from it to the end,
     // so the clip covers the whole action AND lands its contact exactly where the match expects it.
-    if(!DrivenBonesCached)
+    if(Batting&&!Running&&Action==EC26Action::Batting)
     {
-        GatherDrivenBones(BattingClip,BattingDriven);
-        GatherDrivenBones(BowlingClip,BowlingDriven);
-        DrivenBonesCached=true;
-    }
-    if(Batting&&!Running&&Action==EC26Action::Batting&&BattingClip)
-    {
-        const float ClipLength=BattingClip->GetPlayLength();
+        // The clip for the shot the simulation actually played (defence, pull, cut,
+        // sweep, drive); null only when even the drive is missing, in which case the
+        // procedural stroke keeps ownership below.
+        UAnimSequence* Shot=SelectBattingClip();
+        if(!Shot)Shot=BattingClip;
+        if(Shot)
+        {
+        const float ClipLength=Shot->GetPlayLength();
         const float ClipContact=C26BattingContactFrame/C26AuthoredFps;
         const float Contact=C26Field::BatContactPoseTime;
         // Same span the procedural pass finishes the stroke over, so the hand-back at the end has
@@ -1919,19 +2061,29 @@ void AC26Athlete::Animate(float Dt)
         // Full authority through the stroke, with a short ramp at each end so the entry out of the
         // stance and the exit into the follow-through are travelled rather than cut.
         const float Weight=FMath::Min(FMath::SmoothStep(0.f,.05f,ActionTime),FMath::SmoothStep(0.f,.09f,Length-ActionTime));
-        // DISABLED. A_C26_BattingDrive was keyed against the 67-bone KitBase rig, but it lands here
-        // on top of a fully solved procedural stroke and at full weight, so it does not refine that
-        // stroke -- it replaces every bone it drives. Measured on a capture, that is what produced
-        // the batter's contorted stance and the bowler's folded-in-half delivery: the clip wins the
-        // last write, and its arm keys put the bowling arm down by the hip, which reads as underarm.
-        // The procedural action is the one that is actually correct against this rig, so it keeps
-        // ownership. Re-enable only once the clip is verified pose-by-pose on SK_Cricketer_Match
-        // and applied as an ADDITIVE refinement rather than a replacement.
-        (void)ClipTime;(void)Weight;
+        // Re-enabled 2026-09-13. The original disable was correct: the first export of this clip
+        // was keyed under a wrong rig-facing assumption (the authoring script claimed +Y forward;
+        // the rig faces -Y in armature space), so its swing arc ran through the batter's back and
+        // replacing the procedural stroke with it produced the contorted stance seen on capture.
+        // The clip has since been re-solved with the facing repair (c26_anim_author.py::
+        // repair_facing) and expressed on this skeleton by Tools/rebuild_authored_clips.py +
+        // Tools/correct_authored_anim.py, whose geometric verification passes (feet planted,
+        // athletic crouch, hands together on the handle, hands 81 cm IN FRONT of the hips at
+        // contact, backlift behind the body; the library adds pull/cut/sweep/defence with the
+        // same guarantees). The clip owns the driven bones through the stroke
+        // by design; the procedural solve remains the blend basis at each end and the fallback
+        // if the clip ever fails to load.
+        ApplyAuthoredClip(Shot,DrivenFor(Shot),ClipTime,Weight);
+        }
     }
-    if(Role==EC26Role::Bowler&&Action==EC26Action::Bowling&&BowlingClip)
+    if(Role==EC26Role::Bowler&&Action==EC26Action::Bowling)
     {
-        const float ClipLength=BowlingClip->GetPlayLength();
+        // The action for the delivery the match asked for (pace / off-spin / leg-spin).
+        UAnimSequence* Delivery=SelectBowlingClip();
+        if(!Delivery)Delivery=BowlingClip;
+        if(Delivery)
+        {
+        const float ClipLength=Delivery->GetPlayLength();
         const float ClipRelease=C26BowlingReleaseFrame/C26AuthoredFps;
         const float Release=C26Field::ReleasePoseTime;
         // C26MatchGameMode starts this action ReleasePoseTime before the ball leaves the hand and
@@ -1941,9 +2093,30 @@ void AC26Athlete::Animate(float Dt)
             ?(Release>UE_KINDA_SMALL_NUMBER?(ActionTime/Release)*ClipRelease:ClipRelease)
             :ClipRelease+(ClipLength-ClipRelease)*FMath::Clamp((ActionTime-Release)/FMath::Max(UE_KINDA_SMALL_NUMBER,Length-Release),0.f,1.f);
         const float Weight=FMath::Min(FMath::SmoothStep(0.f,.06f,ActionTime),FMath::SmoothStep(0.f,.10f,Length-ActionTime));
-        // DISABLED for the same reason as the batting clip above: it overwrites the overarm circle
-        // C26Motion::BowlArm solves, and its own arm keys never get above the shoulder.
-        (void)ClipTime;(void)Weight;
+        // Re-enabled with the corrected clip (see the batting branch above for the history). The
+        // corrected release frame has the bowling hand fully extended above the head and slightly
+        // in front of the shoulder, the mark/gather keys hold the ball in both hands, and the hips
+        // carry the bowler 71 cm down the pitch through the action.
+        ApplyAuthoredClip(Delivery,DrivenFor(Delivery),ClipTime,Weight);
+        }
+    }
+    if(!Batting&&!Running&&(Action==EC26Action::SignalFour||Action==EC26Action::SignalSix
+        ||Action==EC26Action::SignalOut||Action==EC26Action::SignalWide))
+    {
+        // Signals are target-free pose actions, so an authored clip fits them
+        // exactly (pickup/catch/dive/throw are the opposite: they solve toward
+        // the live ball and stay procedural). The clip's whole arc plays over
+        // ~1 s and its LAST frame IS the signal pose, so clamping holds the
+        // arms up for as long as the match holds the action; the exit blend is
+        // SmoothPose's job when the next delivery resets the umpire to Ready.
+        if(UAnimSequence* Sig=SelectSignalClip())
+        {
+            const float ClipLength=Sig->GetPlayLength();
+            constexpr float Length=1.f;
+            const float ClipTime=FMath::Min(ActionTime/Length,1.f)*ClipLength;
+            const float Weight=FMath::SmoothStep(0.f,.14f,ActionTime);
+            ApplyAuthoredClip(Sig,DrivenFor(Sig),ClipTime,Weight);
+        }
     }
     AimHead();
     // One filter stands between every authored pose in this function and the screen. Nothing above
@@ -1957,3 +2130,6 @@ void AC26Athlete::Animate(float Dt)
     PlaceKit(Grip,Dir,Batting,Running);
     UpdateContactShadow();
 }
+
+UStaticMeshComponent* AC26Athlete::VisualBat() const
+{return Presentation&&Presentation->IsActive()?Presentation->GetBat():Bat.Get();}
