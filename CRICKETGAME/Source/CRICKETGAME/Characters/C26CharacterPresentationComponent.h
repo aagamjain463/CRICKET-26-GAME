@@ -31,6 +31,9 @@ class CRICKETGAME_API UC26CharacterPresentationComponent : public UActorComponen
 public:
     UC26CharacterPresentationComponent();
     UPROPERTY(VisibleAnywhere,BlueprintReadOnly) TObjectPtr<USkeletalMeshComponent> Body;
+    /** Selected before activation; changing this never bypasses profile validation/approval.
+        The default path and development command-line override retain their existing behavior. */
+    UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="C26|Presentation") TSoftObjectPtr<UC26CharacterProfile> ProfileAsset;
     UPROPERTY(VisibleAnywhere,BlueprintReadOnly) TObjectPtr<UC26CharacterProfile> Profile;
     UPROPERTY(EditAnywhere,BlueprintReadWrite) FC26PlayerAppearance Appearance;
     UPROPERTY(VisibleAnywhere,BlueprintReadOnly) EC26VisualRole VisualRole=EC26VisualRole::Fielder;
@@ -63,6 +66,10 @@ private:
     FVector LastLeftFoot=FVector::ZeroVector,LastRightFoot=FVector::ZeroVector;
     float FrozenSeconds=0;
     void HideLegacy(AC26Athlete* Athlete);
+    void AssignBodyMesh(USkeletalMesh* Model);
+    void ApplyMaterialOverrides();
+    void ApplyBodyMaterials(int32 Team);
+    void RefreshEquipmentAttachments();
     FName ReadyKey() const;
     FName SelectState(const AC26Athlete* Athlete,float Dt);
     void Debug(const AC26Athlete* Athlete,float Dt);

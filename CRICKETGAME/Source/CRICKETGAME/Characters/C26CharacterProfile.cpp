@@ -107,12 +107,45 @@ bool UC26CharacterProfile::AuditBody(USkeletalMesh* Candidate,USkeleton* Expecte
 #endif
     return Errors.Num()==Before;
 }
+FName FC26EquipmentDefinition::ResolveSocket(bool LeftHanded) const
+{
+    return LeftHanded&&!LeftHandedSocket.IsNone()?LeftHandedSocket:Socket;
+}
+const FTransform& FC26EquipmentDefinition::ResolveOffset(bool LeftHanded) const
+{
+    return LeftHanded&&!LeftHandedSocket.IsNone()?LeftHandedOffset:Offset;
+}
+USkeletalMesh* UC26CharacterProfile::ResolveBody(EC26VisualRole Role,FName Preset) const
+{
+    if(Role==EC26VisualRole::Umpire)return UmpireBody;
+    if(const auto* Variant=BodyPresets.Find(Preset))return *Variant;
+    return Body;
+}
+bool UC26CharacterProfile::ValidateMaterialOverrides(TArray<FString>& Errors) const
+{
+    const int32 Before=Errors.Num();
+    TArray<USkeletalMesh*> Models={Body,UmpireBody};
+    for(const auto& Variant:BodyPresets)Models.AddUnique(Variant.Value);
+    for(const auto& Override:MaterialOverrides)
+    {
+        if(Override.Key.IsNone()||!Override.Value)
+            Errors.Add(TEXT("Material override requires a slot name and material"));
+        for(const USkeletalMesh* Model:Models)
+        {
+            if(Model&&!Model->GetMaterials().ContainsByPredicate([&Override](const FSkeletalMaterial& Material)
+                {return Material.MaterialSlotName==Override.Key;}))
+                Errors.Add(Model->GetName()+TEXT(": missing material override slot ")+Override.Key.ToString());
+        }
+    }
+    return Errors.Num()==Before;
+}
 bool UC26CharacterProfile::Validate(TArray<FString>& Errors,bool RequireApproval) const
 {
     if(RequireApproval&&(!ApprovedForMatch||VisualReviewEvidence.IsEmpty()))Errors.Add(TEXT("Gates A-F not approved: actual-match visual evidence required"));
     if(SourceAndLicense.IsEmpty())Errors.Add(TEXT("Missing asset provenance/license record"));
     AuditBody(Body,Skeleton,Errors);AuditBody(UmpireBody,Skeleton,Errors);
     for(const auto& Variant:BodyPresets)AuditBody(Variant.Value,Skeleton,Errors);
+    ValidateMaterialOverrides(Errors);
     for(USkeletalMesh* Model:{Body.Get(),UmpireBody.Get()})if(Model)
         for(FName Socket:{LeftHandSocket,RightHandSocket})if(!Model->FindSocket(Socket))Errors.Add(Model->GetName()+TEXT(": missing ")+Socket.ToString());
     TSet<EC26EquipmentSlot> Slots;

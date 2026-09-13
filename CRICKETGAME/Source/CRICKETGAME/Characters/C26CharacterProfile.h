@@ -42,6 +42,9 @@ struct FC26EquipmentDefinition
     UPROPERTY(EditAnywhere) FTransform LeftHandedOffset;
     /** Authored once in the socket's local frame, never placed independently per frame. */
     UPROPERTY(EditAnywhere) FTransform Offset;
+    /** Both attachment values must use the same handedness fallback. */
+    FName ResolveSocket(bool LeftHanded) const;
+    const FTransform& ResolveOffset(bool LeftHanded) const;
 };
 
 USTRUCT(BlueprintType)
@@ -89,6 +92,9 @@ public:
     UPROPERTY(EditAnywhere) FName RightFootBone = TEXT("foot_r");
     UPROPERTY(EditAnywhere) FName JerseyMaterialSlot = TEXT("Jersey");
     UPROPERTY(EditAnywhere) TArray<TObjectPtr<UMaterialInterface>> TeamMaterials;
+    /** Optional body/head/clothing material assignments by imported slot name. Empty preserves
+        asset defaults. TeamMaterials is applied last so team identification retains precedence. */
+    UPROPERTY(EditAnywhere) TMap<FName, TObjectPtr<UMaterialInterface>> MaterialOverrides;
     /** Separate files for changes in height; no arbitrary nested runtime scale. */
     UPROPERTY(EditAnywhere) TMap<FName, TObjectPtr<USkeletalMesh>> BodyPresets;
     UPROPERTY(EditAnywhere) bool ApprovedForMatch = false;
@@ -102,6 +108,9 @@ public:
     UFUNCTION(BlueprintCallable, Category="C26|Validation")
     static TMap<int32,FString> ExportMaterialMap(USkeletalMesh* Candidate, int32 Lod);
     bool Validate(TArray<FString>& Errors, bool RequireApproval = true) const;
+    /** Central role/preset selection; head and clothing currently remain part of the body mesh. */
+    USkeletalMesh* ResolveBody(EC26VisualRole Role, FName Preset) const;
+    bool ValidateMaterialOverrides(TArray<FString>& Errors) const;
     static bool AuditBody(USkeletalMesh* Candidate, USkeleton* Expected, TArray<FString>& Errors);
     const FC26CricketClip* FindClip(FName Key, FName Fallback = NAME_None) const;
     UFUNCTION(BlueprintCallable, CallInEditor, Category="C26|Validation")
