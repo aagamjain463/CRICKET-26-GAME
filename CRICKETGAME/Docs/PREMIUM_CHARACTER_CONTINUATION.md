@@ -92,7 +92,34 @@ Look for: `C26_CHARACTER_ACTIVE` ×10, blue full-body bowler running in, blue fi
 chase/pickup/throw, no pads on fielders, no T-pose. The old red batter/keeper/umpire
 are expected until their gates are built.
 
-## 8. Next steps (not done)
-Batter profile (pads/gloves/bat/helmet + reviewed shots), keeper kit + crouch,
-umpire outfit + signals, jersey hem extension, hair/face LODs, foot-lock/IK pass,
-mobile profiling on hardware. Do not mass-migrate until those gates pass.
+## 8. Batter-stance investigation (same day, later)
+- Softened `BATTER_READY_R/TAP` (pelvis drop -12 to -9/-10, feet narrowed): stance now
+  reads athletic instead of a squat. Verified in `RunReview/A_C26_BatterReady_R_lod0_0`
+  (17:33): side-on, head square, knees bent, collar closed, no tear.
+- Fixed a real pipeline bug in `c26_rig.bake`: loop-closing test used `is` (identity),
+  so every mirrored (_L) loop clip gained one spurious 30-frame extension
+  (BatterReady_L was 94 frames vs 64 for _R). Now `!=`; `BatterReady_L` re-authored
+  to 0-64 and reimported. Other _L loops carry the same extension until rebuilt.
+- Garment churn post-mortem: five successive "fixes" for the batting-yaw chest hole
+  (occlusion variants, abdomen-flatten removal, face-mesh join, rigid trapezius plug,
+  raised neckline) EACH regressed something, including breaking the previously clean
+  fielder. All reverted; the match-verified garment script is restored untouched.
+  Lesson: iterate garments against BOTH fielder and batter captures every round, and
+  treat the deficit-loop stance depth as a deformation input, not just a pose value.
+- Fielder + batter-stance both verified clean on the current review body (17:33
+  captures). Match gate `character_outfield2` re-run on it: 10/10 new bodies,
+  pickup/throw PASS, only the pre-existing old-batter blade FAILs remain.
+- `Tools/BuildBatterReview.py` drafted (sockets BatGrip/Glove/Helmet/PadMount,
+  v1 identity offsets, shot library with BatContact checks) but NOT yet run: no
+  batter equipment exists in-engine yet. Running it is the next step, then
+  offset iteration via review captures.
+- Open: jersey hem still .975 (the .90 extension was part of the reverted churn;
+  waistband skin flash at full stride remains), keeper kit/crouch, umpire outfit,
+  hair/face LODs, foot-lock/IK, mobile profiling on hardware.
+
+## 9. Next steps (not done)
+Run `BuildBatterReview.py`, iterate equipment offsets, validate batter in a real
+match (cover-drive contact sync is the hard gate). Then keeper kit + crouch,
+umpire outfit + signals, hem extension with dual-pose verification, hair/face
+LODs, foot-lock/IK pass, mobile profiling on hardware. Do not mass-migrate until
+those gates pass.

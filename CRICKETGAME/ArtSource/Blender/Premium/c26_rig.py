@@ -422,7 +422,7 @@ def bake(rig, name, keys, loop=False):
         slot = action.slots.new(id_type='OBJECT', name=rig.name)
         rig.animation_data.action_slot = slot
     bones = key_bones(rig)
-    if loop and keys[0][1] is not keys[-1][1]:
+    if loop and keys[0][1] != keys[-1][1]:
         keys = list(keys) + [(keys[-1][0] + (keys[1][0] - keys[0][0]), keys[0][1])]
     for frame, spec in keys:
         apply(rig, spec)
