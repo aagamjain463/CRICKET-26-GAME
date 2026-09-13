@@ -11,8 +11,8 @@ DEFINE_LOG_CATEGORY_STATIC(LogC26Replay,Log,All);
 namespace
 {
 // Pitch physical reference points:
-// Striker stands at (-38, 900); Bowler releases near (-20, -940).
-const FVector Striker(-38,900,0);
+// CameraStrikerMark stands at (-38, 900); Bowler releases near (-20, -940).
+const FVector CameraStrikerMark(-38,900,0);
 constexpr float StrikerEnd=900.f;
 
 // Secondary broadcast tower position for long outfield ball tracking
@@ -161,7 +161,7 @@ void AC26CameraDirector::Direct(EC26Phase Phase,float Time,bool PlayerBatting,co
         else if(Time<5.1f)
         {
             const float T=(Time-3.6f)/1.5f;
-            Look(EC26CameraMode::PreDeliveryBroadcast,FVector(238,FMath::Lerp(-260.f,420.f,T),FMath::Lerp(74.f,132.f,T)),Striker+FVector(0,-40,118),31,Mode!=EC26CameraMode::PreDeliveryBroadcast,Dt,2.6f);
+            Look(EC26CameraMode::PreDeliveryBroadcast,FVector(238,FMath::Lerp(-260.f,420.f,T),FMath::Lerp(74.f,132.f,T)),CameraStrikerMark+FVector(0,-40,118),31,Mode!=EC26CameraMode::PreDeliveryBroadcast,Dt,2.6f);
         }
         else
             Look(EC26CameraMode::BowlerRunup,FVector(300,-1720,196),FVector(-20,-2340,128),34,Mode!=EC26CameraMode::BowlerRunup,Dt,2.4f);
@@ -203,7 +203,7 @@ void AC26CameraDirector::Direct(EC26Phase Phase,float Time,bool PlayerBatting,co
     }
     else if(Phase==EC26Phase::InPlay)
     {
-        const float Range=FVector::Dist2D(Ball,Striker);
+        const float Range=FVector::Dist2D(Ball,CameraStrikerMark);
         const float RopeFraction=FMath::Sqrt(FMath::Square(Ball.X/C26Field::RadiusX)+FMath::Square(Ball.Y/C26Field::RadiusY));
         const FVector Flat=FVector(Velocity.X,Velocity.Y,0).GetSafeNormal(UE_SMALL_NUMBER,FVector(0,-1,0));
         const FVector Side(-Flat.Y,Flat.X,0);
@@ -219,7 +219,7 @@ void AC26CameraDirector::Direct(EC26Phase Phase,float Time,bool PlayerBatting,co
             FVector Aim=Ahead(Ball,Velocity,Aerial?.34f:.24f);
             if(HasFielder)Aim=FMath::Lerp(Aim,Fielder+FVector(0,0,110),.18f);
             const float Handover=FMath::Clamp(Range/2400.f,0.f,1.f);
-            Aim=FMath::Lerp(Striker+FVector(0,0,150),Aim,Handover);
+            Aim=FMath::Lerp(CameraStrikerMark+FVector(0,0,150),Aim,Handover);
             const float HeightTighten=Aerial?FMath::Clamp((Ball.Z-250.f)/300.f,0.f,9.f):0.f;
             Look(Aerial?EC26CameraMode::LoftedShotTracking:EC26CameraMode::GroundShotTracking,
                 MainTower,Aim,FMath::Clamp(29.f+Range/230.f-HeightTighten,26.f,52.f),Mode==EC26CameraMode::BatContact,Dt,5.5f,17.f);
@@ -255,9 +255,9 @@ void AC26CameraDirector::Direct(EC26Phase Phase,float Time,bool PlayerBatting,co
         if(Wicket&&Time<.85f)
             Look(EC26CameraMode::Wicket,EventFocus+FVector(305,-395,155),EventFocus+FVector(0,0,58),33,Cut,Dt,4.5f);
         else if(Boundary&&Time<.9f)
-            Look(EC26CameraMode::Celebration,Striker+FVector(360,-520,175),Striker+FVector(0,0,138),30,Cut,Dt,3.4f);
+            Look(EC26CameraMode::Celebration,CameraStrikerMark+FVector(360,-520,175),CameraStrikerMark+FVector(0,0,138),30,Cut,Dt,3.4f);
         else
-            Look(EC26CameraMode::Celebration,Striker+FVector(318,-455,182),Striker+FVector(0,-30,132),34,Cut||Mode==EC26CameraMode::Wicket,Dt,3.f);
+            Look(EC26CameraMode::Celebration,CameraStrikerMark+FVector(318,-455,182),CameraStrikerMark+FVector(0,-30,132),34,Cut||Mode==EC26CameraMode::Wicket,Dt,3.f);
     }
     else if(Phase==EC26Phase::Interval)
     {
@@ -382,18 +382,18 @@ bool AC26CameraDirector::PlayReplay(float Dt,FVector& Ball,const TArray<TObjectP
     Ball=FMath::Lerp(A.Ball,B.Ball,T);
     ApplyFrame(A,B,T,Actors);
 
-    const FVector Anchor=ContactPoint.IsZero()?Striker+FVector(0,0,110):ContactPoint;
+    const FVector Anchor=ContactPoint.IsZero()?CameraStrikerMark+FVector(0,0,110):ContactPoint;
 
     if(ReplayShot==0 && ReleaseStamp>=0 && ReplayClock < ReleaseStamp + 0.15f)
     {
-        Look(EC26CameraMode::ReplayPitch,FVector(-10.f,-2600.f,540.f),Striker+FVector(0,0,65.f),42.f,Mode!=EC26CameraMode::ReplayPitch,Dt,6.5f);
+        Look(EC26CameraMode::ReplayPitch,FVector(-10.f,-2600.f,540.f),CameraStrikerMark+FVector(0,0,65.f),42.f,Mode!=EC26CameraMode::ReplayPitch,Dt,6.5f);
     }
     else if(ReplayShot==0)
     {
         const float InnerAe=ShotAerial?.55f:.20f,OuterAe=ShotAerial?.62f:.42f;
         const FVector Eye=FVector(Anchor.X,FMath::Min(Anchor.Y,StrikerEnd),0)+FVector(-620,-150,0)+FVector(0,0,FMath::Max(145.f,Anchor.Z+20.f));
         Look(EC26CameraMode::ReplayClose,Eye,
-            FMath::Lerp(Striker+FVector(0,0,112),FMath::Lerp(Anchor,Ball,InnerAe),OuterAe),36,Cut||Mode==EC26CameraMode::ReplayPitch,Dt,6.0f,26.f);
+            FMath::Lerp(CameraStrikerMark+FVector(0,0,112),FMath::Lerp(Anchor,Ball,InnerAe),OuterAe),36,Cut||Mode==EC26CameraMode::ReplayPitch,Dt,6.0f,26.f);
     }
     else if(ReplayShot==1&&Wicket)
     {
@@ -412,7 +412,7 @@ bool AC26CameraDirector::PlayReplay(float Dt,FVector& Ball,const TArray<TObjectP
         }
         else
         {
-            Look(EC26CameraMode::Celebration,Striker+FVector(300,-400,170),Striker+FVector(0,-20,125),32,Cut,Dt,4.0f);
+            Look(EC26CameraMode::Celebration,CameraStrikerMark+FVector(300,-400,170),CameraStrikerMark+FVector(0,-20,125),32,Cut,Dt,4.0f);
         }
     }
     return true;

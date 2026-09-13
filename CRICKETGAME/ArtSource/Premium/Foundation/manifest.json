@@ -355,7 +355,10 @@
           "body_shader_shader",
           "/Game/Cricket26/Characters/MetaHumans/Players/Player_001/MH_C26_Player_001/Body/Materials/MI_Body_Skin.MI_Body_Skin"
         ]
-      ]
+      ],
+      "export_material_map": {
+        "0": "/Game/Cricket26/Characters/MetaHumans/Players/Player_001/MH_C26_Player_001/Body/Materials/MI_Body_Skin.MI_Body_Skin"
+      }
     },
     {
       "label": "Face",
@@ -1289,7 +1292,18 @@
           "head_LOD57_shader_shader",
           "/Game/Cricket26/Characters/MetaHumans/Players/Player_001/MH_C26_Player_001/Face/Materials/MI_Face_Skin_LOD5to7.MI_Face_Skin_LOD5to7"
         ]
-      ]
+      ],
+      "export_material_map": {
+        "0": "/Game/Cricket26/Characters/MetaHumans/Players/Player_001/MH_C26_Player_001/Face/Materials/MI_Face_Skin_LOD1.MI_Face_Skin_LOD1",
+        "1": "/Game/Cricket26/Characters/MetaHumans/Players/Player_001/MH_C26_Player_001/Face/Materials/MI_Face_Teeth.MI_Face_Teeth",
+        "2": "/Game/Cricket26/Characters/MetaHumans/Common/Materials/M_Hide.M_Hide",
+        "3": "/Game/Cricket26/Characters/MetaHumans/Players/Player_001/MH_C26_Player_001/Face/Materials/MI_Face_Eye_Left.MI_Face_Eye_Left",
+        "4": "/Game/Cricket26/Characters/MetaHumans/Players/Player_001/MH_C26_Player_001/Face/Materials/MI_Face_Eye_Right.MI_Face_Eye_Right",
+        "5": "/Game/Cricket26/Characters/MetaHumans/Players/Player_001/MH_C26_Player_001/Face/Materials/MI_Face_EyeShell.MI_Face_EyeShell",
+        "6": "/Game/Cricket26/Characters/MetaHumans/Players/Player_001/MH_C26_Player_001/Face/Materials/MI_Face_Eyelashes.MI_Face_Eyelashes",
+        "7": "/Game/Cricket26/Characters/MetaHumans/Players/Player_001/MH_C26_Player_001/Face/Materials/MI_Face_LacrimalFluid.MI_Face_LacrimalFluid",
+        "8": "/Game/Cricket26/Characters/MetaHumans/Common/Materials/M_Hide.M_Hide"
+      }
     }
   ]
 }

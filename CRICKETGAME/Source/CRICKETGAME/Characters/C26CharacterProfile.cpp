@@ -3,6 +3,7 @@
 #include "Animation/Skeleton.h"
 #include "Engine/SkeletalMesh.h"
 #include "Rendering/SkeletalMeshModel.h"
+#include "Materials/MaterialInterface.h"
 
 namespace C26Character
 {
@@ -122,6 +123,8 @@ bool UC26CharacterProfile::Validate(TArray<FString>& Errors,bool RequireApproval
         if(Item.Slot==EC26EquipmentSlot::Ball)Errors.Add(TEXT("Ball must remain the existing match actor; no equipment ball allowed"));
         if(!Item.Mesh)Errors.Add(TEXT("Equipment mesh missing: ")+Item.Socket.ToString());
         if(Item.Socket.IsNone()||!Body||!Body->FindSocket(Item.Socket))Errors.Add(TEXT("Equipment socket missing: ")+Item.Socket.ToString());
+        if(!Item.LeftHandedSocket.IsNone()&&(!Body||!Body->FindSocket(Item.LeftHandedSocket)))
+            Errors.Add(TEXT("Left-handed equipment socket missing: ")+Item.LeftHandedSocket.ToString());
     }
     for(uint8 R=0;R<=uint8(EC26VisualRole::Umpire);++R)for(uint8 S=0;S<=uint8(EC26EquipmentSlot::Accessory);++S)
         if(C26Character::Requires(EC26VisualRole(R),EC26EquipmentSlot(S))&&!Slots.Contains(EC26EquipmentSlot(S)))
@@ -168,4 +171,35 @@ bool UC26CharacterProfile::ValidateForMatch() const
     TArray<FString> Errors;const bool Good=Validate(Errors);
     for(const FString& Error:Errors)UE_LOG(LogTemp,Error,TEXT("C26_CHARACTER_INVALID %s"),*Error);
     return Good;
+}
+
+TArray<FString> UC26CharacterProfile::InspectBody(USkeletalMesh* Candidate)
+{TArray<FString> Errors;AuditBody(Candidate,Candidate?Candidate->GetSkeleton():nullptr,Errors);return Errors;}
+TMap<FName,FTransform> UC26CharacterProfile::BindPose(USkeletalMesh* Candidate)
+{
+    TMap<FName,FTransform> Out;if(!Candidate)return Out;
+    const auto& Ref=Candidate->GetRefSkeleton();TArray<FTransform> Transforms;
+    for(int32 I=0;I<Ref.GetNum();++I)
+    {
+        FTransform T=Ref.GetRefBonePose()[I];const int32 Parent=Ref.GetParentIndex(I);
+        if(Parent>=0)T*=Transforms[Parent];Transforms.Add(T);Out.Add(Ref.GetBoneName(I),T);
+    }
+    return Out;
+}
+
+TMap<int32,FString> UC26CharacterProfile::ExportMaterialMap(USkeletalMesh* Candidate,int32 Lod)
+{
+    TMap<int32,FString> Out;
+#if WITH_EDITOR
+    if(!Candidate||!Candidate->GetImportedModel()||!Candidate->GetImportedModel()->LODModels.IsValidIndex(Lod))return Out;
+    const auto* Info=Candidate->GetLODInfo(Lod);const auto& Sections=Candidate->GetImportedModel()->LODModels[Lod].Sections;
+    for(int32 I=0;I<Sections.Num();++I)
+    {
+        int32 Material=Sections[I].MaterialIndex;
+        if(Info&&Info->LODMaterialMap.IsValidIndex(I)&&Info->LODMaterialMap[I]>=0)Material=Info->LODMaterialMap[I];
+        if(Candidate->GetMaterials().IsValidIndex(Material))
+            Out.Add(Sections[I].MaterialIndex,GetPathNameSafe(Candidate->GetMaterials()[Material].MaterialInterface));
+    }
+#endif
+    return Out;
 }

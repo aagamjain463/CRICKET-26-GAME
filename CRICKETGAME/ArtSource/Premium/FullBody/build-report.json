@@ -4,8 +4,8 @@
   "parts": [
     {
       "name": "SKM_MH_C26_Player_001_BodyMesh.001",
-      "vertices": 32334,
-      "triangles": 60816,
+      "vertices": 25898,
+      "triangles": 48856,
       "unweighted": 0
     },
     {
@@ -16,14 +16,14 @@
     },
     {
       "name": "C26_Jersey",
-      "vertices": 6058,
-      "triangles": 11300,
+      "vertices": 6239,
+      "triangles": 12224,
       "unweighted": 0
     },
     {
       "name": "C26_Trousers",
-      "vertices": 6350,
-      "triangles": 12158,
+      "vertices": 6308,
+      "triangles": 12446,
       "unweighted": 0
     },
     {

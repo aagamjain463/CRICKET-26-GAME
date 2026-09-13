@@ -79,6 +79,8 @@ public:
     UPROPERTY(EditAnywhere) TObjectPtr<USkeleton> Skeleton;
     UPROPERTY(EditAnywhere) TObjectPtr<USkeletalMesh> Body;
     UPROPERTY(EditAnywhere) TObjectPtr<USkeletalMesh> UmpireBody;
+    /** One import-frame adapter: current source faces +Y, gameplay faces +X. Scale stays 1. */
+    UPROPERTY(EditAnywhere) FRotator MeshToGameplayRotation = FRotator(0,-90,0);
     UPROPERTY(EditAnywhere) TMap<FName, FC26CricketClip> Clips;
     UPROPERTY(EditAnywhere) TArray<FC26EquipmentDefinition> Equipment;
     UPROPERTY(EditAnywhere) FName LeftHandSocket = TEXT("BallHand_L");
@@ -93,6 +95,12 @@ public:
     UPROPERTY(EditAnywhere, meta=(MultiLine=true)) FString SourceAndLicense;
     UPROPERTY(EditAnywhere, meta=(MultiLine=true)) FString VisualReviewEvidence;
 
+    UFUNCTION(BlueprintCallable, Category="C26|Validation")
+    static TArray<FString> InspectBody(USkeletalMesh* Candidate);
+    UFUNCTION(BlueprintCallable, Category="C26|Validation")
+    static TMap<FName,FTransform> BindPose(USkeletalMesh* Candidate);
+    UFUNCTION(BlueprintCallable, Category="C26|Validation")
+    static TMap<int32,FString> ExportMaterialMap(USkeletalMesh* Candidate, int32 Lod);
     bool Validate(TArray<FString>& Errors, bool RequireApproval = true) const;
     static bool AuditBody(USkeletalMesh* Candidate, USkeleton* Expected, TArray<FString>& Errors);
     const FC26CricketClip* FindClip(FName Key, FName Fallback = NAME_None) const;

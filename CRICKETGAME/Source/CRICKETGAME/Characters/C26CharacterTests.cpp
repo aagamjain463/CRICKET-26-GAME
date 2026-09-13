@@ -83,4 +83,33 @@ bool FC26CharacterGraphTest::RunTest(const FString& Parameters)
     }
     Actor->Destroy();World->DestroyWorld(false);return Good;
 }
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FC26RetargetedRunTest,"Cricket26.Characters.RetargetedRun",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
+bool FC26RetargetedRunTest::RunTest(const FString& Parameters)
+{
+    auto* Clip=LoadObject<UAnimSequence>(nullptr,TEXT("/Game/Cricket26/Characters/Animations/Locomotion/C26_A_Run.C26_A_Run"));
+    auto* Mesh=LoadObject<USkeletalMesh>(nullptr,TEXT("/Game/Cricket26/Characters/Bodies/SK_C26_FullBody_Candidate.SK_C26_FullBody_Candidate"));
+    if(!TestNotNull(TEXT("New canonical body"),Mesh)||!TestNotNull(TEXT("Retargeted run"),Clip))return false;
+    TArray<FString> Errors;UC26CharacterProfile::AuditBody(Mesh,Clip->GetSkeleton(),Errors);
+    for(const auto& Error:Errors)AddError(Error);
+    UWorld* World=UWorld::CreateWorld(EWorldType::Game,false);AActor* Actor=World->SpawnActor<AActor>();
+    auto* Body=NewObject<USkeletalMeshComponent>(Actor);Actor->SetRootComponent(Body);
+    Body->SetSkeletalMesh(Mesh);Body->SetAnimInstanceClass(UC26CricketerAnimInstance::StaticClass());Body->RegisterComponent();
+    auto* Anim=Cast<UC26CricketerAnimInstance>(Body->GetAnimInstance());
+    bool Good=TestNotNull(TEXT("Canonical body uses real skeletal graph"),Anim);
+    FVector LastL,LastR;float FootTravel=0,LowestFoot=1000;
+    if(Anim)for(int32 I=0;I<12;++I)
+    {
+        Anim->PreviousSequence=Anim->CurrentSequence=Clip;Anim->BlendAlpha=1;
+        Anim->CurrentTime=Clip->GetPlayLength()*I/12.f;Body->TickAnimation(.016f,false);Body->RefreshBoneTransforms();
+        const FVector Head=Body->GetBoneLocation(TEXT("head")),L=Body->GetBoneLocation(TEXT("foot_l")),R=Body->GetBoneLocation(TEXT("foot_r"));
+        Good&=TestTrue(TEXT("Pelvis-root source cannot push human below floor"),Head.Z>130&&Head.Z<195);
+        Good&=TestTrue(TEXT("In-place root cannot drift with source motion"),Body->GetBoneLocation(TEXT("root")).Size()<.1f);
+        if(I)FootTravel+=(L-LastL).Size()+(R-LastR).Size();LastL=L;LastR=R;
+        LowestFoot=FMath::Min3(LowestFoot,float(L.Z),float(R.Z));
+    }
+    Good&=TestTrue(TEXT("Both legs stride through the cycle"),FootTravel>200);
+    Good&=TestTrue(TEXT("Planted ankle remains near ground"),LowestFoot>-4&&LowestFoot<20);
+    AddInfo(FString::Printf(TEXT("New body: cumulative feet travel %.1fcm, lowest ankle %.1fcm; visual quality still requires review"),FootTravel,LowestFoot));
+    Actor->Destroy();World->DestroyWorld(false);return Good&&Errors.IsEmpty();
+}
 #endif

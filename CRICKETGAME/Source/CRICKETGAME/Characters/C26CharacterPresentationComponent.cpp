@@ -61,12 +61,18 @@ bool UC26CharacterPresentationComponent::TryActivate(AC26Athlete* Athlete)
         return false;
     }
     // Slice previews one representative of each role in the real match before mass migration.
-    if(Slice&&Athlete->SquadNumber!=1&&Athlete->SquadNumber!=2&&Athlete->SquadNumber!=3
-        &&Athlete->SquadNumber!=7&&Athlete->Role!=EC26Role::Umpire)return false;
+    if(Slice)
+    {
+        const bool Representative=Athlete->Role==EC26Role::Bowler||Athlete->Role==EC26Role::Keeper
+            ||Athlete->Role==EC26Role::Umpire||(Athlete->Role==EC26Role::Fielder&&Athlete->SquadNumber==3)
+            ||(Athlete->Role==EC26Role::Batter&&Athlete->SquadNumber==7);
+        if(!Representative)return false;
+    }
     Body=NewObject<USkeletalMeshComponent>(Athlete,TEXT("PremiumCricketerBody"));
     Athlete->AddInstanceComponent(Body);Body->SetupAttachment(Athlete->GetRootComponent());
     Body->SetCollisionEnabled(ECollisionEnabled::NoCollision);Body->SetCastShadow(true);
     Body->SetVisibility(false);Body->SetHiddenInGame(true);
+    Body->SetRelativeRotation(Profile->MeshToGameplayRotation);
     Body->SetSkeletalMesh(Profile->Body);Body->SetAnimationMode(EAnimationMode::AnimationBlueprint);
     Body->SetAnimInstanceClass(UC26CricketerAnimInstance::StaticClass());
     Body->bEnableUpdateRateOptimizations=false;
@@ -270,6 +276,7 @@ void UC26CharacterPresentationComponent::SetQualityForView(const FVector& ViewPo
     const int32 Tier=Distance>6000.f?3:Distance>3000.f?2:Distance>1400.f?1:0;
     const int32 Bias=Quality==EC26CharacterQuality::Low?1:0;
     Body->SetForcedLOD(FMath::Clamp(Tier+Bias,0,FMath::Max(0,Count-1))+1);
+    Body->UpdateLODStatus();
     Body->SetCastShadow(Active||Distance<4000.f);
     // Quality NEVER changes role visibility or freezes active motion. Hair/face reduction belongs
     // in the imported LODs; no runtime strand-hair dependency is introduced.
