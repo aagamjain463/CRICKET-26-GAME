@@ -8,6 +8,7 @@ The clips are authored on the candidate rig itself, so Unreal imports them strai
 SK_C26_FullBody_Candidate_Skeleton with no retarget in the path.
 """
 import bpy, json, sys
+import argparse
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -17,6 +18,11 @@ import c26_actions as actions       # noqa: E402
 
 OUT = ROOT / 'ArtSource/Premium/AnimationSources/Cricket'
 OUT.mkdir(parents=True, exist_ok=True)
+parser = argparse.ArgumentParser()
+parser.add_argument('--only', help='Comma-separated clip keys; preserve other source entries')
+args = parser.parse_args(sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else [])
+selected = set(args.only.split(',')) if args.only else None
+old_manifest = {entry['name']: entry for entry in json.loads((OUT / 'manifest.json').read_text())} if (OUT / 'manifest.json').exists() else {}
 
 rig = rig_lib.load(ROOT / 'ArtSource/Premium/FullBody/C26_FullBody_Candidate.blend', keep_mesh=False)
 
@@ -38,6 +44,10 @@ bpy.ops.object.mode_set(mode='POSE')
 manifest = []
 for clip in actions.build_manifest():
     name = clip['name']
+    if selected is not None and name not in selected:
+        assert name in old_manifest, 'No prior manifest entry for ' + name
+        manifest.append(old_manifest[name])
+        continue
     action = rig_lib.bake(rig, f'A_C26_{name}', clip['keys'], loop=clip.get('loop', False))
     path = OUT / f'A_C26_{name}.fbx'
     rig_lib.export(rig, action, path)

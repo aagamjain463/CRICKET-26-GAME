@@ -287,8 +287,16 @@ def apply(rig, spec):
         pelvis.location += M.inverted() @ Vector((0, 0, -deficit))
         update()
 
-    for side in ('l', 'r'):
-        _resolve(rig, spec, f'hand_{side}', f'upperarm_{side}', arm, solved)
+    # Mirroring swaps the OFF dependency: the left wrist then depends on the
+    # right. A fixed left-then-right pass silently omitted the left arm entirely.
+    for _ in range(2):
+        for side in ('l', 'r'):
+            key = f'hand_{side}'
+            if key not in solved:
+                _resolve(rig, spec, key, f'upperarm_{side}', arm, solved)
+    for key in ('hand_l', 'hand_r'):
+        if key in spec and key not in solved:
+            raise ValueError('Unresolved hand target dependency: ' + key)
 
     # A two-handed grip is one rigid object. In a closed batting stance the back shoulder sits a
     # third of a metre behind the front one, so a grip placed under the front shoulder is simply
@@ -334,9 +342,15 @@ def apply(rig, spec):
             if pole is None:
                 pole = rig.pose.bones[f'thigh_{side}'].head + DEFAULT_KNEE_POLE
             two_bone_ik(rig, f'thigh_{side}', f'calf_{side}', f'foot_{side}', target, pole)
+        # A planted shoe must not inherit the bent calf's pitch. Preserve the
+        # authored ankle position, orient to the canonical ground frame, then
+        # apply any deliberate heel/toe roll in armature space.
+        foot = rig.pose.bones[f'foot_{side}']
+        rotation = foot.bone.matrix_local.to_quaternion()
         a = spec.get(f'ankle_{side}')
         if a:
-            world_rot(rig.pose.bones[f'foot_{side}'], *a)
+            rotation = Euler(tuple(value * D for value in a), 'XYZ').to_quaternion() @ rotation
+        foot.matrix = Matrix.LocRotScale(foot.head.copy(), rotation, Vector((1, 1, 1)))
     update()
 
 

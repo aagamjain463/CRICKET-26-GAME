@@ -6,6 +6,7 @@
 class AC26Athlete;
 class USkeletalMeshComponent;
 class UStaticMeshComponent;
+class ACameraActor;
 
 /** Uses measured displacement, including SetActorLocation; zero-time contact samples cannot
     advance locomotion and ResetAt cannot masquerade as a 100m sprint. */
@@ -30,6 +31,7 @@ class CRICKETGAME_API UC26CharacterPresentationComponent : public UActorComponen
     GENERATED_BODY()
 public:
     UC26CharacterPresentationComponent();
+    virtual void TickComponent(float Dt,ELevelTick TickType,FActorComponentTickFunction* ThisTickFunction) override;
     UPROPERTY(VisibleAnywhere,BlueprintReadOnly) TObjectPtr<USkeletalMeshComponent> Body;
     UPROPERTY(VisibleAnywhere,BlueprintReadOnly) TObjectPtr<UC26CharacterProfile> Profile;
     UPROPERTY(EditAnywhere,BlueprintReadWrite) FC26PlayerAppearance Appearance;
@@ -62,6 +64,9 @@ private:
     TSet<FName> ReportedMissing;
     FVector LastLeftFoot=FVector::ZeroVector,LastRightFoot=FVector::ZeroVector;
     float FrozenSeconds=0;
+    UPROPERTY(Transient) TObjectPtr<ACameraActor> ReviewCamera;
+    TMap<FName,int32> ReviewSamples;
+    float ReviewTime=0,ReviewLastCapture=-1;
     void HideLegacy(AC26Athlete* Athlete);
     FName ReadyKey() const;
     FName SelectState(const AC26Athlete* Athlete,float Dt);

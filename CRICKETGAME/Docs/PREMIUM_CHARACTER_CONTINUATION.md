@@ -1,0 +1,98 @@
+# Premium character continuation — 2026-09-13 (feature/premium-character-continuation)
+
+Status: OUTFIELD VERTICAL SLICE IN REAL MATCH. Not full migration. No approval flags set.
+
+## 1. Resume point
+Branch `feature/premium-character-continuation` cut from merged `main` (prior GPT-6/Astra + Codex work).
+On resume the build was BROKEN: `C26CameraDirector.cpp` used undeclared `Striker` (merge fallout).
+Fixed by using the existing `CameraStrikerMark` anchor (replay celebration + boundary tracking).
+Build now succeeds (18.6s incremental, 12.8s after slice change).
+
+## 2. Real defects found and fixed (not re-audited)
+- **Mirrored batting poses dropped a wrist.** `c26_rig._resolve` ran a fixed left-then-right
+  pass; after `mirror()` the left hand depends on the right, so the left arm never solved.
+  Fixed with a two-pass resolve + hard error on unsolved wrists.
+  Regression: `ArtSource/Blender/Premium/verify_hand_dependencies.py` → `C26_HAND_DEPENDENCIES_PASS 6`.
+- **Bent knees tilted shoes into the ground.** Ankle orientation inherited the calf's pitch.
+  Fixed: foot resets to the canonical ground frame, then applies only the authored ankle roll.
+  Fielding clips (FielderReady, Walk, Start, Stop, Turns, Pickup, Throw, Catch, Celebrate,
+  Disappointed) were re-authored with grounded feet.
+- **Jersey neckline/shoulder holes (visible in review captures).** The bridge from the wide
+  torso top edge to the neck ring was too wide, wound inward (invisible from the front),
+  and torso skin was kept underneath. Fixed: tighter collar (rx 0.056/ry 0.052, +0.022 up),
+  outward-facing bridge winding check, torso+clavicle+neck_02 skin occluded inside the
+  garment volume. Shoulder holes are closed; collar reads as a crew neck.
+- **Slice selected one fielder, so the gate ball went to an old actor.** Slice now allows
+  all athletes of the requested role when no number is given, so all 9 fielders (then the
+  bowler too) use the review profile and whoever fields is a new body.
+
+## 3. What is validated in a REAL match (L_SuperOver GoldenGate)
+Profile `DA_C26_FielderReview` (unapproved, `ApprovedForMatch=false`): body
+`SK_C26_Athlete_Review`, canonical `SK_C26_FullBody_Candidate_Skeleton`, clips
+FielderReady/BowlerReady/Walk/Run(C26_A_Run fixture)/Start/Stop/TurnLeft/TurnRight/
+Pickup/Throw/Catch/Celebrate/Disappointed + FastBowl/OffSpin/LegSpin L/R with
+BallRelease markers. `InspectRole(FIELDER)` and `InspectRole(BOWLER)` pass;
+`InspectRole(BATTER)` and `InspectRole(KEEPER)` correctly FAIL (no faked gear).
+- `character_outfield` gate: **10/10 new bodies active** (bowler + 9 fielders),
+  `drive completed pickup and hand throw` PASS, `return leaves rendered throwing hand` PASS.
+- Screenshots: `0_02_runup` (new bowler running in), `0_07_pickup` (new fielder chasing
+  at full stride, full legs/arms, no pads), `0_08a_throw_release` (new fielder mid-throw).
+- Automation: all 5 `Cricket26.Characters.*` tests pass; full suite green except the
+  pre-existing legacy `Cricket26.Anim.AuthoredClips` failure on old `/Game/Cricket26/Animations`
+  assets (unchanged by this slice).
+- The 2 gate FAILs are the pre-existing `ball intersects rendered blade triangles`
+  check on the OLD batter/bat (gap ~86–90cm), not the new outfield.
+
+## 4. Known visual limitations (honest, from the captures)
+- Jersey–trouser waistband gaps open at full stride (skin flash at the midriff).
+  Fix: lengthen jersey hem below the trouser waist.
+- Jersey chest has smooth-shading bands (normal bunching from the abdomen flatten).
+- Bodies are bald with neutral faces: correct for distant fielders, not hero close-ups.
+- No keeper pads/gloves, umpire outfit, batting pads/gloves/bat on the new skeleton yet:
+  batter/keeper/umpire remain OLD visuals by design (gates not passed).
+- No Control Rig/FBIK, foot lock, hand IK, motion warping, motion matching, or mobile
+  device profiling. Min-spec LODs exist (4 LODs, all regions weighted) but no perf numbers.
+
+## 5. Files created
+- `ArtSource/Blender/Premium/refine_review_body.py` (garment/occlusion refinement)
+- `ArtSource/Blender/Premium/verify_hand_dependencies.py` (handedness regression)
+- `ArtSource/Premium/FullBody/C26_Athlete_Review.blend` + `SK_C26_Athlete_Review.fbx`
+- `Tools/BuildFielderMatchReview.py` (body import, sockets, outfield review profile)
+- `Content/Cricket26/Characters/Bodies/SK_C26_Athlete_Review.uasset`
+- `Content/Cricket26/Characters/Data/DA_C26_FielderReview.uasset`
+- `Docs/PREMIUM_CHARACTER_CONTINUATION.md` (this file)
+- Captures: `Artifacts/Captures/character_outfield/`, review shots
+  `Artifacts/CharacterAudit/RunReview/A_C26_FielderReady_lod0_*`
+
+## 6. Files modified
+- `Source/.../SuperOver/C26CameraDirector.cpp` (Striker → CameraStrikerMark fix)
+- `Source/.../Characters/C26CharacterProfile.{h,cpp}` (InspectRole, SetEquipmentSocket)
+- `Source/.../Characters/C26CharacterPresentationComponent.{h,cpp}` (role-scoped slice,
+  role re-validation, teleport reset, match-review capture tick)
+- `Source/.../Characters/C26CharacterReviewMode.cpp` (C26ReviewBody override)
+- `ArtSource/Blender/Premium/c26_rig.py` (two-pass hands, grounded feet)
+- `ArtSource/Blender/Premium/author_cricket_actions.py` (--only filter)
+- `Tools/ImportCricketActions.py` (hash-keyed reimport, safe notify repair)
+- `Tools/ReviewPremiumCharacter.sh` (arbitrary clip + body override)
+
+## 7. How to test right now
+```bash
+cd ~/Desktop/CRICKET-26-GAME/CRICKETGAME
+# close-up review (new body, chosen clip, LOD 0..3):
+bash Tools/ReviewPremiumCharacter.sh FielderReady 0 /Game/Cricket26/Characters/Bodies/SK_C26_Athlete_Review
+# real match, new bowler + all 9 new fielders (old batter/keeper/umpire):
+bash Tools/GoldenGate.sh character_outfield -C26GateFPS=30 -unattended \
+  -C26CharacterSlice -C26CharacterProfile=/Game/Cricket26/Characters/Data/DA_C26_FielderReview
+# automation:
+"/Users/Shared/Epic Games/UE_5.8/Engine/Binaries/Mac/UnrealEditor-Cmd" "$PWD/CRICKETGAME.uproject" \
+  -nullrhi -unattended -nosplash -nosound '-ExecCmds=Automation RunTests Cricket26; Quit' \
+  '-TestExit=Automation Test Queue Empty' -abslog="$PWD/Artifacts/CharacterAudit/continuation-automation.log"
+```
+Look for: `C26_CHARACTER_ACTIVE` ×10, blue full-body bowler running in, blue fielder
+chase/pickup/throw, no pads on fielders, no T-pose. The old red batter/keeper/umpire
+are expected until their gates are built.
+
+## 8. Next steps (not done)
+Batter profile (pads/gloves/bat/helmet + reviewed shots), keeper kit + crouch,
+umpire outfit + signals, jersey hem extension, hair/face LODs, foot-lock/IK pass,
+mobile profiling on hardware. Do not mass-migrate until those gates pass.

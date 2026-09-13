@@ -101,6 +101,11 @@ public:
     static TMap<FName,FTransform> BindPose(USkeletalMesh* Candidate);
     UFUNCTION(BlueprintCallable, Category="C26|Validation")
     static TMap<int32,FString> ExportMaterialMap(USkeletalMesh* Candidate, int32 Lod);
+    /** A staged review validates the complete selected role, not the whole production roster. */
+    UFUNCTION(BlueprintCallable, Category="C26|Validation")
+    TArray<FString> InspectRole(EC26VisualRole Role) const;
+    UFUNCTION(BlueprintCallable, Category="C26|Authoring")
+    static bool SetEquipmentSocket(USkeletalMesh* Candidate, FName Name, FName Bone, FTransform Local);
     bool Validate(TArray<FString>& Errors, bool RequireApproval = true) const;
     static bool AuditBody(USkeletalMesh* Candidate, USkeleton* Expected, TArray<FString>& Errors);
     const FC26CricketClip* FindClip(FName Key, FName Fallback = NAME_None) const;

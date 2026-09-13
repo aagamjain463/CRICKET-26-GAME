@@ -10,6 +10,7 @@ Run inside the full editor (the commandlet path crashes on skeletal FBX in 5.8):
   UnrealEditor CRICKETGAME.uproject -ExecutePythonScript=".../Tools/ImportCricketActions.py"
 """
 import json
+import hashlib
 import unreal as u
 from pathlib import Path
 
@@ -21,6 +22,8 @@ SKELETON = '/Game/Cricket26/Characters/Bodies/SK_C26_FullBody_Candidate_Skeleton
 skeleton = u.load_asset(SKELETON)
 assert skeleton, 'Missing candidate skeleton; run Tools/ImportPremiumBody.py first'
 manifest = json.loads((SRC / 'manifest.json').read_text())
+if globals().get('C26_ACTION_KEYS'):
+    manifest = [entry for entry in manifest if entry['name'] in C26_ACTION_KEYS]
 
 options = u.FbxImportUI()
 options.automated_import_should_detect_type = False
@@ -38,10 +41,18 @@ for key, value in [('import_custom_attribute', True), ('remove_redundant_keys', 
     anim.set_editor_property(key, value)
 
 tasks = []
+digests = {}
 for clip in manifest:
     existing = u.load_asset(f"{DEST}/{clip['asset']}")
-    if existing and abs(existing.get_editor_property('sequence_length') - clip['length']) < 0.05:
-        continue                      # already imported at the authored length; only notifies need fixing
+    source = ROOT / clip['fbx']
+    if not source.exists():
+        assert existing, 'Missing source and imported clip: ' + str(source)
+        u.log_warning('C26_SOURCE_UNAVAILABLE retaining existing unverified clip: ' + str(source))
+        continue
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    digests[clip['asset']] = digest
+    if existing and u.EditorAssetLibrary.get_metadata_tag(existing, 'C26.SourceSHA256') == digest:
+        continue
     task = u.AssetImportTask()
     task.filename = str(ROOT / clip['fbx'])
     task.destination_path = DEST
@@ -65,6 +76,8 @@ for clip in manifest:
     # Locomotion is driven by the match's own transforms; an in-place clip with root motion would
     # fight them and slide the athlete. The profile validator rejects root motion for this reason.
     seq.set_editor_property('enable_root_motion', False)
+    if clip['asset'] in digests:
+        u.EditorAssetLibrary.set_metadata_tag(seq, 'C26.SourceSHA256', digests[clip['asset']])
     length = seq.get_editor_property('sequence_length')
 
     if clip['event']:
@@ -77,11 +90,10 @@ for clip in manifest:
         if notify_class is None:
             failures.append('%s: no UAnimNotify_%s class; rebuild the game module' % (clip['name'], track))
             continue
-        u.AnimationLibrary.remove_all_animation_notify_events(seq)
-        try:
+        for old_name in (track, 'None'):
+            u.AnimationLibrary.remove_animation_notify_events_by_name(seq, old_name)
+        if track not in [str(n) for n in u.AnimationLibrary.get_animation_notify_track_names(seq)]:
             u.AnimationLibrary.add_animation_notify_track(seq, track, u.LinearColor(1, .4, .1, 1))
-        except Exception:
-            pass
         u.AnimationLibrary.add_animation_notify_event(seq, track, t, notify_class)
         try:
             names = [str(n) for n in u.AnimationLibrary.get_animation_notify_event_names(seq)]
