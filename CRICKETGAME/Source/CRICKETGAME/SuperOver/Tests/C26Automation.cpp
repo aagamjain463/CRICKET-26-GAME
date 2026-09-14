@@ -561,6 +561,72 @@ bool FC26CatchTimingPhysicsTest::RunTest(const FString& Parameters)
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FC26PremiumFieldingSequenceTest, "Cricket26.Fielding.PremiumSequence", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FC26PremiumFieldingSequenceTest::RunTest(const FString& Parameters)
+{
+    const float AnkleZ = 12.f;
+    const float ShoulderZ = 145.f;
+    const float PalmReach = 85.f;
+    const FVector BallGroundTarget = C26Motion::Rig(32.f, 0.f, 16.f);
+
+    // 1. Approach deceleration & whole-body ground lowering (ActionTime: 0.00s -> 0.20s)
+    const C26Motion::FFielderPose ApproachPose = C26Motion::SolveFielderPickup(0.00f, BallGroundTarget, AnkleZ, ShoulderZ, PalmReach);
+    const C26Motion::FFielderPose ContactPose = C26Motion::SolveFielderPickup(0.20f, BallGroundTarget, AnkleZ, ShoulderZ, PalmReach);
+
+    TestTrue(TEXT("Approach pose starts in athletic running deceleration"), ApproachPose.Crouch >= -10.f && ApproachPose.LeanForward <= 16.f);
+    TestTrue(TEXT("Contact pose achieves whole-body lowering"), ContactPose.Crouch <= -45.f && ContactPose.LeanForward >= 35.f);
+    TestTrue(TEXT("Contact pose knee flexion rolls back toe"), ContactPose.PitchR >= 20.f);
+    TestTrue(TEXT("Contact pose hands reach safely above turf without penetration"), ContactPose.RightHand.Z >= AnkleZ + 3.f);
+
+    // 2. Rise and throw load continuity (ActionTime: 0.20s -> 0.53s)
+    const C26Motion::FFielderPose PickupEnd = C26Motion::SolveFielderPickup(0.53f, BallGroundTarget, AnkleZ, ShoulderZ, PalmReach);
+    TestTrue(TEXT("Pickup rise ascends center of mass"), PickupEnd.Crouch >= -15.f);
+    TestTrue(TEXT("Pickup rise coils torso side-on for throw"), PickupEnd.TurnRight <= -30.f);
+    TestTrue(TEXT("Throwing arm loads at ear/shoulder height"), PickupEnd.RightHand.Z >= 135.f);
+    TestTrue(TEXT("Non-throwing arm reaches forward to sight target"), PickupEnd.LeftHand.Z >= 120.f);
+
+    // 3. Seamless C2 mathematical continuity at the Pickup -> Throw boundary (0.53s Pickup vs 0.00s Throw)
+    const C26Motion::FFielderPose ThrowStart = C26Motion::SolveFielderThrow(0.00f, AnkleZ, ShoulderZ);
+    TestTrue(TEXT("Zero foot position pop across action boundary"), FVector::Dist(PickupEnd.LeftFoot, ThrowStart.LeftFoot) < 0.01f && FVector::Dist(PickupEnd.RightFoot, ThrowStart.RightFoot) < 0.01f);
+    TestTrue(TEXT("Zero hand position pop across action boundary"), FVector::Dist(PickupEnd.LeftHand, ThrowStart.LeftHand) < 0.01f && FVector::Dist(PickupEnd.RightHand, ThrowStart.RightHand) < 0.01f);
+    TestTrue(TEXT("Zero center-of-mass crouch pop"), FMath::Abs(PickupEnd.Crouch - ThrowStart.Crouch) < 0.01f);
+    TestTrue(TEXT("Zero pelvis yaw pop"), FMath::Abs(PickupEnd.TurnRight - ThrowStart.TurnRight) < 0.01f);
+    TestTrue(TEXT("Zero thoracic counter-rotation pop"), FMath::Abs(PickupEnd.ChestCounter - ThrowStart.ChestCounter) < 0.01f);
+    TestTrue(TEXT("Zero forward trunk lean pop"), FMath::Abs(PickupEnd.LeanForward - ThrowStart.LeanForward) < 0.01f);
+
+    // 4. Kinetic chain throw progression & high overarm release (ActionTime: 0.00s -> 0.20s in Throw)
+    const C26Motion::FFielderPose ReleasePose = C26Motion::SolveFielderThrow(0.20f, AnkleZ, ShoulderZ);
+    TestTrue(TEXT("Front foot firmly planted on turf during release"), FMath::Abs(ReleasePose.LeftFoot.Z - AnkleZ) < 0.01f);
+    TestTrue(TEXT("Pelvis uncoils open towards target"), ReleasePose.TurnRight >= 12.f);
+    TestTrue(TEXT("Thoracic counter-twist whips forward"), ReleasePose.ChestCounter <= -15.f);
+    TestTrue(TEXT("High vertical overarm release point above 210cm"), ReleasePose.RightHand.Z >= 210.f);
+    TestTrue(TEXT("Fingers open on release"), ReleasePose.FingerCurl <= 0.22f);
+
+    // 5. Follow-through, step-through momentum dissipation & balanced recovery (ActionTime: 0.20s -> 0.50s in Throw)
+    const C26Motion::FFielderPose MidFollow = C26Motion::SolveFielderThrow(0.35f, AnkleZ, ShoulderZ);
+    TestTrue(TEXT("Follow-through arm wraps diagonally across chest toward left hip"), MidFollow.RightHand.Z < 80.f);
+    TestTrue(TEXT("Torso flexes forward to dissipate momentum"), MidFollow.LeanForward >= 20.f);
+
+    const C26Motion::FFielderPose FinalRecovery = C26Motion::SolveFielderThrow(0.50f, AnkleZ, ShoulderZ);
+    TestTrue(TEXT("Trailing right leg steps through and grounds flat on turf"), FMath::Abs(FinalRecovery.RightFoot.Z - AnkleZ) < 0.01f);
+    TestTrue(TEXT("Athlete recovers into balanced upright stance"), FinalRecovery.Crouch >= -8.f && FinalRecovery.LeanForward <= 12.f);
+    TestTrue(TEXT("Torso squares back to ready"), FMath::Abs(FinalRecovery.TurnRight) < 0.01f);
+
+    // 6. Complete trajectory sanity check (no NaNs or infinite values across all timesteps)
+    for (float T = 0.f; T <= 0.53f; T += 0.02f)
+    {
+        const C26Motion::FFielderPose P = C26Motion::SolveFielderPickup(T, BallGroundTarget, AnkleZ, ShoulderZ, PalmReach);
+        TestFalse(TEXT("Pickup pose has no NaNs"), P.LeftFoot.ContainsNaN() || P.RightFoot.ContainsNaN() || P.LeftHand.ContainsNaN() || P.RightHand.ContainsNaN());
+    }
+    for (float T = 0.f; T <= 0.50f; T += 0.02f)
+    {
+        const C26Motion::FFielderPose T_Pose = C26Motion::SolveFielderThrow(T, AnkleZ, ShoulderZ);
+        TestFalse(TEXT("Throw pose has no NaNs"), T_Pose.LeftFoot.ContainsNaN() || T_Pose.RightFoot.ContainsNaN() || T_Pose.LeftHand.ContainsNaN() || T_Pose.RightHand.ContainsNaN());
+    }
+
+    return true;
+}
+
 
 // ============================================================================
 // CRICKET 26 // MATCH PRESENTATION OVERHAUL AUTOMATION SUITE

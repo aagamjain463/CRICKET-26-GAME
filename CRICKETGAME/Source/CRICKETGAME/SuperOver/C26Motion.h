@@ -491,6 +491,7 @@ namespace C26Motion
         float LeanForward = 0.f;
         float LeanRight = 0.f;
         float TurnRight = 0.f;
+        float ChestCounter = 0.f;
         float PitchL = 0.f;
         float PitchR = 0.f;
         float FingerCurl = 0.38f;
@@ -600,7 +601,9 @@ namespace C26Motion
         return Out;
     }
 
-    /** Smooth ground gather / pickup biomechanics */
+    /** Smooth, athletic ground gather / pickup biomechanics.
+     * Full-body lowering (knees flexed, hips dropped, natural forward trunk hinge), authentic
+     * clean scoop at turf height with hand-ground safety clamping, and seamless rise / load into the throw. */
     inline FFielderPose SolveFielderPickup(
         float ActionTime,
         const FVector& TakeTarget,
@@ -609,33 +612,76 @@ namespace C26Motion
         float PalmReach)
     {
         FFielderPose Out;
-        const float Gather = FMath::SmoothStep(0.f, 0.20f, ActionTime);
-        const float Recover = FMath::SmoothStep(0.24f, 0.53f, ActionTime);
-        const float Low = FMath::Clamp((92.f - TakeTarget.Z) / 84.f, 0.f, 1.f) * Gather;
 
-        Out.Crouch = FMath::Lerp(-7.f, -70.f, Low) * (1.f - Recover * 0.62f);
-        Out.LeanForward = 18.f + Low * 68.f - Recover * 54.f;
-        Out.HipShift = Rig(Low * 10.f * (1.f - Recover), 0.f, 0.f);
-        Out.LeftFoot = Rig(26.f + Low * 32.f, -19.f, AnkleZ);
-        Out.RightFoot = Rig(-20.f - Low * 6.f, 20.f, AnkleZ);
-        Out.PitchR = Low * 18.f;
+        if (ActionTime <= 0.20f)
+        {
+            // Phase 1: Deceleration & whole-body lowering to the ball (0.00s - 0.20s)
+            const float G = FMath::Clamp(ActionTime / 0.20f, 0.f, 1.f);
+            const float SmoothG = FMath::SmoothStep(0.f, 1.f, G);
 
-        FVector SolvedTake = FMath::Lerp(Rig(28.f, 0.f, 95.f), TakeTarget, Gather);
-        SolvedTake = FMath::Lerp(SolvedTake, Rig(32.f, 0.f, 116.f), Recover);
+            // Full-body athletic crouch: COM drops naturally from running break to ground gather
+            Out.Crouch = FMath::Lerp(-8.f, -52.f, SmoothG);
+            Out.HipShift = Rig(SmoothG * 8.f, 0.f, 0.f);
+            Out.LeanForward = FMath::Lerp(14.f, 42.f, SmoothG);
+            Out.TurnRight = FMath::Lerp(0.f, -8.f, SmoothG);
+            Out.LeanRight = FMath::Lerp(0.f, 4.f, SmoothG);
+            Out.ChestCounter = FMath::Lerp(0.f, -4.f, SmoothG);
 
-        const FVector Anchor = Rig(0.f, 0.f, ShoulderZ + Out.Crouch);
-        const FVector Reach = (SolvedTake - Anchor).GetSafeNormal(UE_SMALL_NUMBER, Rig(1.f, 0.f, 0.f));
-        const FVector Wrists = SolvedTake - Reach * PalmReach;
+            // Athletic footwork: Front foot plants to accept weight; rear knee drops close to ground on toe
+            Out.LeftFoot = FMath::Lerp(Rig(18.f, -16.f, AnkleZ), Rig(28.f, -18.f, AnkleZ), SmoothG);
+            Out.RightFoot = FMath::Lerp(Rig(-16.f, 16.f, AnkleZ), Rig(-20.f, 18.f, AnkleZ), SmoothG);
+            Out.PitchL = 0.f;
+            Out.PitchR = FMath::Lerp(0.f, 24.f, SmoothG);
 
-        Out.LeftHand = Wrists + Rig(0.f, -5.f, 0.f);
-        Out.RightHand = Wrists + Rig(0.f, 5.f, 0.f);
-        Out.PoleL = Rig(0.2f, -0.8f, 0.1f);
-        Out.PoleR = Rig(0.2f, 0.8f, 0.1f);
-        Out.FingerCurl = FMath::Lerp(0.20f, 0.40f, Recover);
+            // Clean ground reach with turf safety (no penetration below turf plane)
+            FVector SafeTake = TakeTarget;
+            SafeTake.Z = FMath::Max(SafeTake.Z, AnkleZ + 4.f);
+            const FVector HandsPos = FMath::Lerp(Rig(22.f, 0.f, 96.f), SafeTake, SmoothG);
+            Out.RightHand = HandsPos + Rig(0.f, 4.f, 0.f);
+            Out.LeftHand = HandsPos + Rig(0.f, -6.f, 2.f);
+            Out.PoleL = Rig(0.20f, -0.85f, 0.15f);
+            Out.PoleR = Rig(0.20f, 0.85f, 0.15f);
+            Out.FingerCurl = FMath::Lerp(0.25f, 0.42f, SmoothG);
+        }
+        else
+        {
+            // Phase 2: Dynamic push-off, rise, weight shift and loading into throw (0.20s - 0.53s)
+            const float R = FMath::Clamp((ActionTime - 0.20f) / 0.33f, 0.f, 1.f);
+            const float SmoothR = FMath::SmoothStep(0.f, 1.f, R);
+
+            // Center of mass rises smoothly; torso prepares throwing coil
+            Out.Crouch = FMath::Lerp(-52.f, -12.f, SmoothR);
+            Out.HipShift = FMath::Lerp(Rig(8.f, 0.f, 0.f), Rig(4.f, 0.f, 0.f), SmoothR);
+            Out.LeanForward = FMath::Lerp(42.f, 12.f, SmoothR);
+            Out.TurnRight = FMath::Lerp(-8.f, -34.f, SmoothR);
+            Out.LeanRight = FMath::Lerp(4.f, -3.f, SmoothR);
+            Out.ChestCounter = FMath::Lerp(-4.f, 12.f, SmoothR);
+
+            // Weight transfers to back drive foot; front foot unweights to stride
+            Out.LeftFoot = FMath::Lerp(Rig(28.f, -18.f, AnkleZ), Rig(14.f, -16.f, AnkleZ + 2.f), SmoothR);
+            Out.RightFoot = FMath::Lerp(Rig(-20.f, 18.f, AnkleZ), Rig(-18.f, 18.f, AnkleZ), SmoothR);
+            Out.PitchL = FMath::Lerp(0.f, 6.f, SmoothR);
+            Out.PitchR = FMath::Lerp(24.f, 12.f, SmoothR);
+
+            // Hands: Ball drawn up securely; left arm extends to sight target, right arm cocks back with high elbow
+            FVector SafeTake = TakeTarget;
+            SafeTake.Z = FMath::Max(SafeTake.Z, AnkleZ + 4.f);
+            const FVector CockedR = Rig(-16.f, 22.f, 142.f);
+            const FVector SightL = Rig(26.f, -20.f, 130.f);
+
+            Out.RightHand = FMath::Lerp(SafeTake + Rig(0.f, 4.f, 0.f), CockedR, SmoothR);
+            Out.LeftHand = FMath::Lerp(SafeTake + Rig(0.f, -6.f, 2.f), SightL, SmoothR);
+            Out.PoleL = FMath::Lerp(Rig(0.20f, -0.85f, 0.15f), Rig(0.25f, -0.85f, 0.15f), SmoothR);
+            Out.PoleR = FMath::Lerp(Rig(0.20f, 0.85f, 0.15f), Rig(-0.40f, 0.85f, 0.35f), SmoothR);
+            Out.FingerCurl = FMath::Lerp(0.42f, 0.45f, SmoothR);
+        }
+
         return Out;
     }
 
-    /** Authentic cricket overarm throw: crow-hop stride, torso uncoil, high overarm release, diagonal follow-through wrap */
+    /** Authentic cricket overarm throw: full kinetic chain (legs -> hips -> torso -> shoulder -> elbow -> wrist),
+     * high overarm release at ActionTime = 0.20s synchronized with gameplay events, diagonal cross-body follow-through,
+     * and momentum-absorbing step-through recovery. Starts in exact continuity with SolveFielderPickup at 0.53s. */
     inline FFielderPose SolveFielderThrow(
         float ActionTime,
         float AnkleZ,
@@ -646,56 +692,70 @@ namespace C26Motion
         const float ReleaseTime = 0.20f;
         const float TotalTime = 0.50f;
 
-        if(ActionTime <= ReleaseTime)
+        if (ActionTime <= ReleaseTime)
         {
-            // Phase 1: Crow-hop gather & high overarm windup
+            // Phase 1: Kinetic chain delivery (0.00s - 0.20s)
             const float P = FMath::Clamp(ActionTime / ReleaseTime, 0.f, 1.f);
-            Out.LeftFoot = Rig(12.f + P * 24.f, -16.f, AnkleZ);
-            Out.RightFoot = Rig(-18.f + P * 6.f, 18.f, AnkleZ);
-            Out.PitchR = P * 24.f; // Back foot driving off toe
+            const float SmoothP = FMath::SmoothStep(0.f, 1.f, P);
+            const float Whip = P * P * (3.f - 2.f * P);
 
-            Out.Crouch = -8.f - P * 6.f;
-            Out.HipShift = Rig(P * 12.f, 0.f, 0.f);
-            Out.TurnRight = FMath::Lerp(-32.f, 16.f, P);
-            Out.LeanForward = 8.f + P * 14.f;
-            Out.LeanRight = -P * 4.f;
+            // Legs: Back foot drives off toe; front foot strides and plants firmly
+            Out.LeftFoot = FMath::Lerp(Rig(14.f, -16.f, AnkleZ + 2.f), Rig(38.f, -16.f, AnkleZ), FMath::Min(1.f, P * 1.5f));
+            Out.PitchL = FMath::Lerp(6.f, 0.f, FMath::Min(1.f, P * 1.5f));
+            Out.RightFoot = Rig(-18.f, 18.f, AnkleZ);
+            Out.PitchR = FMath::Lerp(12.f, 32.f, P);
 
-            // Non-throwing left arm sights toward target
-            Out.LeftHand = FMath::Lerp(Rig(24.f, -22.f, 126.f), Rig(32.f, -16.f, 138.f), P);
-            Out.PoleL = Rig(0.25f, -0.85f, 0.15f);
+            // Pelvis: Coiled hips rotate open to the target
+            Out.TurnRight = FMath::Lerp(-34.f, 16.f, SmoothP);
+            Out.HipShift = FMath::Lerp(Rig(4.f, 0.f, 0.f), Rig(14.f, 0.f, 0.f), P);
+            Out.Crouch = -12.f - FMath::Sin(P * PI) * 4.f;
 
-            // Right arm cocks back and whips up to release point
-            const FVector Cocked = Rig(-18.f, 22.f, 142.f);
-            const FVector HighRelease = Rig(38.f, 18.f, 212.f);
-            Out.RightHand = FMath::Lerp(Cocked, HighRelease, P * P);
-            Out.PoleR = FMath::Lerp(Rig(-0.35f, 0.90f, 0.40f), Rig(0.20f, 0.80f, 0.50f), P);
-            Out.FingerCurl = FMath::Lerp(0.55f, 0.25f, P);
+            // Torso: Thoracic stretch uncoils with explosive whip
+            Out.ChestCounter = FMath::Lerp(12.f, -18.f, Whip);
+            Out.LeanForward = FMath::Lerp(12.f, 30.f, P);
+            Out.LeanRight = FMath::Lerp(-3.f, 5.f, P);
+
+            // Left arm: Sights target then tucks to ribcage to accelerate angular rotation
+            Out.LeftHand = FMath::Lerp(Rig(26.f, -20.f, 130.f), Rig(12.f, -16.f, 108.f), SmoothP);
+            Out.PoleL = FMath::Lerp(Rig(0.25f, -0.85f, 0.15f), Rig(-0.35f, -0.75f, -0.2f), SmoothP);
+
+            // Right arm: High elbow lead, forearm whips overhead into high release slot
+            const FVector CockedR = Rig(-16.f, 22.f, 142.f);
+            const FVector HighRelease = Rig(40.f, 16.f, 218.f);
+            Out.RightHand = FMath::Lerp(CockedR, HighRelease, Whip);
+            Out.PoleR = FMath::Lerp(Rig(-0.40f, 0.85f, 0.35f), Rig(0.35f, 0.75f, 0.55f), P);
+            Out.FingerCurl = FMath::Lerp(0.45f, 0.18f, P);
         }
         else
         {
-            // Phase 2: Dynamic follow-through, arm wrapping across left hip, trunk flexion
+            // Phase 2: Follow-through, momentum absorption and recovery (0.20s - 0.50s)
             const float F = FMath::Clamp((ActionTime - ReleaseTime) / (TotalTime - ReleaseTime), 0.f, 1.f);
-            Out.LeftFoot = Rig(36.f, -16.f, AnkleZ);
-            Out.RightFoot = Rig(-12.f + F * 46.f, 16.f, AnkleZ); // Right foot swings through
-            Out.PitchL = (1.f - F) * 10.f;
-            Out.PitchR = F * 18.f;
+            const float SmoothF = FMath::SmoothStep(0.f, 1.f, F);
 
-            Out.Crouch = FMath::Lerp(-14.f, -10.f, F);
-            Out.HipShift = Rig(12.f + F * 10.f, 0.f, 0.f);
-            Out.TurnRight = FMath::Lerp(16.f, 32.f, F);
-            Out.LeanForward = FMath::Lerp(22.f, 38.f, FMath::Sin(F * PI * 0.5f));
-            Out.LeanRight = FMath::Lerp(-4.f, 4.f, F);
+            // Planted front foot stays solid; trailing leg steps through to dissipate forward momentum
+            Out.LeftFoot = Rig(38.f, -16.f, AnkleZ);
+            Out.PitchL = 0.f;
+            const float Lift = FMath::Sin(F * PI) * 8.f;
+            Out.RightFoot = FMath::Lerp(Rig(-18.f, 18.f, AnkleZ), Rig(24.f, 16.f, AnkleZ), SmoothF) + FVector(0.f, 0.f, Lift);
+            Out.PitchR = FMath::Lerp(32.f, 0.f, SmoothF);
 
-            // Left arm tucked against left ribs
-            Out.LeftHand = Rig(10.f, -18.f, 102.f);
-            Out.PoleL = Rig(-0.35f, -0.75f, -0.2f);
+            // Torso and hips decelerate; athlete squares up into balanced fielding stance
+            Out.TurnRight = FMath::Lerp(16.f, 0.f, SmoothF);
+            Out.ChestCounter = FMath::Lerp(-18.f, 0.f, SmoothF);
+            Out.LeanForward = FMath::Lerp(30.f, 10.f, SmoothF);
+            Out.LeanRight = FMath::Lerp(5.f, 0.f, SmoothF);
+            Out.Crouch = FMath::Lerp(-14.f, -7.f, SmoothF);
+            Out.HipShift = FMath::Lerp(Rig(14.f, 0.f, 0.f), FVector::ZeroVector, SmoothF);
 
-            // Right arm sweeps across body down toward left hip
-            const FVector HighRelease = Rig(38.f, 18.f, 212.f);
-            const FVector FollowFinish = Rig(16.f, -22.f, 74.f);
-            Out.RightHand = FMath::Lerp(HighRelease, FollowFinish, FMath::SmoothStep(0.f, 1.f, F));
-            Out.PoleR = Rig(0.40f, 0.60f, -0.30f);
-            Out.FingerCurl = 0.45f;
+            // Throwing arm sweeps down across the body towards opposite hip, then rests at waist
+            const FVector HighRelease = Rig(40.f, 16.f, 218.f);
+            const FVector CrossHip = Rig(16.f, -22.f, 72.f);
+            const FVector ReadyR = Rig(18.f, 18.f, 88.f);
+            Out.RightHand = F < 0.6f ? FMath::Lerp(HighRelease, CrossHip, F / 0.6f) : FMath::Lerp(CrossHip, ReadyR, (F - 0.6f) / 0.4f);
+            Out.PoleR = F < 0.6f ? Rig(0.40f, 0.60f, -0.30f) : Rig(0.10f, 0.70f, -0.20f);
+            Out.LeftHand = FMath::Lerp(Rig(12.f, -16.f, 108.f), Rig(18.f, -18.f, 88.f), SmoothF);
+            Out.PoleL = FMath::Lerp(Rig(-0.35f, -0.75f, -0.2f), Rig(0.10f, -0.70f, -0.20f), SmoothF);
+            Out.FingerCurl = FMath::Lerp(0.18f, 0.38f, SmoothF);
         }
 
         return Out;

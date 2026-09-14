@@ -1837,6 +1837,9 @@ void AC26Athlete::Animate(float Dt)
         const auto FP=C26Motion::SolveFielderPickup(ActionTime,Take,AnkleZ,ShoulderZ,PalmReach);
         Crouch=FP.Crouch;
         LeanForward=FP.LeanForward;
+        LeanRight=FP.LeanRight;
+        TurnRight=FP.TurnRight;
+        ChestCounter=FP.ChestCounter;
         Shift=FP.HipShift;
         FL=FP.LeftFoot;FR=FP.RightFoot;
         PitchL=FP.PitchL;PitchR=FP.PitchR;
@@ -1878,6 +1881,7 @@ void AC26Athlete::Animate(float Dt)
         LeanForward=FP.LeanForward;
         LeanRight=FP.LeanRight;
         TurnRight=FP.TurnRight;
+        ChestCounter=FP.ChestCounter;
         Shift=FP.HipShift;
         FL=FP.LeftFoot;FR=FP.RightFoot;
         PitchL=FP.PitchL;PitchR=FP.PitchR;
