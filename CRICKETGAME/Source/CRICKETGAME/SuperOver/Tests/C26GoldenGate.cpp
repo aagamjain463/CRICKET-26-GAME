@@ -132,6 +132,8 @@ void AC26MatchGameMode::UpdateGoldenGate(float Dt)
             UE_LOG(LogC26,Display,TEXT("C26_GATE_RELEASE hand_gap_cm=%.3f"),Gap);
             Check(Gap<1.f,TEXT("rendered release frame stays on hand"));
         }
+        if(PhaseTime>0.35f)CaptureFrame(TEXT("03b_followthrough"));
+        if(PhaseTime>0.85f)CaptureFrame(TEXT("03c_recovery"));
         if(Simulation.Ball.Bounced)CaptureFrame(TEXT("04_bounce"));
         // Stage 0 drives the shot through the real GesturePro pull-and-release
         // path (synthetic straight pull: no loft flick, no defend) instead of
