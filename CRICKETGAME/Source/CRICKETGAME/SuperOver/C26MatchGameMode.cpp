@@ -1723,8 +1723,25 @@ void AC26MatchGameMode::Tick(float Dt)
             Athletes[11]->ActionTime=C26Field::BatContactPoseTime-FMath::Max(0.f,TimingCountdown())-Dt;
         const bool ReleasedThisFrame=PhaseBeforeUpdate==EC26Phase::RunUp&&Phase==EC26Phase::Delivery;
         const bool ContactThisFrame=PhaseBeforeUpdate==EC26Phase::Delivery&&Phase==EC26Phase::InPlay;
-        if((Phase==EC26Phase::Delivery||Phase==EC26Phase::InPlay)&&Athletes[0]->Action==EC26Action::Bowling&&Athletes[0]->ActionTime<1.25f&&!ReleasedThisFrame)
-            Athletes[0]->AddActorWorldOffset(FVector(0,330.f*FMath::Clamp((1.25f-Athletes[0]->ActionTime)/.63f,0.f,1.f)*Dt,0));
+        if((Phase==EC26Phase::Delivery||Phase==EC26Phase::InPlay)&&Athletes[0]->Action==EC26Action::Bowling&&Athletes[0]->ActionTime<1.85f&&!ReleasedThisFrame)
+        {
+            // The follow-through must LEAVE the run-up at the speed the run-up arrives at, or the
+            // bowler visibly checks at the instant of release. The run-up drives him along
+            // Lerp(-2700,-995) with Travel=T*T*(2-T), whose derivative at T=1 is 1, so his exit
+            // speed is simply the whole approach divided by its duration -- restated here from
+            // the same two numbers so the two halves cannot drift apart.
+            constexpr float ExitSpeed = 1705.f / C26Field::RunUpDuration;
+            const float DecelT = FMath::Clamp((Athletes[0]->ActionTime - C26Field::ReleasePoseTime) / 1.23f, 0.f, 1.f);
+            // Quadratic decay: momentum carries hard out of the crease and bleeds off smoothly
+            // over the two recovery strides rather than stopping dead.
+            const float ForwardSpeed = ExitSpeed * FMath::Square(1.f - DecelT);
+            const float LateralDrift = -24.f * (1.f - DecelT);
+            Athletes[0]->AddActorWorldOffset(FVector(LateralDrift * Dt, ForwardSpeed * Dt, 0.f));
+            // Keep the pose solver's notion of speed honest through the follow-through. It reaches
+            // zero exactly as the decel window closes, so the recovery strides shorten with the
+            // deceleration and he is genuinely stationary when he comes back to fielding stance.
+            Athletes[0]->MoveSpeed = ForwardSpeed;
+        }
         if(Athletes.IsValidIndex(11)&&Athletes.IsValidIndex(0))
         {
             const FVector Focus=Simulation.Ball.Active?Simulation.Ball.Position:Phase==EC26Phase::RunUp||Phase==EC26Phase::Delivery?Athletes[0]->HandPosition():Athletes[0]->GetActorLocation();

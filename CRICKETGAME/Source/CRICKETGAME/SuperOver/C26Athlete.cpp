@@ -1542,10 +1542,20 @@ void AC26Athlete::Animate(float Dt)
     // runner turning for the second. Stride length is derived from speed, so an instantaneous
     // speed change is an instantaneous change of stride length, which is a skate. The legs see a
     // speed that accelerates.
-    ShownSpeed=Dt>0.f?FMath::FInterpTo(ShownSpeed,FMath::Max(0.f,MoveSpeed),Dt,9.f):FMath::Max(0.f,MoveSpeed);
-    const float Cadence=RunClip&&RunClip->GetPlayLength()>0.f
-        ?2.f*PI*ShownSpeed/(480.f*RunClip->GetPlayLength())
-        :FMath::Clamp(ShownSpeed/60.f,0.f,15.f);
+    // The bowler is the exception: his approach speed is already an authored, smooth curve
+    // (4T-3T^2 over the run-up), so there is no step for this filter to absorb -- all it can do
+    // is lag, and a lagging speed means a stride span shorter than the ground actually covered,
+    // which is the very skate the filter exists to prevent. He tracks his real speed closely.
+    const float SpeedTrack=Role==EC26Role::Bowler?26.f:9.f;
+    ShownSpeed=Dt>0.f?FMath::FInterpTo(ShownSpeed,FMath::Max(0.f,MoveSpeed),Dt,SpeedTrack):FMath::Max(0.f,MoveSpeed);
+    // The bowler's legs are posed by C26Motion::Stride, so his cadence must be the one that
+    // stride's own geometry implies -- see C26Motion::StrideCadence. Everyone else is posed by a
+    // run CLIP, whose cadence is fixed by the clip's own stride length instead.
+    const float Cadence=Role==EC26Role::Bowler
+        ?(ShownSpeed>10.f?C26Motion::StrideCadence(ShownSpeed,true):0.f)
+        :(RunClip&&RunClip->GetPlayLength()>0.f
+            ?2.f*PI*ShownSpeed/(480.f*RunClip->GetPlayLength())
+            :FMath::Clamp(ShownSpeed/60.f,0.f,15.f));
     // Only the genuinely distant tier may skip a solve. Mid-tier athletes sit between 26 m and
     // 60 m -- close enough that a fielder on the ring is still a legible silhouette, and a pose
     // re-solved every second frame on a body that size is exactly what reads as stutter. The
@@ -1634,9 +1644,12 @@ void AC26Athlete::Animate(float Dt)
             // A fast bowler's approach, not a jog. Authentic run-up form: both hands cradle
             // and protect the cricket ball in front of the chest, elbows tucked, pumping
             // rhythmically with stride turnover, and aggressive forward torso lean.
-            RH=Rig(20.f+Gait*6.f,7.f,126.f+Fwd*5.f);
-            LH=Rig(18.f-Gait*5.f,-7.f,124.f+Back*5.f);
-            LeanForward=18.f+Fwd*3.f;
+            const float Accel=FMath::Clamp(ShownSpeed/500.f,0.f,1.f);
+            RH=Rig(22.f+Gait*5.f,6.f,124.f+Fwd*4.f);
+            LH=Rig(20.f-Gait*4.f,-6.f,122.f+Back*4.f);
+            LeanForward=FMath::Lerp(11.f,18.f,Accel)+Fwd*3.f;
+            PoleR=Rig(-0.30f,0.70f,-0.30f);
+            PoleL=Rig(-0.30f,-0.70f,-0.30f);
         }
     }
     else if(Batting)
@@ -1654,13 +1667,13 @@ void AC26Athlete::Animate(float Dt)
     else if(Role==EC26Role::Umpire){FL=Rig(0,-13,AnkleZ);FR=Rig(0,13,AnkleZ);LH=Rig(1,-23,95);RH=Rig(1,23,95);ActiveFingerCurl=0.20f;}
     else if(Role==EC26Role::Bowler)
     {
-        // At the top of his mark. A bowler waiting to run in stands tall and square with the ball
-        // held in both hands at chest height and his weight rocking onto the front foot.
-        Crouch=-4.f;LeanForward=9.f;TurnRight=-14.f;
-        FL=Rig(9,-11,AnkleZ);FR=Rig(-9,13,AnkleZ);
+        // At the top of his mark. A bowler waiting to run in stands focused with the ball
+        // cradled in both hands at chest height, head locked on the striker.
+        Crouch=-4.f;LeanForward=10.f;TurnRight=-12.f;
+        FL=Rig(10,-11,AnkleZ);FR=Rig(-8,12,AnkleZ);
         const float Rock=FMath::Sin(MotionTime*1.35f);
-        LH=Rig(26.f+Rock*1.6f,-6.f,124.f);RH=Rig(26.f+Rock*1.6f,4.f,124.f);
-        PoleL=Rig(-0.25f,-0.75f,-0.25f);PoleR=Rig(-0.25f,0.75f,-0.25f);
+        LH=Rig(24.f+Rock*1.5f,-6.f,122.f);RH=Rig(24.f+Rock*1.5f,4.f,122.f);
+        PoleL=Rig(-0.35f,-0.75f,-0.25f);PoleR=Rig(-0.35f,0.75f,-0.25f);
         ActiveFingerCurl=0.45f;
     }
     else
@@ -1785,17 +1798,62 @@ void AC26Athlete::Animate(float Dt)
     if(Action==EC26Action::Bowling)
     {
         const auto P=C26Motion::Pace(ActionTime,AnkleZ);
-        const float Blend=FMath::SmoothStep(0.f,.13f,ActionTime);
+        const float Blend=FMath::SmoothStep(0.f,.18f,ActionTime);
+        const float TorsoBlend=FMath::SmoothStep(0.f,.22f,ActionTime);
         const C26Motion::FStride RunL=C26Motion::Stride(GaitPhase,ShownSpeed,-9,AnkleZ,true);
         const C26Motion::FStride RunR=C26Motion::Stride(GaitPhase,ShownSpeed,9,AnkleZ,true);
         FL=FMath::Lerp(Rig(RunL.Foot.X,RunL.Foot.Y,RunL.Foot.Z),Rig(P.LeftFoot.X,P.LeftFoot.Y,P.LeftFoot.Z),Blend);
         FR=FMath::Lerp(Rig(RunR.Foot.X,RunR.Foot.Y,RunR.Foot.Z),Rig(P.RightFoot.X,P.RightFoot.Y,P.RightFoot.Z),Blend);
-        // The approach's ankle roll fades out as the delivery action takes over.
-        PitchL=RunL.Pitch*(1.f-Blend);PitchR=RunR.Pitch*(1.f-Blend);
+
+        // Biomechanical ankle pitch across the entire fast-bowling sequence:
+        // Bound flight -> BFC landing & spring -> FFP brace & lock -> release -> follow-through strides
+        float PacePitchL=0.f, PacePitchR=0.f;
+        if(ActionTime < 0.28f)
+        {
+            // Airborne gather bound: toes point down in flight
+            const float FlyT = FMath::Sin(FMath::Clamp(ActionTime / 0.28f, 0.f, 1.f) * PI);
+            PacePitchL = FlyT * 18.f;
+            PacePitchR = FlyT * 22.f;
+        }
+        else if(ActionTime < 0.48f)
+        {
+            // BFC: right foot lands flat/springs, left foot reaches forward toe up
+            const float StepT = (ActionTime - 0.28f) / 0.20f;
+            PacePitchR = FMath::Lerp(6.f, 18.f, StepT);
+            PacePitchL = FMath::Lerp(-12.f, 0.f, StepT);
+        }
+        else if(ActionTime < 0.85f)
+        {
+            // FFP & release: left foot locked firmly flat on turf, right rear leg kicked back
+            const float KickT = FMath::Clamp((ActionTime - 0.48f) / 0.37f, 0.f, 1.f);
+            PacePitchL = 0.f;
+            PacePitchR = FMath::Lerp(12.f, 26.f, KickT);
+        }
+        else if(ActionTime < 1.30f)
+        {
+            // First follow-through stride: right foot lands heel-to-flat, left swings
+            const float Step1T = (ActionTime - 0.85f) / 0.45f;
+            PacePitchR = Step1T < 0.35f ? FMath::Lerp(-10.f, 0.f, Step1T / 0.35f) : 0.f;
+            PacePitchL = FMath::Lerp(18.f, -8.f, Step1T);
+        }
+        else if(ActionTime < 1.70f)
+        {
+            // Second follow-through stride: left foot lands flat, right clears
+            const float Step2T = (ActionTime - 1.30f) / 0.40f;
+            PacePitchL = Step2T < 0.35f ? FMath::Lerp(-8.f, 0.f, Step2T / 0.35f) : 0.f;
+            PacePitchR = FMath::Lerp(14.f, 0.f, Step2T);
+        }
+        else
+        {
+            PacePitchL = 0.f;
+            PacePitchR = 0.f;
+        }
+        PitchL = FMath::Lerp(RunL.Pitch, PacePitchL, Blend);
+        PitchR = FMath::Lerp(RunR.Pitch, PacePitchR, Blend);
 
         // Pelvic translation: the hips drive forward over the planted front foot and gently
         // steer away from the pitch danger area during deceleration.
-        Shift=Rig(P.HipShift.X,P.HipShift.Y,0.f);
+        Shift = FMath::Lerp(FVector::ZeroVector, Rig(P.HipShift.X, P.HipShift.Y, 0.f), TorsoBlend);
 
         // Bowling arm arc: smooth overhead circular rotation during backswing and delivery,
         // finishing with an authentic cross-body follow-through sweep past the left hip.
@@ -1806,7 +1864,7 @@ void AC26Athlete::Animate(float Dt)
         const float Lateral=FMath::Lerp(10.f*FMath::Cos(Circle*.5f),-26.f,FollowT*FollowT*(3.f-2.f*FollowT));
         const FVector Swing=Hub+Rig(FMath::Sin(Circle)*Radius,Lateral,FMath::Cos(Circle)*Radius);
         const float Fwd=FMath::Max(0.f,-Gait),Back=FMath::Max(0.f,Gait);
-        const FVector RunRH=Rig(20.f+Gait*6.f,7.f,126.f+Fwd*5.f);
+        const FVector RunRH=Rig(22.f+Gait*5.f,6.f,124.f+Fwd*4.f);
         RH=FMath::Lerp(RunRH,Swing,Blend);
 
         // Non-bowling arm: authentic biomechanical motion - rises with gather,
@@ -1814,7 +1872,7 @@ void AC26Athlete::Animate(float Dt)
         // at front-foot plant to generate explosive rotational torque, stays tucked tight
         // through release, and settles into fielding readiness.
         const FVector FrontTarget=Rig(P.LeftHand.X+P.HipShift.X,P.LeftHand.Y+P.HipShift.Y,P.LeftHand.Z);
-        const FVector RunLH=Rig(18.f-Gait*5.f,-7.f,124.f+Back*5.f);
+        const FVector RunLH=Rig(20.f-Gait*4.f,-6.f,122.f+Back*4.f);
         LH=FMath::Lerp(RunLH,FrontTarget,Blend);
 
         // Elbow pole vectors: bowling elbow stays outward and up during release, then sweeps
@@ -1825,10 +1883,26 @@ void AC26Athlete::Animate(float Dt)
         const float PullT=FMath::Clamp((ActionTime-.22f)/.35f,0.f,1.f);
         PoleL=FMath::Lerp(PoleL,FMath::Lerp(Rig(-.20f,-.95f,.30f),Rig(-.85f,-.45f,-.10f),PullT),Blend).GetSafeNormal();
 
-        TurnRight=P.Turn;LeanForward=P.Lean;LeanRight=P.Side;Crouch=P.HipDrop;
+        const C26Motion::FCarry Ride=C26Motion::Carry(GaitPhase,ShownSpeed);
+        TurnRight=FMath::Lerp(Ride.Yaw,P.Turn,TorsoBlend);
+        LeanForward=FMath::Lerp(16.f,P.Lean,TorsoBlend);
+        LeanRight=FMath::Lerp(Ride.Roll,P.Side,TorsoBlend);
+        Crouch=FMath::Lerp(-5.f+Ride.Bob,P.HipDrop,TorsoBlend);
 
         // Hip-shoulder separation: chest holds back against pelvic unwinding before whipping through
         ChestCounter=-P.Turn*.32f*Blend;
+
+        // The hand: gripped on the seam through the approach and the whole arm circle, snapping
+        // open across C26Field::ReleasePoseTime -- the frame the match code actually lets the ball
+        // go -- then relaxing to a neutral fielding hand through the follow-through. This is the
+        // last link of the chain and it is what stops the release reading as the ball leaving a
+        // closed fist. It changes no timing: release remains the game mode's call.
+        // The window OPENS at the release instant rather than straddling it: until the game mode
+        // lets go, the ball's position is the palm's, so uncurling early would drag the ball a
+        // few centimetres before it was ever released.
+        const float Open=FMath::SmoothStep(C26Field::ReleasePoseTime,C26Field::ReleasePoseTime+.08f,ActionTime);
+        const float Relax=FMath::SmoothStep(C26Field::ReleasePoseTime+.08f,1.25f,ActionTime);
+        ActiveFingerCurl=FMath::Lerp(FMath::Lerp(.50f,.10f,Open),.34f,Relax);
     }
 
     if(Action==EC26Action::Pickup)
@@ -2087,12 +2161,14 @@ void AC26Athlete::Animate(float Dt)
         const float ClipRelease=C26BowlingReleaseFrame/C26AuthoredFps;
         const float Release=C26Field::ReleasePoseTime;
         // C26MatchGameMode starts this action ReleasePoseTime before the ball leaves the hand and
-        // C26Motion::Pace keys it out to 1.34 s, so that is the span the clip has to cover.
-        constexpr float Length=1.34f;
+        // C26Motion::Pace keys it out to 2.20 s, so that is the span the clip has to cover. It was
+        // 1.34 s while the action ended at the release; the two recovery strides moved the last key
+        // out, and a warp that still finished at 1.34 s would run the follow-through at 1.6x.
+        constexpr float Length=2.20f;
         const float ClipTime=ActionTime<=Release
             ?(Release>UE_KINDA_SMALL_NUMBER?(ActionTime/Release)*ClipRelease:ClipRelease)
             :ClipRelease+(ClipLength-ClipRelease)*FMath::Clamp((ActionTime-Release)/FMath::Max(UE_KINDA_SMALL_NUMBER,Length-Release),0.f,1.f);
-        const float Weight=FMath::Min(FMath::SmoothStep(0.f,.06f,ActionTime),FMath::SmoothStep(0.f,.10f,Length-ActionTime));
+        const float Weight=FMath::Min(FMath::SmoothStep(0.f,.06f,ActionTime),FMath::SmoothStep(0.f,.25f,Length-ActionTime));
         // Re-enabled with the corrected clip (see the batting branch above for the history). The
         // corrected release frame has the bowling hand fully extended above the head and slightly
         // in front of the shoulder, the mark/gather keys hold the ball in both hands, and the hips

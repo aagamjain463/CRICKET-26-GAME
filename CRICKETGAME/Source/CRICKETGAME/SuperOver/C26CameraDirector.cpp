@@ -135,6 +135,21 @@ void AC26CameraDirector::Direct(EC26Phase Phase,float Time,bool PlayerBatting,co
         else if(View==TEXT("pitch"))Look(EC26CameraMode::PreDeliveryBroadcast,FVector(510,1770,315),FVector(0,610,15),48,true,Dt);
         else if(View==TEXT("boundary"))Look(EC26CameraMode::Establishing,FVector(-3700,-5350,180),FVector(-1200,-9500,1780),64,true,Dt);
         else if(View==TEXT("bowling"))Look(EC26CameraMode::BowlerGameplay,BowlingRig.Eye,BowlingRig.Aim,BowlingRig.FOV,true,Dt);
+        else if(View==TEXT("side")||View==TEXT("bowler_side"))
+        {
+            const FVector BowlerPos=BowlerActor?BowlerActor->GetActorLocation():FVector(-20.f,-1500.f,110.f);
+            Look(EC26CameraMode::PreDeliveryBroadcast,FVector(680.f,BowlerPos.Y+60.f,150.f),FVector(-20.f,BowlerPos.Y+80.f,130.f),45.f,false,Dt,9.f);
+        }
+        else if(View==TEXT("front_34")||View==TEXT("bowler_front_34"))
+        {
+            const FVector BowlerPos=BowlerActor?BowlerActor->GetActorLocation():FVector(-20.f,-1500.f,110.f);
+            Look(EC26CameraMode::PreDeliveryBroadcast,FVector(280.f,BowlerPos.Y+480.f,160.f),FVector(-20.f,BowlerPos.Y+40.f,130.f),44.f,false,Dt,9.f);
+        }
+        else if(View==TEXT("rear_34")||View==TEXT("bowler_rear_34"))
+        {
+            const FVector BowlerPos=BowlerActor?BowlerActor->GetActorLocation():FVector(-20.f,-1500.f,110.f);
+            Look(EC26CameraMode::BowlerGameplay,FVector(-260.f,BowlerPos.Y-450.f,215.f),FVector(-20.f,BowlerPos.Y+500.f,125.f),50.f,false,Dt,9.f);
+        }
         else Look(EC26CameraMode::BatterGameplay,BattingRig.Eye,BattingRig.Aim,BattingRig.FOV,true,Dt);
         return;
     }

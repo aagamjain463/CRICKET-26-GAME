@@ -84,12 +84,59 @@ namespace C26Motion
      * a swing leg needs to miss the turf).
      */
     struct FStride{FVector Foot;float Pitch;};
+    /** How far apart the two extremes of one stride are, in centimetres, at a given speed.
+     * The ceiling is anatomy: a foot cannot reach much more than half a leg length either side
+     * of the hip, so past a point more speed has to come from turnover, not from reach.
+     *
+     * For the pace bowler the relationship SATURATES rather than being linear in speed. Linear
+     * meant that below ~230 cm/s the 20 cm floor pinned the stride to a fixed short length, so
+     * every bit of speed had to come from turnover alone: the first fifth of the approach ran at
+     * 6.7 steps/second and then SLOWED to 3.6 as he sped up -- backwards, and the single thing
+     * that made the run-up read as robotic. Saturating instead gives the real shape of an
+     * acceleration: turnover builds from ~1.2 to ~3.6 steps/second over the first second and
+     * then HOLDS while the stride keeps lengthening toward its anatomical ceiling.
+     */
+    inline float StrideSpan(float Speed,bool PaceBowler)
+    {
+        if(!PaceBowler)return FMath::Clamp(Speed*.155f,20.f,100.f);
+        const float Norm=FMath::Clamp(Speed/700.f,0.f,1.f);
+        return FMath::Max(18.f,112.f*FMath::Pow(Norm,.25f));
+    }
+    /** Duty factor: the fraction of one gait cycle a foot spends on the ground.
+     *
+     * This is not a constant in a real gait. A walk is about .60 -- both feet down much of the
+     * time -- and it falls steadily with speed until a sprinter is only .28, barely touching.
+     * Holding it at the walking .60 while the span is capped at an anatomical 112 cm is what
+     * made the bowler's approach read as a robotic sewing machine: the two together FORCE a
+     * ~7.7 steps/second turnover at approach pace, roughly twice what a human sprints at.
+     * Letting it fall to .28 puts him at ~3.6 steps/second, which is a fast bowler's run-up.
+     * Only the pace bowler is re-timed here; everyone else is posed against a run clip whose
+     * cadence is fixed by that clip, so changing their duty factor would desynchronise them.
+     */
+    inline float StrideSupport(float Speed,bool PaceBowler)
+    {return PaceBowler?FMath::Lerp(.60f,.28f,FMath::Clamp(Speed/700.f,0.f,1.f)):.60f; }
+    /** The ONLY cadence that makes the support foot stand still in the world.
+     *
+     * Stride() slides the support foot from +Span/2 to -Span/2 relative to the pelvis across
+     * StrideSupport of the cycle. That retreat cancels the pelvis's forward travel -- i.e. the
+     * foot is planted rather than skating -- exactly when
+     *     Span / (StrideSupport * CycleSeconds) == Speed,
+     * and CycleSeconds is 2*PI/Cadence. Solving for the cadence gives the expression below.
+     * Deriving it from StrideSpan()/StrideSupport() rather than restating their constants is
+     * deliberate: any cadence that disagrees with the stride the feet actually walk through IS
+     * the foot skate, including inside the clamped regions where Span stops tracking Speed.
+     */
+    inline float StrideCadence(float Speed,bool PaceBowler)
+    {
+        const float Span=StrideSpan(Speed,PaceBowler);
+        return Span>UE_KINDA_SMALL_NUMBER?2.f*PI*StrideSupport(Speed,PaceBowler)*Speed/Span:0.f;
+    }
     inline FStride Stride(float Phase,float Speed,float Side,float Ankle,bool PaceBowler)
     {
         const float Cycle=FMath::Frac(Phase/(2.f*PI)+(Side>0?.5f:0.f));
-        const float Span=FMath::Clamp(Speed*.155f,20.f,PaceBowler?112.f:100.f);
+        const float Span=StrideSpan(Speed,PaceBowler);
         // The support foot travels back relative to the pelvis while remaining on the ground.
-        const float Support=.60f;
+        const float Support=StrideSupport(Speed,PaceBowler);
         const float Drive=PaceBowler?34.f:26.f;
         FStride Out;
         if(Cycle<Support)
