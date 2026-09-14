@@ -1,0 +1,85 @@
+{
+  "source": "ArtSource/Premium/FullBody/C26_Athlete_Review.blend",
+  "approved_for_match": false,
+  "skeleton_changed": false,
+  "weights_changed": false,
+  "mesh_changed": false,
+  "finger_pose_deg": {
+    "index": {
+      "MCP": 52,
+      "PIP": 68,
+      "DIP": 36,
+      "splay": 3
+    },
+    "middle": {
+      "MCP": 55,
+      "PIP": 70,
+      "DIP": 38,
+      "splay": 1
+    },
+    "ring": {
+      "MCP": 53,
+      "PIP": 69,
+      "DIP": 37,
+      "splay": -2
+    },
+    "pinky": {
+      "MCP": 48,
+      "PIP": 64,
+      "DIP": 34,
+      "splay": -4
+    }
+  },
+  "thumb_deg": {
+    "flex": [
+      12,
+      10,
+      8
+    ],
+    "opposition": 24
+  },
+  "cant_deg": {
+    "l": 18.0,
+    "r": 24.0
+  },
+  "grip_top_cm": [
+    3.0,
+    -23.0,
+    114.0
+  ],
+  "hand_gap_cm": 8.3,
+  "bat": "ArtSource/Exports/Equipment/SM_C26_Bat_Hero.fbx",
+  "bat_scale_changed": false,
+  "bat_attachment_bone": "hand_l",
+  "bat_offset_in_hand_space": [
+    [
+      -3.6801135540008545,
+      -93.6050796508789,
+      -34.99345397949219,
+      5.746036052703857
+    ],
+    [
+      -98.20691680908203,
+      9.86645793914795,
+      -16.06413459777832,
+      2.0699729919433594
+    ],
+    [
+      18.489442825317383,
+      33.774837493896484,
+      -92.28975677490234,
+      -3.5462708473205566
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "qa": {
+    "method": "visual close-up inspection (01_front, 02_back/dorsal-side, 03_thumb_side, 04_three_quarter at 1200px ortho) + full-body 05_player",
+    "automated_bvh": "NOT VALID - unit-space mismatch gave ~400cm; removed, do not use",
+    "visual_result": "both hands encircle original 39mm handle; 4 fingertips + nails readable per hand from side/dorsal; thumbs lie along handle; knuckle rows distinct; wrists straight; no deep penetration or floating fingers visible; light pad contact only"
+  }
+}
