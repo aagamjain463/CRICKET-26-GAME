@@ -168,6 +168,43 @@ bool FC26FootSolverTest::RunTest(const FString& Parameters)
         Anim->LeftFootLockAlpha=1.f;Pose(.1f);
         const float Full=(CS(TEXT("foot_l"))-RestFoot).Size();
         Good&=TestTrue(TEXT("Half weight moves the ankle roughly half as far"),Half>.5f&&Half<Full*.8f);
+
+        // Knees must stay anatomically believable. This is the classic two-bone failure: the pole
+        // target is derived from the CURRENT knee offset, so if that offset degenerates the solver
+        // can place the joint on the wrong side of the thigh->ankle line and the leg bends
+        // backwards. Measure how far the knee bulges off that line and require the direction to
+        // survive every mark.
+        auto KneeBulge=[&](const TCHAR* Thigh,const TCHAR* Knee,const TCHAR* Ankle)
+        {
+            const FVector T=CS(Thigh),K=CS(Knee),A=CS(Ankle);
+            const FVector Axis=(A-T).GetSafeNormal();
+            const FVector Rel=K-T;
+            return Rel-Axis*(Rel|Axis);
+        };
+        Anim->LeftFootLockAlpha=0.f;Anim->LeftFootTargetCS=FVector::ZeroVector;Pose(.1f);
+        const FVector AuthoredBulge=KneeBulge(TEXT("thigh_l"),TEXT("calf_l"),TEXT("foot_l"));
+        TestTrue(TEXT("The authored leg has a measurable knee bend to preserve"),AuthoredBulge.Size()>1.f);
+        const FVector AuthoredDir=AuthoredBulge.GetSafeNormal();
+        float WorstAgreement=1.f;
+        for(const FVector& Offset:{FVector(6,0,0),FVector(-6,0,0),FVector(0,6,0),FVector(0,-6,0),FVector(4,0,-2)})
+        {
+            Anim->LeftFootLockAlpha=1.f;Anim->LeftFootTargetCS=RestFoot+Offset;Pose(.1f);
+            const FVector Bulge=KneeBulge(TEXT("thigh_l"),TEXT("calf_l"),TEXT("foot_l"));
+            // A mark can legitimately flatten the bend, so a small bulge is not a failure; bending
+            // to the OPPOSITE side is. Only judge the direction once there is a bulge to judge.
+            const float Agreement=Bulge.Size()>1.f?(Bulge.GetSafeNormal()|AuthoredDir):1.f;
+            WorstAgreement=FMath::Min(WorstAgreement,Agreement);
+            Good&=TestTrue(FString::Printf(TEXT("Knee stays on the authored side for mark (%.0f,%.0f,%.0f)cm"),Offset.X,Offset.Y,Offset.Z),
+                Agreement>0.f);
+        }
+        // The degenerate case that causes the flip: a mark the leg cannot reach, where the solver
+        // has to run the leg out straight. It must straighten, never invert.
+        Anim->LeftFootTargetCS=RestFoot+FVector(0,0,-400.f);Pose(.1f);
+        const FVector StraightBulge=KneeBulge(TEXT("thigh_l"),TEXT("calf_l"),TEXT("foot_l"));
+        Good&=TestTrue(TEXT("An unreachable mark straightens the leg without inverting the knee"),
+            StraightBulge.Size()<=1.f||(StraightBulge.GetSafeNormal()|AuthoredDir)>0.f);
+        AddInfo(FString::Printf(TEXT("Knee: authored bulge %.2fcm; worst direction agreement %.2f across 5 marks; unreachable mark leaves %.2fcm"),
+            AuthoredBulge.Size(),WorstAgreement,StraightBulge.Size()));
         AddInfo(FString::Printf(TEXT("Solver: half-weight %.2fcm vs full-weight %.2fcm; leg %.1f+%.1fcm"),Half,Full,ThighLen,CalfLen));
     }
     Actor->Destroy();World->DestroyWorld(false);return Good;
