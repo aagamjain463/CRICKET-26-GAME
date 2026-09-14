@@ -1,0 +1,54 @@
+{
+  "source": "ArtSource/Premium/FullBody/C26_Athlete_Review.blend",
+  "source_sha256": "5026b5aaeee3858d214c729c623960203c631ccd5f936597555c6c564b9a1b94",
+  "hero": "Player_001",
+  "changed_object": "SKM_MH_C26_Player_001_FaceMesh.001",
+  "changed_vertices": 14360,
+  "max_displacement_mm": 8.03429571753442,
+  "frozen_neck_vertices": 190,
+  "face_topology_uv_weights_material_slots_sha256": "9fff12db181458c7927536583d84e4958ddf9b9e20fb1fa9e306a2e8b16dd872",
+  "unchanged_mesh_contracts": {
+    "C26_ContinuousJersey": "4c2cc988eaf7ce579a3351581f95148c94252dc945e7e6b43e5906343172f765",
+    "C26_Shoe_L": "38f19f6095440608789470aadcaa95bd3245a2cfd40ff6ef176470a67f76121c",
+    "C26_Shoe_R": "dd82ef9cd031729108e45f063884f0a749e85996f973e3e2b46ba84a1c55615f",
+    "C26_Trousers": "60a6e6ff6907174b312c3d7abd8bbc7378fd4f61e53c5942f9f8ba3b11477472",
+    "SKM_MH_C26_Player_001_BodyMesh.001": "4c75711693b9f5bddaa598bcff85a312bd0843977cce35b429666022fbc8c3ab"
+  },
+  "unchanged_rig_sha256": "fdf359c253b75d835ad37559acb82b62631e7a750269e511cd52f742c60b02b2",
+  "face_vertices": 18519,
+  "face_triangles": 33012,
+  "eye_scale": 0.92,
+  "eye_recess_mm": 1.4,
+  "eyes": {
+    "3": {
+      "center_before_m": [
+        0.03139849379658699,
+        -0.09668203443288803,
+        1.7134164571762085
+      ],
+      "center_after_m": [
+        0.03139849379658699,
+        -0.09528203308582306,
+        1.7134164571762085
+      ],
+      "diameter_before_mm": 27.022664458919586,
+      "diameter_after_mm": 24.86085130220602
+    },
+    "4": {
+      "center_before_m": [
+        -0.03161466494202614,
+        -0.09642788022756577,
+        1.7133439779281616
+      ],
+      "center_after_m": [
+        -0.03161466494202614,
+        -0.0950278788805008,
+        1.7133439779281616
+      ],
+      "diameter_before_mm": 27.079079255971784,
+      "diameter_after_mm": 24.912752915494043
+    }
+  },
+  "visual_acceptance": "pending independent four-view inspection",
+  "facial_animation": "No shape keys in source. Existing neck/head weights preserved."
+}
