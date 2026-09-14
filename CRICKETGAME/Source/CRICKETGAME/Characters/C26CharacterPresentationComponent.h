@@ -32,6 +32,34 @@ struct FC26FootLockState
     float LockAlpha = 0.f;
 };
 
+/** Shared presentation tuning and the pure rules behind it. Declared here so each number has one
+    home and the rules can be asserted without a live athlete -- SelectState and the orientation
+    filter are the only runtime callers. */
+namespace C26Presentation
+{
+    /** Locomotion hysteresis: entering costs more speed than leaving it keeps. */
+    inline constexpr float StartSpeed=22.f,StopSpeed=10.f;
+    /** Hip-to-ankle reach; a lock is released before the solver has to straighten past this. */
+    inline constexpr float LegReach=86.f;
+    /** Authored ankle clearance that counts as the stride having genuinely lifted the foot. */
+    inline constexpr float LiftHeight=8.f;
+    /** A re-aim larger than this inside one frame is a snap, not a turn the athlete ran through. */
+    inline constexpr float OrientationSnapDegrees=15.f;
+    /** Bound on the mesh yaw lag, so even a 180 degree re-aim cannot spin the body. */
+    inline constexpr float MaxMeshYawLag=135.f;
+
+    /** True when the athlete should be in locomotion. The band between StopSpeed and StartSpeed
+        holds whatever state the athlete is already in, so a speed hovering at the boundary cannot
+        flap idle<->locomotion and restart Start/Stop every few frames. */
+    CRICKETGAME_API bool WantsMove(bool bWasMoving,float GroundSpeed);
+    /** True once a Start/Stop clip has done its job and should hand back to locomotion or stance.
+        A turn clip always plays out. */
+    CRICKETGAME_API bool TransitionSpent(FName Transition,float GroundSpeed,float TransitionAge);
+    /** One frame of mesh-only yaw lag: absorbs an authoritative re-aim discontinuity, then unwinds
+        it. Returns the new lag in degrees; the actor rotation is never involved. */
+    CRICKETGAME_API float StepMeshYawOffset(float Offset,float AuthoritativeYawDelta,float Dt);
+}
+
 UCLASS(ClassGroup=(Cricket26),meta=(BlueprintSpawnableComponent))
 class CRICKETGAME_API UC26CharacterPresentationComponent : public UActorComponent
 {
@@ -61,6 +89,10 @@ public:
     void ApplyReplayPose(const FC26CharacterPoseSample& A,const FC26CharacterPoseSample& B,float Alpha);
     UStaticMeshComponent* GetBat() const;
     const FC26LocomotionSample& GetLocomotion() const{return Locomotion;}
+    /** Whether the shared foundation may take a foot mark in this state. Public so the scope
+        boundary is assertable: only the shared locomotion and stance clips are stabilized, and
+        the batting/bowling/fielding action clips another agent owns are left untouched. */
+    static bool StateAllowsFootLock(FName State);
 private:
     bool bActive=false,bWasMoving=false;
     FC26LocomotionSample Locomotion;
@@ -91,7 +123,6 @@ private:
 
     void UpdateFootStabilization(const AC26Athlete* Athlete,float Dt);
     void UpdateOrientationSmoothing(const AC26Athlete* Athlete,float Dt);
-    static bool StateAllowsFootLock(FName State);
 
     void UpdateWarp(const AC26Athlete* Athlete,const FC26CricketClip* Clip);
     void LearnWarp(const AC26Athlete* Athlete);

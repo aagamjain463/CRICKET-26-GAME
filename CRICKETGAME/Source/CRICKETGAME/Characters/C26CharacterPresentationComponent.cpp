@@ -292,14 +292,28 @@ FName UC26CharacterPresentationComponent::ReadyKey() const
     default:return TEXT("FielderReady");
     }
 }
-namespace C26Locomotion
+bool C26Presentation::WantsMove(bool bWasMoving,float GroundSpeed)
 {
-    /** Entering locomotion costs more speed than leaving it keeps; the gap is the hysteresis band. */
-    static constexpr float StartSpeed=22.f,StopSpeed=10.f;
-    /** Hip-to-ankle reach; a lock is released before the solver has to straighten past this. */
-    static constexpr float LegReach=86.f;
-    /** Authored ankle clearance that counts as the stride having genuinely lifted the foot. */
-    static constexpr float LiftHeight=8.f;
+    return bWasMoving?GroundSpeed>StopSpeed:GroundSpeed>StartSpeed;
+}
+bool C26Presentation::TransitionSpent(FName Transition,float GroundSpeed,float TransitionAge)
+{
+    // Leave a transition as soon as the body has actually finished doing it. Holding a Start clip
+    // while already at full pace, or a Stop clip after the athlete is stationary, is a stride the
+    // ground no longer justifies: the planted foot skates for the remainder. Turn clips are short
+    // and read correctly played to the end, so they are never cut.
+    if(Transition==TEXT("Start"))return GroundSpeed>220.f&&TransitionAge>.22f;
+    if(Transition==TEXT("Stop"))return GroundSpeed<5.f&&TransitionAge>.25f;
+    return false;
+}
+float C26Presentation::StepMeshYawOffset(float Offset,float AuthoritativeYawDelta,float Dt)
+{
+    // A turn the athlete could plausibly have run through is left to the animation; only
+    // discontinuities (a re-aim of more than ~15 degrees inside one frame) are absorbed. The lag
+    // is then unwound, so the mesh rejoins the actor instead of staying permanently mis-aimed.
+    if(Dt>0.f&&FMath::Abs(AuthoritativeYawDelta)>OrientationSnapDegrees)
+        Offset=FMath::Clamp(Offset-AuthoritativeYawDelta,-MaxMeshYawLag,MaxMeshYawLag);
+    return FMath::Abs(Offset)>.05f?FMath::FInterpTo(Offset,0.f,Dt,14.f):0.f;
 }
 bool UC26CharacterPresentationComponent::StateAllowsFootLock(FName State)
 {
@@ -337,7 +351,7 @@ FName UC26CharacterPresentationComponent::SelectState(const AC26Athlete* Athlete
     }
     // Hysteresis: a single threshold made an athlete hovering near it flap between idle and
     // locomotion, restarting Start/Stop every few frames, which is the loudest popping source.
-    const bool Moving=bWasMoving?Locomotion.GroundSpeed>C26Locomotion::StopSpeed:Locomotion.GroundSpeed>C26Locomotion::StartSpeed;
+    const bool Moving=C26Presentation::WantsMove(bWasMoving,Locomotion.GroundSpeed);
     if(Dt>0.f)
     {
         if(Moving!=bWasMoving){Transition=Moving?TEXT("Start"):TEXT("Stop");TransitionAge=0;}
@@ -351,8 +365,7 @@ FName UC26CharacterPresentationComponent::SelectState(const AC26Athlete* Athlete
         // Leave a transition as soon as the body has actually finished doing it. Holding a Start
         // clip while already at full pace, or a Stop clip after the athlete is stationary, is a
         // stride the ground no longer justifies: the planted foot skates for the remainder.
-        const bool Spent=Transition==TEXT("Start")?(Locomotion.GroundSpeed>220.f&&TransitionAge>.22f)
-            :Transition==TEXT("Stop")?(Locomotion.GroundSpeed<5.f&&TransitionAge>.25f):false;
+        const bool Spent=C26Presentation::TransitionSpent(Transition,Locomotion.GroundSpeed,TransitionAge);
         if(Clip&&!Spent&&TransitionAge<Clip->Sequence->GetPlayLength())return Transition;
         Transition=NAME_None;
     }
@@ -382,17 +395,15 @@ void UC26CharacterPresentationComponent::UpdateOrientationSmoothing(const AC26At
 {
     // PART C. The simulation re-aims fielders and the striker in a single frame, so the mesh
     // used to rotate instantaneously under a pose whose feet were planted. This carries a
-    // mesh-only yaw offset that absorbs the snap and unwinds over ~100ms. The actor's rotation,
-    // and therefore every gameplay query that reads it, is never touched.
+    // mesh-only yaw offset that absorbs the snap and unwinds it over ~0.3s at 60Hz (under a tenth
+    // of the snap is left after ~145ms). The actor's rotation, and therefore every gameplay query
+    // that reads it, is never touched.
     if(!Body||!Profile)return;
     const float Yaw=Athlete->GetActorRotation().Yaw;
     if(!bInitializedYaw){LastAuthoritativeYaw=Yaw;bInitializedYaw=true;MeshYawOffset=0.f;return;}
     const float Delta=FMath::FindDeltaAngleDegrees(LastAuthoritativeYaw,Yaw);
     LastAuthoritativeYaw=Yaw;
-    // A turn the athlete could plausibly have run through is left alone; only discontinuities
-    // (a re-aim of more than ~15 degrees inside one frame) are absorbed.
-    if(Dt>0.f&&FMath::Abs(Delta)>15.f)MeshYawOffset=FMath::Clamp(MeshYawOffset-Delta,-135.f,135.f);
-    MeshYawOffset=FMath::Abs(MeshYawOffset)>.05f?FMath::FInterpTo(MeshYawOffset,0.f,Dt,14.f):0.f;
+    MeshYawOffset=C26Presentation::StepMeshYawOffset(MeshYawOffset,Delta,Dt);
     const FRotator Base=Profile->MeshToGameplayRotation;
     Body->SetRelativeRotation(FRotator(Base.Pitch,Base.Yaw+MeshYawOffset,Base.Roll));
 }
@@ -490,8 +501,8 @@ void UC26CharacterPresentationComponent::UpdateFootStabilization(const AC26Athle
             // fade the weight out rather than switching it.
             const float Reach=FVector::Dist(Hip,Lock.LockedWorldPos);
             if(!bAllowNewMarks)Lock.bLocked=false;
-            else if(Reach>C26Locomotion::LegReach*.94f)Lock.bLocked=false;
-            else if(AboveGround>C26Locomotion::LiftHeight)Lock.bLocked=false;
+            else if(Reach>C26Presentation::LegReach*.94f)Lock.bLocked=false;
+            else if(AboveGround>C26Presentation::LiftHeight)Lock.bLocked=false;
         }
         Lock.LockAlpha=FMath::FInterpTo(Lock.LockAlpha,Lock.bLocked?1.f:0.f,Dt,Lock.bLocked?18.f:24.f);
         if(Lock.LockAlpha<=.001f){Lock.LockAlpha=0.f;OutAlpha=0.f;OutTarget=ToWorld.InverseTransformPosition(Foot);return;}

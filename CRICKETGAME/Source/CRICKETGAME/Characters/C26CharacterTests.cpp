@@ -250,4 +250,80 @@ bool FC26FootSkateTest::RunTest(const FString& Parameters)
     Good&=TestTrue(TEXT("Locked planted foot is close to stationary"),After.Key<FMath::Max(2.f,Before.Key*.5f));
     Actor->Destroy();World->DestroyWorld(false);return Good;
 }
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FC26LocomotionTransitionTest,"Cricket26.Characters.LocomotionTransitions",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
+bool FC26LocomotionTransitionTest::RunTest(const FString& Parameters)
+{
+    // PART B. These rules live inside SelectState, which needs a live athlete, so they are asserted
+    // through the same pure functions SelectState calls. This is the idle<->movement contract.
+    TestFalse(TEXT("A stationary athlete does not start moving inside the band"),C26Presentation::WantsMove(false,15.f));
+    TestTrue(TEXT("The enter threshold is crossed at a real walking speed"),C26Presentation::WantsMove(false,23.f));
+    TestTrue(TEXT("An athlete already moving keeps moving inside the band"),C26Presentation::WantsMove(true,15.f));
+    TestFalse(TEXT("A moving athlete stops only below the leave threshold"),C26Presentation::WantsMove(true,9.f));
+    // The band is the whole point: no single speed may answer both ways, or the athlete flaps and
+    // restarts Start/Stop every few frames.
+    int32 Band=0;
+    for(float Speed=C26Presentation::StopSpeed+.5f;Speed<C26Presentation::StartSpeed;Speed+=1.f)
+    {
+        ++Band;
+        TestTrue(TEXT("Every speed inside the band holds the state the athlete is already in"),
+            C26Presentation::WantsMove(false,Speed)!=C26Presentation::WantsMove(true,Speed));
+    }
+    TestTrue(TEXT("The hysteresis band is wide enough to be worth having"),Band>=8);
+
+    // Scope boundary. Only the shared locomotion and stance clips may be stabilized; the batting,
+    // bowling and fielding action clips another agent owns carry authored footwork, and pinning a
+    // foot through a front-foot stride would drag it. This is the guarantee that the foundation
+    // never fights their work.
+    for(const TCHAR* Shared:{TEXT("Walk"),TEXT("Run"),TEXT("Start"),TEXT("Stop"),TEXT("TurnLeft"),
+        TEXT("TurnRight"),TEXT("FielderReady"),TEXT("KeeperReady"),TEXT("BowlerReady"),
+        TEXT("UmpireReady"),TEXT("NonStrikerReady"),TEXT("BatterRun_L"),TEXT("BatterRun_R"),
+        TEXT("KeeperShuffle"),TEXT("UmpireWalk")})
+        TestTrue(TEXT("Shared locomotion and stance clips may take a foot mark"),
+            UC26CharacterPresentationComponent::StateAllowsFootLock(FName(Shared)));
+    for(const TCHAR* Owned:{TEXT("Pickup"),TEXT("Throw"),TEXT("Catch"),TEXT("KeeperReceive"),
+        TEXT("Celebrate"),TEXT("Disappointed"),TEXT("SignalFour"),TEXT("SignalSix"),
+        TEXT("SignalOut"),TEXT("SignalWide"),TEXT("COVERDRIVE_R"),TEXT("PULL_L"),
+        TEXT("FRONTFOOTDEFENCE_R"),TEXT("FastBowl_R"),TEXT("LegSpin_L"),TEXT("OffSpin_R")})
+        TestFalse(TEXT("Action clips owned by other work are never foot-locked"),
+            UC26CharacterPresentationComponent::StateAllowsFootLock(FName(Owned)));
+
+    // Transition exits. A Start clip held at full pace, or a Stop clip held once stationary, is a
+    // stride the ground no longer justifies.
+    TestFalse(TEXT("Start is not cut before the body has begun to move"),
+        C26Presentation::TransitionSpent(TEXT("Start"),300.f,.10f));
+    TestFalse(TEXT("Start still plays while the athlete is not yet at pace"),
+        C26Presentation::TransitionSpent(TEXT("Start"),100.f,.50f));
+    TestTrue(TEXT("Start hands back once the athlete is at pace"),
+        C26Presentation::TransitionSpent(TEXT("Start"),250.f,.30f));
+    TestFalse(TEXT("Stop is not cut the instant the athlete halts"),
+        C26Presentation::TransitionSpent(TEXT("Stop"),2.f,.10f));
+    TestFalse(TEXT("Stop still plays while the athlete is still coasting"),
+        C26Presentation::TransitionSpent(TEXT("Stop"),40.f,.50f));
+    TestTrue(TEXT("Stop hands back once the athlete is settled"),
+        C26Presentation::TransitionSpent(TEXT("Stop"),2.f,.30f));
+    TestFalse(TEXT("Turn clips always play out"),C26Presentation::TransitionSpent(TEXT("TurnLeft"),300.f,.90f));
+    TestFalse(TEXT("An ordinary locomotion clip is never treated as a transition"),
+        C26Presentation::TransitionSpent(TEXT("Run"),300.f,.90f));
+
+    // PART C. A re-aim inside one frame is a snap; a turn the athlete could have run through is not.
+    TestTrue(TEXT("A plausible turn is left to the animation"),
+        FMath::IsNearlyEqual(C26Presentation::StepMeshYawOffset(0.f,5.f,.016f),0.f,.001f));
+    const float Snapped=C26Presentation::StepMeshYawOffset(0.f,90.f,.016f);
+    // The call absorbs the snap and then takes the first unwind step, so it lands short of a full
+    // 90. Asserting the FRACTION taken keeps this independent of the filter's exact step size.
+    const float SnapTaken=FMath::Abs(Snapped)/90.f;
+    TestTrue(TEXT("A 90 degree re-aim is mostly absorbed on the first frame"),SnapTaken>=.75f&&SnapTaken<=1.f);
+    TestTrue(TEXT("The absorbed lag opposes the authoritative rotation, not doubles it"),Snapped<0.f);
+    const float Flipped=C26Presentation::StepMeshYawOffset(0.f,180.f,.016f);
+    TestTrue(TEXT("A 180 degree re-aim cannot spin the body past the lag clamp"),
+        FMath::Abs(Flipped)<=C26Presentation::MaxMeshYawLag+.01f);
+    // The lag must unwind, or the mesh would stay permanently mis-aimed against its own actor.
+    float Lag=Snapped;int32 Frames=0;
+    while(Frames<120&&FMath::Abs(Lag)>.5f){Lag=C26Presentation::StepMeshYawOffset(Lag,0.f,.016f);++Frames;}
+    TestTrue(TEXT("Mesh yaw lag unwinds back onto the actor"),FMath::Abs(Lag)<=.5f);
+    TestTrue(TEXT("The unwind is quick enough to read as a turn, not a drift"),Frames<60);
+    AddInfo(FString::Printf(TEXT("Transitions: %d speeds inside the band; a 90deg re-aim absorbs to %.1fdeg (%.0f%%) in one frame and unwinds to <0.5deg in %d frames (%.0fms)"),
+        Band,Snapped,SnapTaken*100.f,Frames,Frames*16.f));
+    return true;
+}
 #endif
