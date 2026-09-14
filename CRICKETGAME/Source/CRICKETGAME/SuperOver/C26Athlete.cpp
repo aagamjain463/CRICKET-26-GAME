@@ -926,9 +926,23 @@ void AC26Athlete::CurlFingers(const FString& Side,float Amount)
         }
     }
 }
-void AC26Athlete::SetAction(EC26Action NewAction,bool ResetTime){if(NewAction!=Action||ResetTime)ActionTime=0;Action=NewAction;}
+void AC26Athlete::SetAction(EC26Action NewAction,bool ResetTime)
+{
+    const bool Fresh=NewAction!=Action||ResetTime;
+    // A gather is the end of a chase, so the chase has to be remembered across the boundary. The
+    // match code squares the fielder up and zeroes MoveSpeed immediately after this call, and it
+    // then solves a pose with Dt of zero -- which snaps ShownSpeed to zero too. The speed and
+    // stride phase are therefore only readable here, on the frame the action changes.
+    if(Fresh&&NewAction==EC26Action::Pickup)
+    {
+        ApproachSpeed=FMath::Max(ShownSpeed,FMath::Max(0.f,MoveSpeed));
+        ApproachGait=GaitPhase;
+    }
+    if(Fresh)ActionTime=0;
+    Action=NewAction;
+}
 void AC26Athlete::ResetAt(const FVector& Position,float Yaw)
-{SetActorLocationAndRotation(Position,FRotator(0,Yaw,0));if(Presentation&&Presentation->IsActive())Presentation->ResetMotion();MotionTime=0;MoveSpeed=0;GaitPhase=0;Trigger=0;ContactTarget=FVector::ZeroVector;SetAction(EC26Action::Ready);Animate(0);}
+{SetActorLocationAndRotation(Position,FRotator(0,Yaw,0));if(Presentation&&Presentation->IsActive())Presentation->ResetMotion();MotionTime=0;MoveSpeed=0;GaitPhase=0;ApproachSpeed=0;ApproachGait=0;Trigger=0;ContactTarget=FVector::ZeroVector;SetAction(EC26Action::Ready);Animate(0);}
 void AC26Athlete::SetShotContact(const FVector& Target,float Angle,bool bLoft)
 {ContactTarget=Target;ShotAngle=Angle;Loft=bLoft;SetAction(EC26Action::Batting);}
 FVector AC26Athlete::Palm(bool Right) const
@@ -1846,6 +1860,21 @@ void AC26Athlete::Animate(float Dt)
         LH=FP.LeftHand;RH=FP.RightHand;
         PoleL=FP.PoleL;PoleR=FP.PoleR;
         ActiveFingerCurl=FP.FingerCurl;
+
+        // Deceleration. The authored gather is a standing solve: it assumes the athlete is already
+        // over the ball. A fielder who arrives at 700 cm/s is not, and cutting straight to that
+        // solve is what made a chase end in a single frame with both feet arriving from nowhere.
+        // The speed carried into the action decays, the stride keeps turning over at the cadence
+        // that decaying speed implies, and the braking step is cross-faded into the gather -- so
+        // the legs finish one more real step while the body is already going down to the ball.
+        const C26Motion::FApproachBrake Brake=C26Motion::SolveApproachBrake(
+            ActionTime,ApproachSpeed,ApproachGait,AnkleZ,RunClip?RunClip->GetPlayLength():0.f);
+        FL=FMath::Lerp(Brake.LeftFoot,FL,Brake.Plant);
+        FR=FMath::Lerp(Brake.RightFoot,FR,Brake.Plant);
+        PitchL=FMath::Lerp(Brake.PitchL,PitchL,Brake.Plant);
+        PitchR=FMath::Lerp(Brake.PitchR,PitchR,Brake.Plant);
+        LeanForward+=Brake.LeanForward;
+        Crouch+=Brake.Crouch;
     }
     else if(Action==EC26Action::Catch)
     {

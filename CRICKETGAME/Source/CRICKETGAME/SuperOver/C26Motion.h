@@ -601,6 +601,77 @@ namespace C26Motion
         return Out;
     }
 
+    /** The braking stride that carries a chase into a ground gather.
+     *
+     * The authored gather below is a standing solve: it assumes the athlete is already over the
+     * ball. A fielder who arrives at 700 cm/s is not, and cutting straight to that solve ends a
+     * sprint in a single frame with both feet arriving from nowhere. This layer keeps the legs
+     * turning over while the speed bleeds off and cross-fades them into the gather, so the athlete
+     * finishes one real braking step underneath the body while the torso is already going down.
+     */
+    struct FApproachBrake
+    {
+        FVector LeftFoot = FVector::ZeroVector;
+        FVector RightFoot = FVector::ZeroVector;
+        float PitchL = 0.f;
+        float PitchR = 0.f;
+        /** How far the gather has taken the legs over: 0 while the braking step still owns them,
+            1 once it is planted. Defaults to 1, so blending a default-constructed brake is a
+            no-op and a fielder who was not travelling gets the authored gather untouched. */
+        float Plant = 1.f;
+        /** Ground speed the legs are still carrying at this instant, in cm/s. This is the quantity
+            that decays; the feet's own travel depends on where in the cycle each one happens to be,
+            so this is the monotone measure of the deceleration. */
+        float ResidualSpeed = 0.f;
+        /** Forward trunk lean the braking step adds, in degrees. */
+        float LeanForward = 0.f;
+        /** Pelvis drop the braking step adds, in centimetres; negative is down. */
+        float Crouch = 0.f;
+    };
+
+    inline FApproachBrake SolveApproachBrake(
+        float ActionTime,
+        float ApproachSpeed,
+        float ApproachGait,
+        float AnkleZ,
+        float ClipLength)
+    {
+        FApproachBrake Out;
+        if(ApproachSpeed <= 40.f) return Out;
+
+        // Speed carried into the action decays exponentially, and the stride keeps turning over at
+        // the cadence that decaying speed implies. The gait is integrated in closed form rather
+        // than accumulated per frame: the match drives this sequence by assigning ActionTime and
+        // calling Animate(0), so Dt is deliberately zero throughout it and anything summed per
+        // frame would never advance -- the legs would freeze mid-stride and slide into the gather.
+        // Closed form is also frame-rate independent, which per-frame accumulation is not.
+        const float Decay = 11.f;
+        const float Cadence0 = ClipLength > 0.f
+            ? 2.f*PI*ApproachSpeed/(480.f*ClipLength)
+            : FMath::Clamp(ApproachSpeed/60.f,0.f,15.f);
+        const float Residual = ApproachSpeed*FMath::Exp(-ActionTime*Decay);
+        const float Gait = ApproachGait + Cadence0*(1.f-FMath::Exp(-ActionTime*Decay))/Decay;
+        Out.ResidualSpeed = Residual;
+
+        const FStride RunL = Stride(Gait,Residual,-9.f,AnkleZ,false);
+        const FStride RunR = Stride(Gait,Residual, 9.f,AnkleZ,false);
+        Out.LeftFoot = Rig(RunL.Foot.X,RunL.Foot.Y,RunL.Foot.Z);
+        Out.RightFoot = Rig(RunR.Foot.X,RunR.Foot.Y,RunR.Foot.Z);
+        Out.PitchL = RunL.Pitch;
+        Out.PitchR = RunR.Pitch;
+
+        // The gather takes the legs over across the first sixth of a second -- one braking step --
+        // and owns them outright after that.
+        Out.Plant = FMath::SmoothStep(0.f,.16f,ActionTime);
+        // Momentum the legs are absorbing: the chest carries on over the front foot as the athlete
+        // checks, and the pelvis rides lower through the braking step. Scaled by how fast he was
+        // actually travelling, so a fielder who walks in to the ball does none of it.
+        const float Brake = (1.f-Out.Plant)*FMath::Clamp(ApproachSpeed/560.f,0.f,1.f);
+        Out.LeanForward = Brake*10.f;
+        Out.Crouch = -Brake*4.f;
+        return Out;
+    }
+
     /** Smooth, athletic ground gather / pickup biomechanics.
      * Full-body lowering (knees flexed, hips dropped, natural forward trunk hinge), authentic
      * clean scoop at turf height with hand-ground safety clamping, and seamless rise / load into the throw. */
