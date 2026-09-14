@@ -135,14 +135,13 @@ namespace C26BowlLab
     // HUD control geometry, in 1600x900 design units. These are the same numbers
     // AC26HUD::Controls draws and AC26MatchGameMode hit-tests, restated here so
     // the lab presses where a thumb would.
-    static constexpr float CarouselY = 426.f;
-    static constexpr float CarouselPrevX = 84.f;
-    static constexpr float CarouselNextX = 338.f;
-    // The around-the-wicket toggle now sits directly under the delivery-type
-    // carousel, because the plan readout and the quick presets that used to fill
-    // the column between them were removed. Centre of (56, 466, 156x34).
-    static constexpr float AroundX = 134.f, AroundY = 483.f;
-    static constexpr float StartX = 1390.f, StartY = 780.f;
+    static constexpr float CarouselY = 730.f;
+    static constexpr float CarouselPrevX = 83.f;
+    static constexpr float CarouselNextX = 339.f;
+    // The around-the-wicket toggle sits directly above the delivery-type
+    // carousel. Centre of (56, 642, 170x34).
+    static constexpr float AroundX = 141.f, AroundY = 659.f;
+    static constexpr float StartX = 1389.f, StartY = 730.f;
     static constexpr float DialX = AC26MatchGameMode::DialCentreX, DialY = AC26MatchGameMode::DialCentreY, DialR = AC26MatchGameMode::DialRadius;
     static constexpr float PaceX = AC26MatchGameMode::PaceTrackX, PaceW = AC26MatchGameMode::PaceTrackW, PaceY = AC26MatchGameMode::PaceTrackY;
     /** Neutral press point: on the pitch, clear of every planning control. */

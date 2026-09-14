@@ -1940,44 +1940,57 @@ void AC26HUD::Controls()
             const auto& Plan = Phase == EC26Phase::Ready ? Match->Bowling : Match->LockedBowling;
             if (Phase == EC26Phase::Ready)
             {
-                // ---- A. DELIVERY TYPE CAROUSEL ----
-                const float CarX = 56.f, CarY = 400.f, CarW = 310.f, CarH = 52.f;
-                Panel(CarX, CarY, CarW, CarH, Gold);
-                Btn(TEXT("delivery_prev"), TEXT("<"), CarX + 8.f, CarY + 6.f, 40.f, 40.f, 0);
+                // ---- A. DELIVERY TYPE CAROUSEL (Aligned on same line as Start Run-Up) ----
+                const float CarX = 56.f, CarY = 705.f, CarW = 310.f, CarH = 50.f;
+                // Translucent obsidian glass panel with championship gold accent
+                Rect(CarX, CarY, CarW, CarH, FLinearColor(0.015f, 0.022f, 0.035f, 0.90f));
+                Rect(CarX, CarY, 3.5f, CarH, Gold);
+                Line(CarX, CarY, CarX + CarW, CarY, HairlineSoft, 1.f);
+                Line(CarX + 3.5f, CarY, CarX + CarW, CarY, FLinearColor(Gold.R, Gold.G, Gold.B, 0.40f), 1.2f);
+                Line(CarX, CarY + CarH, CarX + CarW, CarY + CarH, HairlineSoft, 1.f);
+                Line(CarX + CarW, CarY, CarX + CarW, CarY + CarH, HairlineSoft, 1.f);
+
+                Btn(TEXT("delivery_prev"), TEXT("<"), CarX + 8.f, CarY + 6.f, 38.f, 38.f, 0);
                 {
                     const FString DN = FString(C26Delivery::Name(Match->BowlingPlan.Type));
-                    TextMid(DN, CarX + CarW * 0.5f, CarY, CarH, 22, Gold, true, 0);
+                    TextMidFit(DN, CarX + CarW * 0.5f, CarY, CarH, 20.f, WhiteAthletic, CarW - 96.f, true, 1);
                 }
-                Btn(TEXT("delivery_next"), TEXT(">"), CarX + CarW - 48.f, CarY + 6.f, 40.f, 40.f, 0);
+                Btn(TEXT("delivery_next"), TEXT(">"), CarX + CarW - 46.f, CarY + 6.f, 38.f, 38.f, 0);
 
-                // Movement indicator beside delivery name
+                // Movement indicator beside delivery card
                 {
                     const EC26Movement Mov = C26Delivery::MovementOf(Match->BowlingPlan.Type);
                     if (Mov != EC26Movement::None)
                     {
                         const float Dir = C26Delivery::DirectionIsFree(Match->BowlingPlan.Type)
                             ? Match->BowlingPlan.MovementDirection : C26Delivery::NaturalDirection(Match->BowlingPlan.Type);
-                        const float ArrowX = CarX + CarW + 12.f;
+                        const float ArrowX = CarX + CarW + 14.f;
                         const float ArrowY = CarY + CarH * 0.5f;
                         const float ArrowLen = 22.f;
                         const FLinearColor ArrowCol = Mov == EC26Movement::ReverseSwing
-                            ? FLinearColor(.90f, .55f, .15f, .85f) : FLinearColor(Gold.R, Gold.G, Gold.B, .70f);
-                        Line(ArrowX, ArrowY, ArrowX + Dir * ArrowLen, ArrowY - 8.f, ArrowCol, 2.f);
+                            ? FLinearColor(.90f, .55f, .15f, .90f) : FLinearColor(Gold.R, Gold.G, Gold.B, .85f);
+                        Line(ArrowX, ArrowY, ArrowX + Dir * ArrowLen, ArrowY - 8.f, ArrowCol, 2.2f);
                         Line(ArrowX + Dir * ArrowLen, ArrowY - 8.f, ArrowX + Dir * ArrowLen - Dir * 6.f, ArrowY - 14.f, ArrowCol, 2.f);
                         Line(ArrowX + Dir * ArrowLen, ArrowY - 8.f, ArrowX + Dir * ArrowLen - Dir * 6.f, ArrowY - 2.f, ArrowCol, 2.f);
                     }
                 }
 
-                // ---- B. MOVEMENT DIAL (Visual - Minimalist, In-Line Symmetry) ----
+                // ---- B. MOVEMENT DIAL (Shifted downwards, sleek frosted glass reticle) ----
                 {
                     const float DX = Match->DialCentreX;
                     const float DY = Match->DialCentreY;
                     const float DR = Match->DialRadius;
 
-                    TextFit(TEXT("DIRECTION & SWING"), DX - DR - 20.f, DY - DR - 16.f, 11, SlateMuted, (DR + 20.f) * 2.f, true, 0);
+                    // Circular frosted glass backing
+                    Circle(DX, DY, DR, HairlineSoft, 1.2f);
+                    Circle(DX, DY, DR + 1.f, FLinearColor(0.f, 0.f, 0.f, .40f), 2.5f);
+                    Circle(DX, DY, DR - 10.f, FLinearColor(1.f, 1.f, 1.f, 0.05f), 1.f);
 
-                    Circle(DX, DY, DR, FLinearColor(SilverCool.R, SilverCool.G, SilverCool.B, .25f), 1.5f);
-                    Circle(DX, DY, DR + 1.f, FLinearColor(0.f, 0.f, 0.f, .30f), 2.5f);
+                    // Reticle crosshair ticks
+                    Line(DX - DR, DY, DX - DR + 6.f, DY, HairlineSoft, 1.f);
+                    Line(DX + DR - 6.f, DY, DX + DR, DY, HairlineSoft, 1.f);
+                    Line(DX, DY - DR, DX, DY - DR + 6.f, HairlineSoft, 1.f);
+                    Line(DX, DY + DR - 6.f, DX, DY + DR, HairlineSoft, 1.f);
 
                     const int ArcSegs = 32;
                     const int ArcFill = FMath::CeilToInt(Match->BowlingPlan.MovementMagnitude * ArcSegs);
@@ -1988,7 +2001,7 @@ void AC26HUD::Controls()
                         const bool On = I < ArcFill;
                         Line(DX + (DR - 6.f) * FMath::Cos(A1), DY + (DR - 6.f) * FMath::Sin(A1),
                              DX + (DR - 6.f) * FMath::Cos(A2), DY + (DR - 6.f) * FMath::Sin(A2),
-                             On ? FLinearColor(Gold.R, Gold.G, Gold.B, .85f) : FLinearColor(1.f, 1.f, 1.f, .08f),
+                             On ? FLinearColor(Gold.R, Gold.G, Gold.B, .90f) : FLinearColor(1.f, 1.f, 1.f, .07f),
                              On ? 2.5f : 1.2f);
                     }
 
@@ -2003,26 +2016,30 @@ void AC26HUD::Controls()
                         const FVector2D ArrowN = ArrowDir.IsNearlyZero() ? FVector2D(1.f, 0.f) : ArrowDir.GetSafeNormal();
                         const FVector2D Tip(DX + ArrowN.X * ArrowLen, DY + ArrowN.Y * ArrowLen);
                         const FLinearColor ACol = bFixed
-                            ? FLinearColor(SilverCool.R, SilverCool.G, SilverCool.B, .65f)
+                            ? FLinearColor(SilverCool.R, SilverCool.G, SilverCool.B, .70f)
                             : FLinearColor(Gold.R, Gold.G, Gold.B, .95f);
-                        Line(DX, DY, Tip.X, Tip.Y, FLinearColor(0.f, 0.f, 0.f, .50f), 4.f);
+                        Line(DX, DY, Tip.X, Tip.Y, FLinearColor(0.f, 0.f, 0.f, .55f), 4.f);
                         Line(DX, DY, Tip.X, Tip.Y, ACol, 2.2f);
                         const FVector2D Perp(-ArrowN.Y, ArrowN.X);
                         Line(Tip.X, Tip.Y, Tip.X - ArrowN.X * 8.f + Perp.X * 5.f, Tip.Y - ArrowN.Y * 8.f + Perp.Y * 5.f, ACol, 1.8f);
                         Line(Tip.X, Tip.Y, Tip.X - ArrowN.X * 8.f - Perp.X * 5.f, Tip.Y - ArrowN.Y * 8.f - Perp.Y * 5.f, ACol, 1.8f);
+                        Circle(DX, DY, 3.5f, SilverCool, 1.2f);
                     }
                     else
                     {
-                        Circle(DX, DY, 4.f, FLinearColor(SilverCool.R, SilverCool.G, SilverCool.B, .40f), 1.5f);
+                        Circle(DX, DY, 4.f, FLinearColor(SilverCool.R, SilverCool.G, SilverCool.B, .45f), 1.5f);
                     }
 
-                    const FString MovLabel = Match->GetMovementText();
-                    TextFit(MovLabel, DX - DR - 20.f, DY + DR + 8.f, 12, Gold, (DR + 20.f) * 2.f, true, 0);
-                    if (bFixed)
-                        TextFit(TEXT("LOCKED"), DX - DR - 20.f, DY + DR + 22.f, 10, FLinearColor(SlateMuted.R, SlateMuted.G, SlateMuted.B, .55f), (DR + 20.f) * 2.f, true, 0);
+                    // Minimalist percentage readout ONLY (all small text info removed)
+                    const int32 MovPct = FMath::RoundToInt(Match->BowlingPlan.MovementMagnitude * 100.f);
+                    const FString PctStr = FString::Printf(TEXT("%d%%"), MovPct);
+                    const float BadgeW = 46.f;
+                    Rect(DX - BadgeW * 0.5f, DY + DR + 6.f, BadgeW, 16.f, SurfaceWell);
+                    Line(DX - BadgeW * 0.5f, DY + DR + 6.f, DX + BadgeW * 0.5f, DY + DR + 6.f, bFixed ? HairlineSoft : Gold, 1.f);
+                    TextMid(PctStr, DX, DY + DR + 6.f, 16.f, 11, bFixed ? SilverCool : Gold, true, 1);
                 }
 
-                // ---- D. PACE SLIDER (Minimalist - Only Chosen Speed Shown) ----
+                // ---- D. PACE SLIDER (Level with the wicket-side toggle; speed only) ----
                 {
                     const float TX = Match->PaceTrackX;
                     const float TW = Match->PaceTrackW;
@@ -2032,18 +2049,25 @@ void AC26HUD::Controls()
                     const float PaceN = Match->BowlingPlan.PaceNormalized;
                     const float CurKph = Match->PlannedKph();
 
-                    // Only show the speed chosen to make it minimal
-                    Text(FString::Printf(TEXT("%.0f KM/H"), CurKph), TX + TW * 0.5f, TY - 18.f, 14, Gold, true, 2);
+                    // Only the selected speed is shown above the track.
+                    Text(FString::Printf(TEXT("%.0f KM/H"), CurKph), TX + TW * 0.5f, TY - 22.f, 14, Gold, true, 2);
 
+                    // Recessed dark track with crisp border
                     Rect(TX, TY, TW, TH_S, SurfaceWell);
                     Line(TX, TY, TX + TW, TY, HairlineSoft, 1.f);
                     Line(TX, TY + TH_S, TX + TW, TY + TH_S, HairlineSoft, 1.f);
+                    Line(TX, TY, TX, TY + TH_S, HairlineSoft, 1.f);
+                    Line(TX + TW, TY, TX + TW, TY + TH_S, HairlineSoft, 1.f);
 
-                    Rect(TX, TY, TW * PaceN, TH_S, FLinearColor(Gold.R, Gold.G, Gold.B, .50f));
+                    // Luminous gold fill with gleam
+                    Rect(TX, TY + 1.f, TW * PaceN, TH_S - 2.f, FLinearColor(Gold.R, Gold.G, Gold.B, .65f));
+                    Line(TX, TY + 1.f, TX + TW * PaceN, TY + 1.f, WhiteAthletic, 1.f);
 
+                    // Precision vertical thumb cursor
                     const float ThumbX = TX + TW * PaceN;
-                    Rect(ThumbX - 4.f, TY - 4.f, 8.f, TH_S + 8.f, Gold);
-                    Rect(ThumbX - 2.f, TY - 2.f, 4.f, TH_S + 4.f, WhiteAthletic);
+                    Rect(ThumbX - 4.f, TY - 4.f, 8.f, TH_S + 8.f, FLinearColor(0.02f, 0.04f, 0.08f, .90f));
+                    Rect(ThumbX - 3.f, TY - 3.f, 6.f, TH_S + 6.f, Gold);
+                    Rect(ThumbX - 1.f, TY - 1.f, 2.f, TH_S + 2.f, WhiteAthletic);
                 }
 
                 // ---- E. TRAJECTORY PREVIEW (project 3D spline to screen) ----
@@ -2088,43 +2112,43 @@ void AC26HUD::Controls()
                     }
                 }
 
-                // ---- F. AROUND THE WICKET TOGGLE ----
-                // The quick presets (YORKER / 4TH OFF / BOUNCER / WIDE Y / SL CUT /
-                // IN YORK) were removed: the delivery TYPE carousel above is the
-                // only selectable option on this screen. The toggle now sits
-                // directly under it so the column reads as one control.
+                // ---- F. AROUND THE WICKET TOGGLE (Positioned cleanly above Delivery Type Carousel) ----
                 {
-                    const FString WicketStr = Match->BowlingPlan.bAroundWicket ? TEXT("AROUND WICKET") : TEXT("OVER WICKET");
-                    Btn(TEXT("around"), WicketStr, 56.f, 466.f, 156.f, 34.f, 0, Match->BowlingPlan.bAroundWicket);
+                    const bool bAround = Match->BowlingPlan.bAroundWicket;
+                    const FString WicketStr = bAround ? TEXT("AROUND WICKET") : TEXT("OVER WICKET");
+                    Btn(TEXT("around"), WicketStr, 56.f, 642.f, 170.f, 34.f, bAround ? 3 : 0, bAround);
                 }
 
-                // (Removed: LAST BALL ghost marker — only the live delivery marker is shown.)
-
-                // ---- I. START RUN-UP BUTTON (Symmetrical Placement) ----
-                Btn(TEXT("ready"), TEXT("START RUN-UP  >"), 1234.f, 595.f, 310.f, 50.f, 1);
+                // ---- I. START RUN-UP BUTTON (Shifted downwards, keeping exact spacing from Pace Slider) ----
+                Btn(TEXT("ready"), TEXT("START RUN-UP  >"), 1234.f, 705.f, 310.f, 50.f, 1);
 
                 // ---- J. INSTRUCTION HINT ----
-                // Centred in the clear band above the START button and below the
-                // pace labels, so it never touches the bottom broadcast bar.
-                TextFit(TEXT("DRAG PITCH TO AIM  \u2022  DIAL = MOVEMENT  \u2022  SLIDER = PACE"), 800.f,
+                // Centred cleanly above the bottom broadcast bar
+                TextFit(TEXT("DRAG PITCH TO AIM  •  DIAL = MOVEMENT  •  SLIDER = PACE"), 800.f,
                         806.f, 11, FLinearColor(SlateMuted.R, SlateMuted.G, SlateMuted.B, .60f),
                         ContentW, true, 0);
             }
             else // RunUp or Delivery
             {
                 // ================================================================
-                // RELEASE BAR: Properly zoned with labeled Perfect|NoBall boundary
+                // RELEASE BAR: Ultra-premium, minimalistic, collision-free layout
                 // ================================================================
-                const float MeterX = 420.f, MeterY = 808.f, MeterW = 660.f, MeterH = 32.f;
+                const float MeterW = 660.f, MeterH = 26.f;
+                const float MeterX = 470.f;
+                const float MeterY = 794.f;
                 const auto& Bar = Match->ActiveBar;
                 const float Meter01 = Match->BowlingMeter();
 
+                // Dark obsidian chassis backing
+                Rect(MeterX, MeterY, MeterW, MeterH, FLinearColor(0.012f, 0.016f, 0.025f, 0.88f));
+
+                // Zone fills
                 // TooEarly zone
-                Rect(MeterX, MeterY, MeterW * Bar.EarlyStart, MeterH, FLinearColor(.06f, .08f, .12f, .70f));
+                Rect(MeterX, MeterY, MeterW * Bar.EarlyStart, MeterH, FLinearColor(.05f, .07f, .11f, .75f));
                 // Early zone
                 const float EarlyW = Bar.GoodStart - Bar.EarlyStart;
                 Rect(MeterX + MeterW * Bar.EarlyStart, MeterY, MeterW * EarlyW, MeterH,
-                     FLinearColor(SilverCool.R, SilverCool.G, SilverCool.B, .12f));
+                     FLinearColor(SilverCool.R, SilverCool.G, SilverCool.B, .10f));
                 // Good zone
                 const float GoodW = Bar.PerfectStart - Bar.GoodStart;
                 Rect(MeterX + MeterW * Bar.GoodStart, MeterY, MeterW * GoodW, MeterH,
@@ -2132,39 +2156,62 @@ void AC26HUD::Controls()
                 // Perfect zone
                 const float PerfW = Bar.NoBallStart - Bar.PerfectStart;
                 Rect(MeterX + MeterW * Bar.PerfectStart, MeterY, MeterW * PerfW, MeterH,
-                     FLinearColor(TurfGreen.R, TurfGreen.G, TurfGreen.B, .30f));
+                     FLinearColor(TurfGreen.R, TurfGreen.G, TurfGreen.B, .40f));
                 // NoBall zone
                 const float NBW = 1.f - Bar.NoBallStart;
                 Rect(MeterX + MeterW * Bar.NoBallStart, MeterY, MeterW * NBW, MeterH,
-                     FLinearColor(Crimson.R, Crimson.G, Crimson.B, .30f));
+                     FLinearColor(Crimson.R, Crimson.G, Crimson.B, .45f));
 
-                // Zone boundary lines
+                // Zone boundary divider lines
                 Line(MeterX + MeterW * Bar.EarlyStart, MeterY, MeterX + MeterW * Bar.EarlyStart, MeterY + MeterH, HairlineSoft, 1.f);
-                Line(MeterX + MeterW * Bar.GoodStart, MeterY, MeterX + MeterW * Bar.GoodStart, MeterY + MeterH, FLinearColor(Gold.R, Gold.G, Gold.B, .30f), 1.f);
-                Line(MeterX + MeterW * Bar.PerfectStart, MeterY, MeterX + MeterW * Bar.PerfectStart, MeterY + MeterH, FLinearColor(TurfGreen.R, TurfGreen.G, TurfGreen.B, .50f), 1.f);
-                // THE critical line: Perfect|NoBall boundary
-                Line(MeterX + MeterW * Bar.NoBallStart, MeterY - 4.f, MeterX + MeterW * Bar.NoBallStart, MeterY + MeterH + 4.f,
-                     FLinearColor(Crimson.R, Crimson.G, Crimson.B, .85f), 2.5f);
+                Line(MeterX + MeterW * Bar.GoodStart, MeterY, MeterX + MeterW * Bar.GoodStart, MeterY + MeterH, FLinearColor(Gold.R, Gold.G, Gold.B, .35f), 1.f);
+                Line(MeterX + MeterW * Bar.PerfectStart, MeterY, MeterX + MeterW * Bar.PerfectStart, MeterY + MeterH, FLinearColor(TurfGreen.R, TurfGreen.G, TurfGreen.B, .55f), 1.2f);
 
-                // Outer border
-                Line(MeterX, MeterY, MeterX + MeterW, MeterY, HairlineSoft, 1.f);
+                // The Crease Line (No Ball boundary): Prominent luminous hazard demarcation
+                const float CreaseX = MeterX + MeterW * Bar.NoBallStart;
+                Line(CreaseX, MeterY - 8.f, CreaseX, MeterY + MeterH + 4.f, Crimson, 2.5f);
+
+                // Outer border with top gleam
+                Line(MeterX, MeterY, MeterX + MeterW, MeterY, HairlineGleam, 1.2f);
                 Line(MeterX, MeterY + MeterH, MeterX + MeterW, MeterY + MeterH, HairlineSoft, 1.f);
                 Line(MeterX, MeterY, MeterX, MeterY + MeterH, HairlineSoft, 1.f);
                 Line(MeterX + MeterW, MeterY, MeterX + MeterW, MeterY + MeterH, HairlineSoft, 1.f);
 
-                // Zone labels above bar
-                TextMid(TEXT("EARLY"), MeterX + MeterW * (Bar.EarlyStart + EarlyW * 0.5f), MeterY - 18.f, 16.f, 10, SlateMuted, true, 0);
-                TextMid(TEXT("GOOD"), MeterX + MeterW * (Bar.GoodStart + GoodW * 0.5f), MeterY - 18.f, 16.f, 11, FLinearColor(Gold.R, Gold.G, Gold.B, .70f), true, 0);
-                TextMid(TEXT("PERFECT"), MeterX + MeterW * (Bar.PerfectStart + PerfW * 0.5f), MeterY - 18.f, 16.f, 12, TurfGreen, true, 0);
-                TextMid(TEXT("NO BALL"), MeterX + MeterW * (Bar.NoBallStart + NBW * 0.5f), MeterY - 18.f, 16.f, 10, Crimson, true, 0);
+                // Zone labels: Cleanly separated with ZERO collision
+                // EARLY & GOOD are centered in their respective wide zones
+                TextMid(TEXT("EARLY"), MeterX + MeterW * (Bar.EarlyStart + EarlyW * 0.5f), MeterY - 16.f, 14.f, 10, SlateMuted, true, 0);
+                TextMid(TEXT("GOOD"), MeterX + MeterW * (Bar.GoodStart + GoodW * 0.5f), MeterY - 16.f, 14.f, 10, FLinearColor(Gold.R, Gold.G, Gold.B, .85f), true, 0);
+
+                // PERFECT sits centered in the green band on the main baseline
+                const float PerfCenter = MeterX + MeterW * (Bar.PerfectStart + PerfW * 0.5f);
+                TextMid(TEXT("PERFECT"), PerfCenter, MeterY - 16.f, 14.f, 11, TurfGreen, true, 0);
+
+                // NO BALL sits on an elevated Crease Indicator Tag above the crease line
+                // This guarantees zero collision with PERFECT or GOOD under any difficulty
+                {
+                    const float TagW = 56.f, TagH = 15.f;
+                    const float TagX = FMath::Clamp(CreaseX - TagW * 0.5f, MeterX, MeterX + MeterW - TagW);
+                    const float TagY = MeterY - 32.f;
+                    Rect(TagX, TagY, TagW, TagH, FLinearColor(0.14f, 0.02f, 0.04f, 0.88f));
+                    Line(TagX, TagY, TagX + TagW, TagY, Crimson, 1.2f);
+                    Line(TagX, TagY + TagH, TagX + TagW, TagY + TagH, Crimson, 1.f);
+                    Line(TagX, TagY, TagX, TagY + TagH, Crimson, 1.f);
+                    Line(TagX + TagW, TagY, TagX + TagW, TagY + TagH, Crimson, 1.f);
+                    TextMid(TEXT("NO BALL"), TagX + TagW * 0.5f, TagY, TagH, 9.f, Crimson, true, 0);
+                    Line(CreaseX, TagY + TagH, CreaseX, MeterY - 8.f, Crimson, 1.5f);
+                }
 
                 // Moving needle or locked release
                 if (!Match->ReleaseLocked)
                 {
                     const float NeedleX = MeterX + MeterW * Meter01;
-                    Rect(NeedleX - 3.f, MeterY - 6.f, 6.f, MeterH + 12.f, FLinearColor(0.f, 0.f, 0.f, .60f));
-                    Rect(NeedleX - 2.f, MeterY - 5.f, 4.f, MeterH + 10.f, WhiteAthletic);
-                    Rect(NeedleX - 1.f, MeterY - 4.f, 2.f, MeterH + 8.f, Gold);
+                    Rect(NeedleX - 3.f, MeterY - 4.f, 6.f, MeterH + 8.f, FLinearColor(0.f, 0.f, 0.f, .60f));
+                    Rect(NeedleX - 1.5f, MeterY - 3.f, 3.f, MeterH + 6.f, WhiteAthletic);
+                    Rect(NeedleX - 0.5f, MeterY - 2.f, 1.f, MeterH + 4.f, Gold);
+                    // Razor-sharp top pointer cursor
+                    Line(NeedleX - 3.5f, MeterY - 7.f, NeedleX + 3.5f, MeterY - 7.f, Gold, 1.5f);
+                    Line(NeedleX - 3.5f, MeterY - 7.f, NeedleX, MeterY - 2.f, Gold, 1.5f);
+                    Line(NeedleX + 3.5f, MeterY - 7.f, NeedleX, MeterY - 2.f, Gold, 1.5f);
                 }
                 else
                 {
@@ -2172,22 +2219,22 @@ void AC26HUD::Controls()
                     const FLinearColor LockCol = Match->bBowlingNoBall ? Crimson
                         : (Match->ReleaseBandQuality > 0.8f ? TurfGreen
                         : (Match->ReleaseBandQuality > 0.55f ? Gold : SilverCool));
-                    Rect(LockX - 3.f, MeterY - 6.f, 6.f, MeterH + 12.f, FLinearColor(0.f, 0.f, 0.f, .60f));
-                    Rect(LockX - 2.f, MeterY - 5.f, 4.f, MeterH + 10.f, LockCol);
+                    Rect(LockX - 3.f, MeterY - 4.f, 6.f, MeterH + 8.f, FLinearColor(0.f, 0.f, 0.f, .60f));
+                    Rect(LockX - 2.f, MeterY - 3.f, 4.f, MeterH + 6.f, LockCol);
+                    Rect(LockX - 0.5f, MeterY - 2.f, 1.f, MeterH + 4.f, WhiteAthletic);
 
                     // Release band feedback badge, lifted clear of the zone labels
                     const FString BandStr = Match->GetReleaseBandName();
-                    const float FBW = Width(BandStr, 24, 0) + 2.f * Sp24;
-                    Rect(800.f - FBW * 0.5f, MeterY - 66.f, FBW, 38.f, SurfaceWell);
+                    const float FBW = Width(BandStr, 22, 0) + 2.f * Sp24;
+                    Rect(800.f - FBW * 0.5f, MeterY - 66.f, FBW, 34.f, SurfaceWell);
                     Line(800.f - FBW * 0.5f, MeterY - 66.f, 800.f + FBW * 0.5f, MeterY - 66.f, LockCol, 1.5f);
-                    TextMidFit(BandStr, 800.f, MeterY - 66.f, 38.f, 24, LockCol, FBW - 2.f * PadEdge, true, 0);
+                    TextMidFit(BandStr, 800.f, MeterY - 66.f, 34.f, 22, LockCol, FBW - 2.f * PadEdge, true, 0);
 
                     if (Match->LastActualKph > 10.f)
                     {
-                        // Stacked above the band badge so it stays clear of the
-                        // bottom broadcast bar.
+                        // Stacked above the band badge so it stays clear of the bottom broadcast bar
                         Text(FString::Printf(TEXT("%.1f KM/H"), Match->LastActualKph),
-                             800.f, MeterY - 96.f, 16, WhiteAthletic, true, 0);
+                             800.f, MeterY - 92.f, 15, WhiteAthletic, true, 0);
                     }
                 }
 
@@ -2199,15 +2246,14 @@ void AC26HUD::Controls()
                     const float Info2Y = MeterY - GapLine - LineH(12);
                     const float Info1Y = Info2Y - GapLine - LineH(14);
                     TextFit(DelName, InfoX, Info1Y, 14, SilverCool, 360.f, false, 0);
-                    TextFit(Match->GetDeliveryLengthName() + TEXT("  \u2022  ") + Match->GetDeliveryLineName(),
+                    TextFit(Match->GetDeliveryLengthName() + TEXT("  •  ") + Match->GetDeliveryLineName(),
                             InfoX, Info2Y, 12, SlateMuted, 360.f, false, 0);
                 }
 
-                // Touch hint rides above the zone labels - below the meter is
-                // the bottom broadcast bar now.
+                // Touch hint rides above the zone labels
                 if (!Match->ReleaseLocked && Phase == EC26Phase::RunUp)
-                    TextFit(TEXT("TAP ANYWHERE TO RELEASE"), 800.f, MeterY - 56.f, 12,
-                            FLinearColor(SlateMuted.R, SlateMuted.G, SlateMuted.B, .60f), ContentW, true, 0);
+                    TextFit(TEXT("TAP ANYWHERE TO RELEASE"), 800.f, MeterY - 54.f, 11,
+                            FLinearColor(SlateMuted.R, SlateMuted.G, SlateMuted.B, .65f), ContentW, true, 0);
             }
         }
     }
