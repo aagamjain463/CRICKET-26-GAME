@@ -1,0 +1,15 @@
+{
+ "verts": 773,
+ "tris": 1094,
+ "dims_cm": [
+  24.4,
+  29.8,
+  53.6
+ ],
+ "slots": [
+  "M_C26_PadFace",
+  "M_C26_PadRoll",
+  "M_C26_PadStrap",
+  "M_C26_PadBuckle"
+ ]
+}

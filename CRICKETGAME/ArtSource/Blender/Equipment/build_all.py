@@ -6,8 +6,8 @@ with a negative component scale, so nothing in the game depends on negative-dete
 transforms and the material slot order is identical on both sides.
 """
 import importlib
-import c26_build, build_bat, build_headwear, build_guards, build_shoe
-for _m in (c26_build, build_bat, build_headwear, build_guards, build_shoe):
+import c26_build, build_bat, build_headwear, build_guards, build_shoe, build_premium_pads
+for _m in (c26_build, build_bat, build_headwear, build_guards, build_shoe, build_premium_pads):
     importlib.reload(_m)
 
 PROJ = "/Users/aagamjain/Desktop/CRICKET-26-GAME/CRICKETGAME/"
@@ -21,8 +21,10 @@ def run(export=True, save=True):
     made.append(build_headwear.build_helmet())
     made.append(build_headwear.build_grille())
     made.append(build_headwear.build_cap())
-    made.append(build_guards.build_pad('SM_C26_Pad_L', side=-1))
-    made.append(build_guards.build_pad('SM_C26_Pad_R', side=1))
+    # Premium pads: same frame/slots/size contract as build_guards.build_pad,
+    # fitted to the measured hero leg (open-back shell, knee roll on the knee).
+    made.append(build_premium_pads.build('SM_C26_Pad_L', buckle_side=1))
+    made.append(build_premium_pads.build('SM_C26_Pad_R', buckle_side=-1))
     made.append(build_guards.build_glove('SM_C26_Glove_L', hand=-1))
     made.append(build_guards.build_glove('SM_C26_Glove_R', hand=1))
     made.append(build_shoe.build('SM_C26_Shoe_L', side=-1))
