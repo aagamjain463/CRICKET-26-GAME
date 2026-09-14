@@ -390,65 +390,8 @@ FC26PresentationSceneDefinition UC26PresentationDirector::SelectSceneDefinition(
 
 bool UC26PresentationDirector::RequestPresentation(const FC26PresentationRequest& Request)
 {
-    if (!EvaluateEligibility(Request))
-    {
-        return false;
-    }
-
-    const FC26PresentationSceneDefinition SelectedDef = SelectSceneDefinition(Request);
-
-    FC26PresentationQueueItem Item;
-    Item.Request = Request;
-    Item.ResolvedScene = SelectedDef;
-    Item.EnqueuedTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
-
-    if (bPresentationActive)
-    {
-        // Check if incoming is higher priority than currently playing
-        if (SelectedDef.Priority > ActiveSceneDef.Priority)
-        {
-            // Preempt: finish active cleanly and insert new at top of queue
-            RestoreParticipantPoses();
-            PresentationQueue.Insert(Item, 0);
-            FinishCurrentScene();
-            return true;
-        }
-
-        // Enqueue sorted by priority
-        int32 InsertIdx = PresentationQueue.Num();
-        for (int32 I = 0; I < PresentationQueue.Num(); ++I)
-        {
-            if (SelectedDef.Priority > PresentationQueue[I].ResolvedScene.Priority)
-            {
-                InsertIdx = I;
-                break;
-            }
-        }
-        PresentationQueue.Insert(Item, InsertIdx);
-        return true;
-    }
-
-    // Start immediately
-    ActiveQueueItem = Item;
-    ActiveSceneDef = SelectedDef;
-    ActiveEvent = Request.Event;
-    SceneTime = 0.f;
-    bPresentationActive = true;
-
-    ApplySceneParticipants(ActiveSceneDef, Request);
-    RecordScenePlayed(ActiveEvent, ActiveSceneDef.VariantId);
-
-    // Inform GameMode that presentation has begun
-    AC26MatchGameMode* GM = GetGameMode();
-    if (GM && GM->Phase != EC26Phase::Presentation)
-    {
-        GM->Phase = EC26Phase::Presentation;
-    }
-
-    // Direct camera cut at scene start
-    DirectActiveCamera(0.f);
-
-    return true;
+    // Presentation scenes disabled per user request: replays only
+    return false;
 }
 
 void UC26PresentationDirector::ApplySceneParticipants(const FC26PresentationSceneDefinition& Def, const FC26PresentationRequest& Req)

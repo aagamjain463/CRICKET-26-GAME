@@ -357,13 +357,7 @@ void AC26PlayerController::Action()
     if(M->Phase==EC26Phase::Menu||M->Phase==EC26Phase::Result)M->StartMatch();
     else if(M->Phase==EC26Phase::InPlay)
     {
-        // Manual fielding (catch / dive / throw) belongs to the bowling side only.
-        if(!M->PlayerBatting())
-        {
-            if(M->bCatchOpportunityActive) { M->AttemptManualCatch(); return; }
-            if(M->bDivePromptActive) { M->TriggerManualDive(); return; }
-            if(M->bFieldingDecisionPaused) { M->ExecuteFielderThrow(); return; }
-        }
+        // Simulated fielding: fully automated, no manual fielding inputs needed
     }
     else if(M->Phase==EC26Phase::Ready)M->StartDelivery();
     else if(M->Phase==EC26Phase::RunUp&&!M->PlayerBatting())M->BowlRelease();

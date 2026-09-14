@@ -176,8 +176,8 @@ public:
     bool IsBattingInputLive() const;
     // Bowling control regions, design space. Kept here so the HUD draws exactly
     // what the input layer hit-tests - the two can never drift apart.
-    static constexpr float DialCentreX = 1352.f, DialCentreY = 640.f, DialRadius = 78.f;
-    static constexpr float PaceTrackX = 1184.f, PaceTrackW = 336.f, PaceTrackY = 742.f;
+    static constexpr float DialCentreX = 1389.f, DialCentreY = 425.f, DialRadius = 55.f;
+    static constexpr float PaceTrackX = 1234.f, PaceTrackW = 310.f, PaceTrackY = 540.f;
     bool IsOnMovementDial(FVector2D D) const
     { return (D - FVector2D(DialCentreX, DialCentreY)).Size() <= DialRadius + 26.f; }
     bool IsOnPaceSlider(FVector2D D) const

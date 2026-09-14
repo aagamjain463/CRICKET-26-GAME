@@ -889,25 +889,15 @@ void AC26MatchGameMode::Collect(int Fielder,bool Catch)
     ThrowTo=Running?(ThrowRunner==0?EndA:EndB):FVector(0,C26Field::WicketY,0);
     ThrowTo.X=0;ThrowTo.Y=ThrowTo.Y>0?C26Field::WicketY:-C26Field::WicketY;ThrowTo.Z=42;
 
-    if(!Catch && !AutoPlay && !PlayerBatting())
-    {
-        // Interactive fielding control pause:
-        // Hold simulation so the bowling-side player decides throw target & effort without auto-reacting.
-        // Never pauses while the player is batting: the AI fields and throws automatically.
-        bFieldingDecisionPaused = true;
-        ThrowClock = -1.f;
-        ThrowReleased = false;
-        Athletes[Fielder]->ActionTime = 0.20f;
-        Athletes[Fielder]->Animate(0);
-        Simulation.Ball.Position = Athletes[Fielder]->ReceivingPosition();
-        Audio->CueAt(TEXT("fielder_gather"), GatherPoint, .55f);
-        OnCricketEvent.Broadcast(TEXT("Pickup"), GatherPoint);
-    }
-    else
-    {
-        bFieldingDecisionPaused = false;
-        ThrowClock=0;ThrowReleased=false;
-    }
+    // Simulated fielding: AI gathers and throws automatically in real-time
+    bFieldingDecisionPaused = false;
+    ThrowClock = 0;
+    ThrowReleased = false;
+    Athletes[Fielder]->ActionTime = 0.20f;
+    Athletes[Fielder]->Animate(0);
+    Simulation.Ball.Position = Athletes[Fielder]->ReceivingPosition();
+    Audio->CueAt(TEXT("fielder_gather"), GatherPoint, .55f);
+    OnCricketEvent.Broadcast(TEXT("Pickup"), GatherPoint);
 }
 void AC26MatchGameMode::UpdateFieldPresence(float Dt)
 {
@@ -1114,11 +1104,12 @@ void AC26MatchGameMode::UpdateFielding(float Dt)
             if(I==ActiveFielder)
             {
                 const float GroundDist = FVector::Dist2D(F->GetActorLocation(), Simulation.Ball.Position);
-                bDivePromptActive = (Simulation.Ball.Position.Z < 50.f && GroundDist > 80.f && GroundDist < 360.f);
+                bDivePromptActive = false;
+                bCatchOpportunityActive = false;
 
-                if(bDiveRequested && DiveCooldown <= 0.f && bDivePromptActive)
+                // Simulated fielding dive evaluation:
+                if(Simulation.Ball.Position.Z < 50.f && GroundDist > 100.f && GroundDist < 260.f && DiveCooldown <= 0.f && AI.Random.FRand() > 0.4f)
                 {
-                    bDiveRequested = false;
                     DiveCooldown = 1.4f;
                     F->SetAction(EC26Action::Dive);
                     float SpeedDamp = 0.22f;
@@ -1132,13 +1123,10 @@ void AC26MatchGameMode::UpdateFielding(float Dt)
                     {
                         Simulation.Ball.Velocity *= 0.22f;
                         Simulation.Ball.PostHitBounce = true;
-                        Detail = TEXT("DIVING KNOCKDOWN!");
+                        Detail = TEXT("DIVING STOP!");
                         Audio->CueAt(TEXT("fielder_gather"), Simulation.Ball.Position, 0.7f);
                     }
                 }
-
-                const bool IsAirborne = !Simulation.Ball.PostHitBounce && Simulation.Ball.Position.Z > 40.f;
-                bCatchOpportunityActive = IsAirborne && (FVector::Dist2D(F->GetActorLocation(), Intercept) < 300.f);
             }
 
             if(D<43&&Simulation.Ball.Position.Z<190&&Simulation.Ball.Velocity.Z<40)
@@ -1262,34 +1250,6 @@ void AC26MatchGameMode::AfterPresentation()
 {
     if(Rules.Winner!=C26::Result::Playing)
     {
-        if(PresentationDirector && !bMatchEndPresented && !PresentationDirector->IsPresentationActive())
-        {
-            bMatchEndPresented = true;
-            FC26PresentationRequest WinReq;
-            WinReq.Event = EC26PresentationEvent::MatchWinningCelebration;
-            WinReq.Participant1 = Athletes.IsValidIndex(11) ? Athletes[11] : nullptr;
-            WinReq.Participant2 = Athletes.IsValidIndex(12) ? Athletes[12] : nullptr;
-            WinReq.Priority = EC26PresentationPriority::Critical;
-            WinReq.Context = TEXT("MatchWon");
-            PresentationDirector->RequestPresentation(WinReq);
-
-            FC26PresentationRequest HandshakeReq;
-            HandshakeReq.Event = EC26PresentationEvent::PostMatchHandshakes;
-            HandshakeReq.Participant1 = Athletes.IsValidIndex(11) ? Athletes[11] : nullptr;
-            HandshakeReq.Participant2 = Athletes.IsValidIndex(0) ? Athletes[0] : nullptr;
-            HandshakeReq.Priority = EC26PresentationPriority::High;
-            HandshakeReq.Context = TEXT("Handshakes");
-            PresentationDirector->RequestPresentation(HandshakeReq);
-
-            FC26PresentationRequest PotmReq;
-            PotmReq.Event = EC26PresentationEvent::PlayerOfTheMatchPresentation;
-            PotmReq.Participant1 = Athletes.IsValidIndex(11) ? Athletes[11] : nullptr;
-            PotmReq.Priority = EC26PresentationPriority::Critical;
-            PotmReq.Context = TEXT("POTM");
-            PresentationDirector->RequestPresentation(PotmReq);
-            return;
-        }
-
         const int Winner=Rules.Winner==C26::Result::FirstTeam?FirstBattingTeam:1-FirstBattingTeam;
         Callout=Rules.Winner==C26::Result::Tie?TEXT("MATCH TIED"):Winner==PlayerTeam?TEXT("VICTORY"):TEXT("DEFEAT");
         Detail=Rules.Winner==C26::Result::Tie?TEXT("LEVEL AFTER TWO SUPER OVERS"):TeamName(Winner)+TEXT(" WIN THE SUPER OVER");
@@ -1304,18 +1264,6 @@ void AC26MatchGameMode::AfterPresentation()
     }
     else if(Rules.Now().Closed)
     {
-        if(PresentationDirector && !bInningsBreakPresented && !PresentationDirector->IsPresentationActive())
-        {
-            bInningsBreakPresented = true;
-            FC26PresentationRequest InningsReq;
-            InningsReq.Event = EC26PresentationEvent::InningsBreakTransition;
-            InningsReq.Participant1 = Athletes.IsValidIndex(11) ? Athletes[11] : nullptr;
-            InningsReq.Participant2 = Athletes.IsValidIndex(0) ? Athletes[0] : nullptr;
-            InningsReq.Priority = EC26PresentationPriority::High;
-            InningsReq.Context = TEXT("InningsBreak");
-            PresentationDirector->RequestPresentation(InningsReq);
-            return;
-        }
         Callout=FString::Printf(TEXT("TARGET %d"),Rules.Target());Detail=TEXT("SIX BALLS TO MAKE IT YOURS");Audio->Cue(TEXT("ui_result_sting"),.4f);Audio->NotifyInningsBreak();if(CommentaryDirector)CommentaryDirector->OnInningsBreak(MakeCommentaryEvent(ECommentaryEventType::InningsBreak));if(Venue)Venue->SetCrowdState(EC26CrowdState::Calm);ChangePhase(EC26Phase::Interval);
     }
     else PrepareDelivery();
@@ -1328,120 +1276,7 @@ void AC26MatchGameMode::OnPresentationCompleted()
 
 void AC26MatchGameMode::TriggerPresentationForOutcome(const C26::DeliveryOutcome& Outcome)
 {
-    if (!PresentationDirector) return;
-
-    const int32 StrikerIdx = FMath::Clamp(Rules.Now().Striker, 0, 2);
-    const int32 StrikerRuns = Rules.Now().BatterRuns[StrikerIdx];
-    const int32 BallsRemaining = (Rules.Config.Balls - Rules.Now().LegalBalls);
-    const int32 Target = Rules.Target();
-    const float Pressure = PresentationDirector->CalculateMatchPressure(Target, Rules.Now().Runs, BallsRemaining, Rules.Now().Wickets);
-
-    if (Outcome.Wicket != C26::Dismissal::None)
-    {
-        EC26PresentationEvent WicketEvent = EC26PresentationEvent::WicketCelebrationBowled;
-        if (Outcome.Wicket == C26::Dismissal::Caught)
-        {
-            WicketEvent = EC26PresentationEvent::WicketCelebrationCaught;
-        }
-        else if (Outcome.Wicket == C26::Dismissal::RunOut)
-        {
-            WicketEvent = EC26PresentationEvent::WicketCelebrationRunOut;
-        }
-
-        FC26PresentationRequest Req;
-        Req.Event = WicketEvent;
-        Req.Participant1 = Athletes.IsValidIndex(0) ? Athletes[0] : nullptr;
-        Req.Participant2 = Athletes.IsValidIndex(11) ? Athletes[11] : nullptr;
-        Req.Priority = EC26PresentationPriority::High;
-        Req.Context = TEXT("WicketFell");
-        PresentationDirector->RequestPresentation(Req);
-
-        FC26PresentationRequest ReqNext;
-        ReqNext.Event = EC26PresentationEvent::NewBatterEntry;
-        ReqNext.Participant1 = Athletes.IsValidIndex(11) ? Athletes[11] : nullptr;
-        ReqNext.Priority = EC26PresentationPriority::High;
-        ReqNext.Context = TEXT("NewBatterEntry");
-        PresentationDirector->RequestPresentation(ReqNext);
-        return;
-    }
-
-    if (StrikerRuns >= 100 && !bCenturyCelebrated[StrikerIdx])
-    {
-        bCenturyCelebrated[StrikerIdx] = true;
-        PushGraphic(TEXT("CENTURY"), FString::Printf(TEXT("%s  •  %d (%d)"), *BatterName(), StrikerRuns, Rules.Now().BatterBalls[StrikerIdx]),
-            FLinearColor(1.f, .76f, .14f, 1.f), 3.2f);
-        FC26PresentationRequest Req;
-        Req.Event = EC26PresentationEvent::CenturyCelebration;
-        Req.Participant1 = Athletes.IsValidIndex(11) ? Athletes[11] : nullptr;
-        Req.Participant2 = Athletes.IsValidIndex(12) ? Athletes[12] : nullptr;
-        Req.Priority = EC26PresentationPriority::Critical;
-        Req.Context = TEXT("CenturyMilestone");
-        PresentationDirector->RequestPresentation(Req);
-        return;
-    }
-    else if (StrikerRuns >= 50 && !bFiftyCelebrated[StrikerIdx])
-    {
-        bFiftyCelebrated[StrikerIdx] = true;
-        PushGraphic(TEXT("FIFTY"), FString::Printf(TEXT("%s  •  %d (%d)"), *BatterName(), StrikerRuns, Rules.Now().BatterBalls[StrikerIdx]),
-            FLinearColor(.08f, .82f, .44f, 1.f), 3.0f);
-        FC26PresentationRequest Req;
-        Req.Event = EC26PresentationEvent::FiftyCelebration;
-        Req.Participant1 = Athletes.IsValidIndex(11) ? Athletes[11] : nullptr;
-        Req.Participant2 = Athletes.IsValidIndex(12) ? Athletes[12] : nullptr;
-        Req.Priority = EC26PresentationPriority::Critical;
-        Req.Context = TEXT("FiftyMilestone");
-        PresentationDirector->RequestPresentation(Req);
-        return;
-    }
-
-    if (Outcome.Rope != C26::Boundary::None)
-    {
-        ConsecutiveBoundaries++;
-        ConsecutiveDots = 0;
-
-        if (ConsecutiveBoundaries >= 2)
-        {
-            FC26PresentationRequest Req;
-            Req.Event = (Pressure > 0.6f) ? EC26PresentationEvent::BowlerCaptainDiscussion : EC26PresentationEvent::BowlerFrustrationBoundary;
-            Req.Participant1 = Athletes.IsValidIndex(0) ? Athletes[0] : nullptr;
-            Req.Participant2 = Athletes.IsValidIndex(2) ? Athletes[2] : nullptr;
-            Req.Priority = EC26PresentationPriority::Medium;
-            Req.Context = TEXT("BoundaryPressure");
-            PresentationDirector->RequestPresentation(Req);
-        }
-        else
-        {
-            FC26PresentationRequest Req;
-            Req.Event = EC26PresentationEvent::BatterBoundaryMeeting;
-            Req.Participant1 = Athletes.IsValidIndex(11) ? Athletes[11] : nullptr;
-            Req.Participant2 = Athletes.IsValidIndex(12) ? Athletes[12] : nullptr;
-            Req.Priority = EC26PresentationPriority::Low;
-            Req.Context = TEXT("BoundaryCelebration");
-            PresentationDirector->RequestPresentation(Req);
-        }
-        return;
-    }
-    else if (Outcome.BatRuns == 0 && Outcome.Byes == 0 && Outcome.LegByes == 0 && Outcome.WideRuns == 0 && !Outcome.NoBall)
-    {
-        ConsecutiveDots++;
-        ConsecutiveBoundaries = 0;
-
-        if (ConsecutiveDots >= 3)
-        {
-            FC26PresentationRequest Req;
-            Req.Event = EC26PresentationEvent::BowlerFrustrationDot;
-            Req.Participant1 = Athletes.IsValidIndex(0) ? Athletes[0] : nullptr;
-            Req.Priority = EC26PresentationPriority::Low;
-            Req.Context = TEXT("DotPressure");
-            PresentationDirector->RequestPresentation(Req);
-        }
-        return;
-    }
-    else
-    {
-        ConsecutiveBoundaries = 0;
-        ConsecutiveDots = 0;
-    }
+    // Presentation scenes removed per user request: keep replays only.
 }
 void AC26MatchGameMode::PushGraphic(const FString& Title, const FString& Sub, const FLinearColor& Accent, float Duration)
 {
@@ -1500,15 +1335,12 @@ void AC26MatchGameMode::UpdateBroadcastGraphics(const C26::DeliveryOutcome& Outc
 }
 void AC26MatchGameMode::Skip()
 {
-    if(PresentationDirector && PresentationDirector->IsPresentationActive())
-    {
-        PresentationDirector->SkipCurrentScene();
-        return;
-    }
-    if(Phase==EC26Phase::Intro)PrepareDelivery();
+    if(Phase==EC26Phase::Presentation){AfterPresentation();}
+    else if(Phase==EC26Phase::Intro)PrepareDelivery();
     else if(Phase==EC26Phase::Replay){Director->Restore(Athletes);AfterPresentation();}
-    else if(Phase==EC26Phase::Reaction)AfterPresentation();
+    else if(Phase==EC26Phase::Reaction){Director->Restore(Athletes);if(Important&&Director->BeginReplay(Athletes,Simulation.Ball.Position)){++SmokeReplays;ChangePhase(EC26Phase::Replay);Audio->Cue(TEXT("ui_button_click"),.25f);}else AfterPresentation();}
     else if(Phase==EC26Phase::Interval){if(Rules.StartChase())PrepareDelivery();}
+    else if(Phase==EC26Phase::Result)Menu();
 }
 void AC26MatchGameMode::UpdateCapture(float Dt)
 {
@@ -1689,15 +1521,11 @@ void AC26MatchGameMode::Tick(float Dt)
     }
     else if(Phase==EC26Phase::Presentation)
     {
-        // UC26PresentationDirector ticks actively via TickComponent
+        AfterPresentation();
     }
     else if(Phase==EC26Phase::Reaction&&PhaseTime>(Important?1.5f:1.1f))
     {
-        if(PresentationDirector && PresentationDirector->IsPresentationActive())
-        {
-            // Presentation Director actively driving scenes
-        }
-        else if(Important&&Director->BeginReplay(Athletes,Simulation.Ball.Position)){++SmokeReplays;ChangePhase(EC26Phase::Replay);Audio->Cue(TEXT("ui_button_click"),.25f);}else AfterPresentation();
+        if(Important&&Director->BeginReplay(Athletes,Simulation.Ball.Position)){++SmokeReplays;ChangePhase(EC26Phase::Replay);Audio->Cue(TEXT("ui_button_click"),.25f);}else AfterPresentation();
     }
     else if(Phase==EC26Phase::Replay){if(!Director->PlayReplay(Dt,Simulation.Ball.Position,Athletes))AfterPresentation();}
     else if(Phase==EC26Phase::Interval&&AutoPlay&&PhaseTime>1.2f)Skip();
@@ -1856,12 +1684,26 @@ void AC26MatchGameMode::UIAction(FName Action)
             StartMatch();
         }
     }
-    else if(Action==TEXT("confirm_restart"))PendingConfirm=TEXT("restart");
-    else if(Action==TEXT("confirm_exit"))PendingConfirm=TEXT("exit");
+    else if(Action==TEXT("confirm_restart")||Action==TEXT("restart"))
+    {
+        PendingConfirm=NAME_None;
+        Paused=false;
+        SettingsOpen=false;
+        ControlsOpen=false;
+        StartMatch();
+    }
+    else if(Action==TEXT("confirm_exit")||Action==TEXT("exit")||Action==TEXT("home"))
+    {
+        PendingConfirm=NAME_None;
+        Paused=false;
+        SettingsOpen=false;
+        ControlsOpen=false;
+        Menu();
+    }
     else if(Action==TEXT("yes"))
     {
-        if(PendingConfirm==TEXT("restart")){PendingConfirm=NAME_None;StartMatch();}
-        else if(PendingConfirm==TEXT("exit")){PendingConfirm=NAME_None;Menu();}
+        if(PendingConfirm==TEXT("restart")){PendingConfirm=NAME_None;Paused=false;SettingsOpen=false;ControlsOpen=false;StartMatch();}
+        else if(PendingConfirm==TEXT("exit")){PendingConfirm=NAME_None;Paused=false;SettingsOpen=false;ControlsOpen=false;Menu();}
     }
     else if(Action==TEXT("no"))PendingConfirm=NAME_None;
     else if(Action==TEXT("stab0"))SettingsTab=0;
