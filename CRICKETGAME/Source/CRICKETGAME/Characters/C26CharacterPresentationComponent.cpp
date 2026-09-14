@@ -432,10 +432,23 @@ void UC26CharacterPresentationComponent::UpdateFootStabilization(const AC26Athle
     // outright; at that range a sliding foot is well under a pixel, so dropping it is invisible.
     if(!Profile||!Body->IsVisible()||Body->GetPredictedLODLevel()>1||Quality==EC26CharacterQuality::Low)
     {
+        // Logged once per athlete: "why is the foot stabilizer not running" was otherwise only
+        // answerable by reading live weights off a screenshot.
+        if(!bLoggedFootSkip)
+        {
+            bLoggedFootSkip=true;
+            UE_LOG(LogTemp,Display,TEXT("C26_CHARACTER_FOOT_SKIP id=%s profile=%d visible=%d lod=%d quality=%d"),
+                *Appearance.PlayerID.ToString(),Profile?1:0,Body->IsVisible()?1:0,
+                Body->GetPredictedLODLevel(),int32(Quality));
+        }
         Anim->FootIKWeight=Anim->LeftFootLockAlpha=Anim->RightFootLockAlpha=Anim->PelvisOffsetZ=0.f;
         LeftFootLock=RightFootLock=FC26FootLockState();PelvisCompensationZ=0.f;
         return;
     }
+    // Re-arm the one-shot above, so a stabilizer that starts being skipped LATER (an athlete
+    // dropping past the LOD gate as it moves away) reports its reason too, instead of the log
+    // being answered once by whatever happened on the first frame of the match.
+    bLoggedFootSkip=false;
     // Entering an action the shared foundation does not own (a shot, a delivery, a dive) releases
     // any held mark, but releases it by fading the weight out. Cutting the weight to zero on the
     // frame the state changes would snap the ankle back to the authored pose, which is precisely
@@ -503,6 +516,11 @@ void UC26CharacterPresentationComponent::UpdateFootStabilization(const AC26Athle
         {
             Lock.bLocked=true;
             Lock.LockedWorldPos=FVector(Foot.X,Foot.Y,PlantedAnkleZ);
+            // Under the debug CVar only: proof in a log that a mark was really taken in a match,
+            // rather than an on-screen weight read off a screenshot.
+            if(C26CharacterDebug.GetValueOnGameThread())
+                UE_LOG(LogTemp,Display,TEXT("C26_CHARACTER_FOOT_LOCK id=%s foot=%s above=%.1fcm speed=%.0f state=%s"),
+                    *Appearance.PlayerID.ToString(),*FootBone.ToString(),AboveGround,Locomotion.GroundSpeed,*CurrentState.ToString());
         }
         if(Lock.bLocked)
         {

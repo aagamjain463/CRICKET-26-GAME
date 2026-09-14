@@ -126,6 +126,8 @@ private:
     /** Mesh-only yaw lag absorbing authoritative-rotation snaps. Gameplay rotation is untouched. */
     float MeshYawOffset=0.f,LastAuthoritativeYaw=0.f;
     bool bInitializedYaw=false;
+    /** One-shot so the reason the stabilizer is skipped is visible in a log, not just on screen. */
+    bool bLoggedFootSkip=false;
     /** Continuous stride phase in seconds, advanced by distance travelled, so a clip change
         (Walk->Run) resumes the cycle instead of jumping to a new absolute time. */
     float LocomotionPhase=0.f;
