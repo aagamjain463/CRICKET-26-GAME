@@ -75,14 +75,14 @@ BOWLER_READY = {
 # Right-handed stance: hips ~48 deg closed, shoulders a further 20, head turned back square to the
 # bowler. The turn is spread across pelvis, chest, neck_01, neck_02 and head so no joint exceeds 30.
 BATTER_READY_R = {
-    'pelvis': (8, 0, -38, 0, 0, -12), 'spine': (14, 0, -9), 'chest': (4, 0, -14),
+    'pelvis': (8, 0, -38, 0, 0, -9), 'spine': (14, 0, -9), 'chest': (4, 0, -14),
     'neck': (-10, 0, 30), 'head': (-4, 0, 28),
-    'foot_l': (1, 12, GROUND), 'foot_r': (-3, -15, GROUND),
+    'foot_l': (1, 10, GROUND), 'foot_r': (-3, -13, GROUND),
     'elbow_l': (34, 6, 104), 'elbow_r': (-16, -22, 96),
     **_bat_hands(R(0.78, -0.05, 0.10, -0.99)),
 }
 BATTER_READY_TAP = dict(BATTER_READY_R, **{   # bat tap: the stance breathes instead of freezing
-    'pelvis': (9, 0, -38, 0, 0, -13), 'spine': (15, 0, -9),
+    'pelvis': (9, 0, -38, 0, 0, -10), 'spine': (15, 0, -9),
     **_bat_hands(R(0.78, -0.05, 0.11, -0.99)),
 })
 

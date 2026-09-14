@@ -263,7 +263,10 @@ void AC26MatchGameMode::BuildMatchActors()
     for(int I=0;I<14;++I)Athletes.Add(GetWorld()->SpawnActor<AC26Athlete>());
     FirstBattingTeam=0;
     for(int I=0;I<11;++I){Athletes[I]->Configure(I==0?EC26Role::Bowler:I==1?EC26Role::Keeper:EC26Role::Fielder,1,I+1);Athletes[I]->ResetAt(FieldPositions[I],(FVector(0,850,0)-FieldPositions[I]).Rotation().Yaw);}
-    Athletes[11]->Configure(EC26Role::Batter,0,7);Athletes[11]->ResetAt(FVector(-38,900,5),-90);
+    // Middle-stump guard: the authored batting contact meets the ball ~40cm off-side
+    // of a leg-stump mark, beyond blade reach. Gameplay (lines, contact points,
+    // cameras) is stump-anchored and unaffected; only the visual guard moves.
+    Athletes[11]->Configure(EC26Role::Batter,0,7);Athletes[11]->ResetAt(FVector(2,900,5),-90);
     Athletes[12]->Configure(EC26Role::Batter,0,18);Athletes[12]->ResetAt(FVector(-80,-865,5),90);
     Athletes[13]->Configure(EC26Role::Umpire,0,0);Athletes[13]->ResetAt(FVector(105,-1390,5),90);
     auto* Sphere=LoadObject<UStaticMesh>(nullptr,TEXT("/Engine/BasicShapes/Sphere.Sphere"));
@@ -480,7 +483,7 @@ void AC26MatchGameMode::PrepareDelivery()
         Athletes[I]->Configure(I==0?EC26Role::Bowler:I==1?EC26Role::Keeper:EC26Role::Fielder,1-BattingTeam(),I+1);
         Athletes[I]->ResetAt(FieldPositions[I],(FVector(0,850,0)-FieldPositions[I]).Rotation().Yaw);
     }
-    Athletes[11]->Configure(EC26Role::Batter,BattingTeam(),7);Athletes[11]->ResetAt(FVector(-38+Footwork*35,900,5),-90);
+    Athletes[11]->Configure(EC26Role::Batter,BattingTeam(),7);Athletes[11]->ResetAt(FVector(2+Footwork*35,900,5),-90);
     Athletes[11]->NonStriker=false;Athletes[12]->NonStriker=true;
     Athletes[12]->Configure(EC26Role::Batter,BattingTeam(),18);Athletes[12]->ResetAt(FVector(-145,-885,5),90);
     Athletes[13]->SetAction(EC26Action::Ready);Director->SetAthletes(Athletes[0],Athletes[11]);

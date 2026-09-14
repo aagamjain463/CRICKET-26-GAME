@@ -463,7 +463,7 @@ bool AC26CameraDirector::PlayReplay(float Dt,FVector& Ball,const TArray<TObjectP
     else if(ReplayShot==1&&EventName==TEXT("FOUR"))
     {
         // Low turf rail camera: skimming across striped lawn chasing the skidding ball into LED boundary
-        const FVector Trajectory=FVector(Ball.X-Striker.X,Ball.Y-Striker.Y,0.f).GetSafeNormal(UE_SMALL_NUMBER,FVector(0.f,1.f,0.f));
+        const FVector Trajectory=FVector(Ball.X-CameraStrikerMark.X,Ball.Y-CameraStrikerMark.Y,0.f).GetSafeNormal(UE_SMALL_NUMBER,FVector(0.f,1.f,0.f));
         const FVector Side(-Trajectory.Y,Trajectory.X,0.f);
         const FVector TurfCam=Ball-Trajectory*820.f+Side*360.f+FVector(0.f,0.f,38.f);
         Look(EC26CameraMode::BoundaryTracking,TurfCam,Ball,36.f,Cut,Dt,6.0f,18.f);
@@ -485,15 +485,8 @@ bool AC26CameraDirector::PlayReplay(float Dt,FVector& Ball,const TArray<TObjectP
         }
         else
         {
-Look(
-    EC26CameraMode::Celebration,
-    Striker + FVector(300.f, -400.f, 170.f),
-    Striker + FVector(0.f, -20.f, 125.f),
-    32.f,
-    Cut,
-    Dt,
-    4.0f
-);
+            Look(EC26CameraMode::Celebration,CameraStrikerMark+FVector(300.f,-400.f,170.f),
+                CameraStrikerMark+FVector(0.f,-20.f,125.f),32.f,Cut,Dt,4.0f);
         }
     }
     return true;

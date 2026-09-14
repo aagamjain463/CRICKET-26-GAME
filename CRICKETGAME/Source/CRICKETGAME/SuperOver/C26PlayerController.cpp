@@ -234,7 +234,7 @@ void AC26PlayerController::MoveGesture(int Index,FVector2D P)
                 M->Footwork=FMath::Clamp((DesignPos.X-167)/72.f,-1.f,1.f);
                 M->Intent.Stride=FMath::Clamp((721.f-DesignPos.Y)/82.f,-1.f,1.f);
                 M->bFootworkManual=true;
-                if(M->Phase==EC26Phase::Ready||M->Phase==EC26Phase::RunUp)M->Athletes[11]->SetActorLocation(FVector(-38+M->Footwork*35,900,5));
+                if(M->Phase==EC26Phase::Ready||M->Phase==EC26Phase::RunUp)M->Athletes[11]->SetActorLocation(FVector(2+M->Footwork*35,900,5));
             }
         }
         else
@@ -258,7 +258,7 @@ void AC26PlayerController::MoveGesture(int Index,FVector2D P)
         {
             M->Footwork=FMath::Clamp((DesignPos.X-167)/72.f,-1.f,1.f);
             M->Intent.Stride=FMath::Clamp((721.f-DesignPos.Y)/82.f,-1.f,1.f);
-            if(M->Phase==EC26Phase::Ready||M->Phase==EC26Phase::RunUp)M->Athletes[11]->SetActorLocation(FVector(-38+M->Footwork*35,900,5));
+            if(M->Phase==EC26Phase::Ready||M->Phase==EC26Phase::RunUp)M->Athletes[11]->SetActorLocation(FVector(2+M->Footwork*35,900,5));
         }
         else if(!M->PlayerBatting()&&M->Phase==EC26Phase::Ready)
         {
@@ -349,7 +349,7 @@ void AC26PlayerController::PlayerTick(float Dt)
     if(M->Phase!=EC26Phase::Ready)
     {for(auto& Gs:Gestures){Gs.Pace=false;Gs.Movement=false;Gs.Target=false;}}
     float D=(IsInputKeyDown(EKeys::D)||IsInputKeyDown(EKeys::Right)?1.f:0.f)-(IsInputKeyDown(EKeys::A)||IsInputKeyDown(EKeys::Left)?1.f:0.f);
-    if(D!=0&&!M->ShotQueued&&!M->Paused&&!M->SettingsOpen&&!M->ControlsOpen){M->Footwork=FMath::Clamp(M->Footwork+D*Dt*2,-1.f,1.f);M->bFootworkManual=true;if(M->Athletes.Num()>11&&(M->Phase==EC26Phase::Ready||M->Phase==EC26Phase::RunUp))M->Athletes[11]->SetActorLocation(FVector(-38+M->Footwork*35,900,5));}
+    if(D!=0&&!M->ShotQueued&&!M->Paused&&!M->SettingsOpen&&!M->ControlsOpen){M->Footwork=FMath::Clamp(M->Footwork+D*Dt*2,-1.f,1.f);M->bFootworkManual=true;if(M->Athletes.Num()>11&&(M->Phase==EC26Phase::Ready||M->Phase==EC26Phase::RunUp))M->Athletes[11]->SetActorLocation(FVector(2+M->Footwork*35,900,5));}
 }
 void AC26PlayerController::Action()
 {

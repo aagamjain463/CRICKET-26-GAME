@@ -57,6 +57,9 @@ struct FC26CricketClip
     UPROPERTY(EditAnywhere, meta=(ClampMin="0.02", ClampMax="0.4")) float BlendSeconds = .12f;
     UPROPERTY(EditAnywhere, meta=(ClampMin="1")) float GroundSpeed = 450.f;
     UPROPERTY(EditAnywhere) bool Loop = false;
+    /** Mesh-space hand travel from stance to the contact frame (measured offline
+        per shot). Lets the contact warp predict where the authored hands land. */
+    UPROPERTY(EditAnywhere) FVector ContactDelta = FVector::ZeroVector;
     float EventTime() const;
 };
 
@@ -107,6 +110,11 @@ public:
     static TMap<FName,FTransform> BindPose(USkeletalMesh* Candidate);
     UFUNCTION(BlueprintCallable, Category="C26|Validation")
     static TMap<int32,FString> ExportMaterialMap(USkeletalMesh* Candidate, int32 Lod);
+    /** A staged review validates the complete selected role, not the whole production roster. */
+    UFUNCTION(BlueprintCallable, Category="C26|Validation")
+    TArray<FString> InspectRole(EC26VisualRole Role) const;
+    UFUNCTION(BlueprintCallable, Category="C26|Authoring")
+    static bool SetEquipmentSocket(USkeletalMesh* Candidate, FName Name, FName Bone, FTransform Local);
     bool Validate(TArray<FString>& Errors, bool RequireApproval = true) const;
     /** Central role/preset selection; head and clothing currently remain part of the body mesh. */
     USkeletalMesh* ResolveBody(EC26VisualRole Role, FName Preset) const;

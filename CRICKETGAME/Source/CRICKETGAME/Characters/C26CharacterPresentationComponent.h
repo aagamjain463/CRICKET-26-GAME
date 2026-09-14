@@ -6,6 +6,7 @@
 class AC26Athlete;
 class USkeletalMeshComponent;
 class UStaticMeshComponent;
+class ACameraActor;
 
 /** Uses measured displacement, including SetActorLocation; zero-time contact samples cannot
     advance locomotion and ResetAt cannot masquerade as a 100m sprint. */
@@ -30,6 +31,7 @@ class CRICKETGAME_API UC26CharacterPresentationComponent : public UActorComponen
     GENERATED_BODY()
 public:
     UC26CharacterPresentationComponent();
+    virtual void TickComponent(float Dt,ELevelTick TickType,FActorComponentTickFunction* ThisTickFunction) override;
     UPROPERTY(VisibleAnywhere,BlueprintReadOnly) TObjectPtr<USkeletalMeshComponent> Body;
     /** Selected before activation; changing this never bypasses profile validation/approval.
         The default path and development command-line override retain their existing behavior. */
@@ -65,11 +67,19 @@ private:
     TSet<FName> ReportedMissing;
     FVector LastLeftFoot=FVector::ZeroVector,LastRightFoot=FVector::ZeroVector;
     float FrozenSeconds=0;
+    float WarpPrevTime=0.f;
+    void UpdateWarp(const AC26Athlete* Athlete,const FC26CricketClip* Clip);
+    void LearnWarp(const AC26Athlete* Athlete);
+    UPROPERTY(Transient) TObjectPtr<ACameraActor> ReviewCamera;
+    TMap<FName,int32> ReviewSamples;
+    float ReviewTime=0,ReviewLastCapture=-1;
     void HideLegacy(AC26Athlete* Athlete);
     void AssignBodyMesh(USkeletalMesh* Model);
     void ApplyMaterialOverrides();
     void ApplyBodyMaterials(int32 Team);
     void RefreshEquipmentAttachments();
+    void DressEquipment(int32 TeamId);
+    static int32 Dress(UStaticMeshComponent* Part,const TCHAR* Key,UMaterialInstanceDynamic* M);
     FName ReadyKey() const;
     FName SelectState(const AC26Athlete* Athlete,float Dt);
     void Debug(const AC26Athlete* Athlete,float Dt);

@@ -2,6 +2,7 @@
 #include "Animation/AnimSequence.h"
 #include "Animation/Skeleton.h"
 #include "Engine/SkeletalMesh.h"
+#include "Engine/SkeletalMeshSocket.h"
 #include "Rendering/SkeletalMeshModel.h"
 #include "Materials/MaterialInterface.h"
 
@@ -204,6 +205,85 @@ bool UC26CharacterProfile::ValidateForMatch() const
     TArray<FString> Errors;const bool Good=Validate(Errors);
     for(const FString& Error:Errors)UE_LOG(LogTemp,Error,TEXT("C26_CHARACTER_INVALID %s"),*Error);
     return Good;
+}
+
+TArray<FString> UC26CharacterProfile::InspectRole(EC26VisualRole Role) const
+{
+    TArray<FString> Errors;
+    if(uint8(Role)>uint8(EC26VisualRole::Umpire)){Errors.Add(TEXT("Invalid review role"));return Errors;}
+    if(SourceAndLicense.IsEmpty())Errors.Add(TEXT("Missing asset provenance/license record"));
+    USkeletalMesh* Model=Role==EC26VisualRole::Umpire?UmpireBody:Body;
+    AuditBody(Model,Skeleton,Errors);
+    for(const auto& Variant:BodyPresets)AuditBody(Variant.Value,Skeleton,Errors);
+    if(Model)for(FName Socket:{LeftHandSocket,RightHandSocket})
+        if(!Model->FindSocket(Socket))Errors.Add(TEXT("Missing hand socket: ")+Socket.ToString());
+    TSet<EC26EquipmentSlot> Slots;
+    for(const auto& Item:Equipment)
+    {
+        if(Slots.Contains(Item.Slot))Errors.Add(TEXT("Duplicate equipment slot"));
+        Slots.Add(Item.Slot);
+        if(Item.Slot==EC26EquipmentSlot::Ball)Errors.Add(TEXT("Duplicate equipment ball forbidden"));
+        if(!C26Character::Allows(Role,Item.Slot))continue;
+        if(!Item.Mesh)Errors.Add(TEXT("Missing equipment mesh: ")+Item.Socket.ToString());
+        if(!Model||!Model->FindSocket(Item.Socket))Errors.Add(TEXT("Missing equipment socket: ")+Item.Socket.ToString());
+        if(!Item.LeftHandedSocket.IsNone()&&(!Model||!Model->FindSocket(Item.LeftHandedSocket)))
+            Errors.Add(TEXT("Missing left-handed socket: ")+Item.LeftHandedSocket.ToString());
+    }
+    for(uint8 S=0;S<=uint8(EC26EquipmentSlot::Accessory);++S)
+        if(C26Character::Requires(Role,EC26EquipmentSlot(S))&&!Slots.Contains(EC26EquipmentSlot(S)))
+            Errors.Add(FString::Printf(TEXT("Role %d missing required equipment slot %d"),uint8(Role),S));
+    TMap<FName,FName> Required;
+    for(const TCHAR* Key:{TEXT("Walk"),TEXT("Run"),TEXT("Start"),TEXT("Stop"),TEXT("TurnLeft"),TEXT("TurnRight"),TEXT("Celebrate"),TEXT("Disappointed")})
+        Required.Add(Key,NAME_None);
+    if(Role==EC26VisualRole::Batter||Role==EC26VisualRole::NonStriker)
+    {
+        for(const TCHAR* Hand:{TEXT("_L"),TEXT("_R")})
+        {
+            for(const TCHAR* Key:{TEXT("BatterReady"),TEXT("BatterRun"),TEXT("BatterCelebrate")})Required.Add(FName(*(FString(Key)+Hand)),NAME_None);
+            for(const TCHAR* Key:{TEXT("COVERDRIVE"),TEXT("STRAIGHTDRIVE"),TEXT("ONDRIVE"),TEXT("PULL"),TEXT("SWEEP"),TEXT("LEGGLANCE"),TEXT("FRONTFOOTDEFENCE")})
+                Required.Add(FName(*(FString(Key)+Hand)),TEXT("BatContact"));
+        }
+    }
+    else if(Role==EC26VisualRole::Umpire)
+        for(const TCHAR* Key:{TEXT("UmpireReady"),TEXT("UmpireWalk"),TEXT("SignalOut"),TEXT("SignalFour"),TEXT("SignalSix"),TEXT("SignalWide")})Required.Add(Key,NAME_None);
+    else
+    {
+        Required.Add(Role==EC26VisualRole::Keeper?TEXT("KeeperReady"):Role==EC26VisualRole::Bowler?TEXT("BowlerReady"):TEXT("FielderReady"),NAME_None);
+        Required.Add(TEXT("Pickup"),TEXT("Pickup"));Required.Add(TEXT("Throw"),TEXT("ThrowRelease"));
+        Required.Add(Role==EC26VisualRole::Keeper?TEXT("KeeperReceive"):TEXT("Catch"),TEXT("Catch"));
+        if(Role==EC26VisualRole::Bowler)for(const TCHAR* Hand:{TEXT("_L"),TEXT("_R")})
+            for(const TCHAR* Key:{TEXT("FastBowl"),TEXT("OffSpin"),TEXT("LegSpin")})Required.Add(FName(*(FString(Key)+Hand)),TEXT("BallRelease"));
+    }
+    for(const auto& Pair:Required)
+    {
+        const auto* Clip=FindClip(Pair.Key);const FString Prefix=Pair.Key.ToString()+TEXT(": ");
+        if(!Clip){Errors.Add(Prefix+TEXT("missing role animation"));continue;}
+        if(Clip->Sequence->GetSkeleton()!=Skeleton)Errors.Add(Prefix+TEXT("incompatible skeleton"));
+        if(Clip->Sequence->GetPlayLength()<.1f)Errors.Add(Prefix+TEXT("invalid duration"));
+        if(Clip->Sequence->bEnableRootMotion)Errors.Add(Prefix+TEXT("root motion forbidden"));
+        if(Clip->Event!=Pair.Value)Errors.Add(Prefix+TEXT("wrong action marker"));
+        if(!Pair.Value.IsNone())
+        {
+            int32 Count=0;for(const auto& Notify:Clip->Sequence->Notifies)if(Notify.NotifyName==Pair.Value)++Count;
+            if(Count!=1||Clip->EventTime()<=0||Clip->EventTime()>=Clip->Sequence->GetPlayLength())Errors.Add(Prefix+TEXT("requires exactly one interior action marker"));
+        }
+    }
+    return Errors;
+}
+
+bool UC26CharacterProfile::SetEquipmentSocket(USkeletalMesh* Candidate,FName Name,FName Bone,FTransform Local)
+{
+#if WITH_EDITOR
+    if(!Candidate||!Candidate->GetSkeleton()||Name.IsNone()||Candidate->GetRefSkeleton().FindBoneIndex(Bone)<0)return false;
+    auto* Skel=Candidate->GetSkeleton();Skel->Modify();
+    USkeletalMeshSocket* Socket=nullptr;
+    for(const auto& Existing:Skel->Sockets)if(Existing&&Existing->SocketName==Name){Socket=Existing;break;}
+    if(!Socket){Socket=NewObject<USkeletalMeshSocket>(Skel);Socket->SocketName=Name;Skel->Sockets.Add(Socket);}
+    Socket->Modify();Socket->BoneName=Bone;Socket->RelativeLocation=Local.GetLocation();
+    Socket->RelativeRotation=Local.Rotator();Socket->RelativeScale=Local.GetScale3D();Skel->MarkPackageDirty();return true;
+#else
+    return false;
+#endif
 }
 
 TArray<FString> UC26CharacterProfile::InspectBody(USkeletalMesh* Candidate)

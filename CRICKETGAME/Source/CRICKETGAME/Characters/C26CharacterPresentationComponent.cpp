@@ -7,10 +7,18 @@
 #include "Components/TextRenderComponent.h"
 #include "ProceduralMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
+#include "Engine/StaticMesh.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "DrawDebugHelpers.h"
 #include "HAL/IConsoleManager.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
+#include "Camera/CameraActor.h"
+#include "Camera/CameraComponent.h"
+#include "GameFramework/PlayerController.h"
+#include "HAL/FileManager.h"
+#include "Misc/Paths.h"
+#include "UnrealClient.h"
 
 #if !UE_BUILD_SHIPPING
 static TAutoConsoleVariable<int32> C26CharacterDebug(TEXT("c26.Character.Debug"),0,TEXT("1: role, state, speed, LOD, sockets and equipment"));
@@ -36,7 +44,8 @@ void FC26LocomotionSample::Update(const FTransform& Transform,float Dt)
 }
 UC26CharacterPresentationComponent::UC26CharacterPresentationComponent()
 {
-    PrimaryComponentTick.bCanEverTick=false;
+    PrimaryComponentTick.bCanEverTick=true;PrimaryComponentTick.bStartWithTickEnabled=false;
+    PrimaryComponentTick.TickGroup=TG_PostUpdateWork;
     ProfileAsset=TSoftObjectPtr<UC26CharacterProfile>(FSoftObjectPath(TEXT("/Game/Cricket26/Characters/Data/DA_C26_DefaultPlayer.DA_C26_DefaultPlayer")));
 }
 bool UC26CharacterPresentationComponent::TryActivate(AC26Athlete* Athlete)
@@ -44,33 +53,48 @@ bool UC26CharacterPresentationComponent::TryActivate(AC26Athlete* Athlete)
     if(bActive)return true;if(!Athlete)return false;
     FString Path=ProfileAsset.ToSoftObjectPath().ToString();
     bool Slice=false;
+    EC26VisualRole Role=EC26VisualRole::Fielder;
+    switch(Athlete->Role)
+    {
+    case EC26Role::Batter:Role=Athlete->NonStriker?EC26VisualRole::NonStriker:EC26VisualRole::Batter;break;
+    case EC26Role::Bowler:Role=EC26VisualRole::Bowler;break;
+    case EC26Role::Keeper:Role=EC26VisualRole::Keeper;break;
+    case EC26Role::Umpire:Role=EC26VisualRole::Umpire;break;
+    default:break;
+    }
 #if !UE_BUILD_SHIPPING
     Slice=FParse::Param(FCommandLine::Get(),TEXT("C26CharacterSlice"));
     FParse::Value(FCommandLine::Get(),TEXT("C26CharacterProfile="),Path);
+    if(Slice)
+    {
+        int32 ReviewRole=-1,ReviewNumber=-1;
+        FParse::Value(FCommandLine::Get(),TEXT("C26CharacterSliceRole="),ReviewRole);
+        FParse::Value(FCommandLine::Get(),TEXT("C26CharacterSliceNumber="),ReviewNumber);
+        if(ReviewRole>=0&&ReviewRole!=int32(Role))return false;
+        if(ReviewNumber>=0&&ReviewNumber!=Athlete->SquadNumber)return false;
+        const bool Representative=Role==EC26VisualRole::Bowler||Role==EC26VisualRole::Keeper||Role==EC26VisualRole::Umpire
+            ||(Role==EC26VisualRole::Fielder&&(ReviewNumber<0||Athlete->SquadNumber==ReviewNumber))
+            ||(Role==EC26VisualRole::Batter&&Athlete->SquadNumber==7);
+        if(!Representative)return false;
+    }
 #endif
     static TSet<FString> Rejected;
-    if(Rejected.Contains(Path))return false;
+    const FString GateKey=Path+FString::Printf(TEXT(":%d:%d"),int32(Role),Slice);
+    if(Rejected.Contains(GateKey))return false;
     Profile=Path.IsEmpty()?nullptr:LoadObject<UC26CharacterProfile>(nullptr,*Path);
     TArray<FString> Errors;
     if(!Profile)Errors.Add(TEXT("No complete approved character profile at ")+Path);
-    else Profile->Validate(Errors,!Slice);
+    else if(Slice)Errors=Profile->InspectRole(Role);
+    else Profile->Validate(Errors,true);
     if(!Errors.IsEmpty())
     {
-        if(!Rejected.Contains(Path))
+        if(!Rejected.Contains(GateKey))
         {
-            Rejected.Add(Path);
+            Rejected.Add(GateKey);
             UE_LOG(LogTemp,Warning,TEXT("C26_CHARACTER_MIGRATION_BLOCKED %s (%d errors). Existing match preserved."),*Path,Errors.Num());
             for(const FString& Error:Errors)UE_LOG(LogTemp,Warning,TEXT("C26_CHARACTER_ASSET_GATE %s"),*Error);
         }
         return false;
-    }
-    // Slice previews one representative of each role in the real match before mass migration.
-    if(Slice)
-    {
-        const bool Representative=Athlete->Role==EC26Role::Bowler||Athlete->Role==EC26Role::Keeper
-            ||Athlete->Role==EC26Role::Umpire||(Athlete->Role==EC26Role::Fielder&&Athlete->SquadNumber==3)
-            ||(Athlete->Role==EC26Role::Batter&&Athlete->SquadNumber==7);
-        if(!Representative)return false;
     }
     Body=NewObject<USkeletalMeshComponent>(Athlete,TEXT("PremiumCricketerBody"));
     Athlete->AddInstanceComponent(Body);Body->SetupAttachment(Athlete->GetRootComponent());
@@ -96,9 +120,40 @@ bool UC26CharacterPresentationComponent::TryActivate(AC26Athlete* Athlete)
         bActive=false;for(auto& Item:Equipment)Item.Value->DestroyComponent();Equipment.Empty();Body->DestroyComponent();Body=nullptr;return false;
     }
     HideLegacy(Athlete);Body->SetHiddenInGame(false);Body->SetVisibility(true);
+#if !UE_BUILD_SHIPPING
+    SetComponentTickEnabled(Slice&&FParse::Param(FCommandLine::Get(),TEXT("C26CharacterCapture")));
+#endif
     UE_LOG(LogTemp,Display,TEXT("C26_CHARACTER_ACTIVE id=%s role=%d body=%s skeleton=%s anim=%s"),
         *Appearance.PlayerID.ToString(),int32(VisualRole),*Profile->Body->GetName(),*GetNameSafe(Profile->Skeleton),*GetNameSafe(Body->GetAnimClass()));
     return true;
+}
+void UC26CharacterPresentationComponent::TickComponent(float Dt,ELevelTick TickType,FActorComponentTickFunction* ThisTickFunction)
+{
+    Super::TickComponent(Dt,TickType,ThisTickFunction);
+#if !UE_BUILD_SHIPPING
+    if(!bActive||!Body)return;
+    auto* PC=GetWorld()->GetFirstPlayerController();if(!PC)return;
+    if(!ReviewCamera)ReviewCamera=GetWorld()->SpawnActor<ACameraActor>();
+    if(!ReviewCamera)return;
+    const FVector At=GetOwner()->GetActorLocation();
+    const FVector Eye=At+GetOwner()->GetActorForwardVector()*430+GetOwner()->GetActorRightVector()*220+FVector(0,0,150);
+    ReviewCamera->SetActorLocation(Eye);ReviewCamera->SetActorRotation((At+FVector(0,0,95)-Eye).Rotation());
+    ReviewCamera->GetCameraComponent()->SetFieldOfView(37);
+    PC->SetViewTarget(ReviewCamera);Body->SetForcedLOD(1);Body->UpdateLODStatus();
+    ReviewTime+=Dt;
+    int32& Count=ReviewSamples.FindOrAdd(CurrentState);
+    if(ReviewTime>1&&ReviewTime-ReviewLastCapture>.16f&&Count<6)
+    {
+        FString Dir=FPaths::ProjectDir()/TEXT("Artifacts/CharacterAudit/MatchReview");
+        FParse::Value(FCommandLine::Get(),TEXT("C26CharacterCaptureDir="),Dir);
+        IFileManager::Get().MakeDirectory(*Dir,true);
+        FScreenshotRequest::RequestScreenshot(Dir/FString::Printf(TEXT("%s_%s_%d.png"),*Appearance.PlayerID.ToString(),*CurrentState.ToString(),Count),false,false);
+        UE_LOG(LogTemp,Display,TEXT("C26_CHARACTER_MATCH_FRAME id=%s state=%s time=%.3f speed=%.1f left=%s right=%s lod=%d gear=%d"),
+            *Appearance.PlayerID.ToString(),*CurrentState.ToString(),Clock,Locomotion.GroundSpeed,
+            *Body->GetBoneLocation(Profile->LeftFootBone).ToString(),*Body->GetBoneLocation(Profile->RightFootBone).ToString(),Body->GetPredictedLODLevel(),Equipment.Num());
+        ++Count;ReviewLastCapture=ReviewTime;
+    }
+#endif
 }
 void UC26CharacterPresentationComponent::HideLegacy(AC26Athlete* Athlete)
 {
@@ -109,7 +164,8 @@ void UC26CharacterPresentationComponent::HideLegacy(AC26Athlete* Athlete)
 void UC26CharacterPresentationComponent::Configure(AC26Athlete* Athlete)
 {
     if(!bActive)return;
-    Appearance.PlayerID=FName(*FString::Printf(TEXT("Team%d_Player%d"),Athlete->TeamId,Athlete->SquadNumber));
+    const FName NewID=FName(*FString::Printf(TEXT("Team%d_Player%d"),Athlete->TeamId,Athlete->SquadNumber));
+    Appearance.PlayerID=NewID;
     Appearance.JerseyNumber=Athlete->SquadNumber;
     Appearance.LeftHandedBat=Athlete->LeftHandedBat;
     Appearance.LeftArmBowl=Athlete->LeftArmBowl;
@@ -123,7 +179,9 @@ void UC26CharacterPresentationComponent::Configure(AC26Athlete* Athlete)
     default:break;
     }
     ApplyVisualRole(Role);
+    WarpPrevTime=0.f;
     ApplyBodyMaterials(Athlete->TeamId);
+    DressEquipment(Athlete->TeamId);
 }
 void UC26CharacterPresentationComponent::AssignBodyMesh(USkeletalMesh* Model)
 {
@@ -150,9 +208,83 @@ void UC26CharacterPresentationComponent::ApplyBodyMaterials(int32 Team)
         if(Slot>=0)Body->SetMaterial(Slot,Profile->TeamMaterials[Team]);
     }
 }
+int32 UC26CharacterPresentationComponent::Dress(UStaticMeshComponent* Part,const TCHAR* Key,UMaterialInstanceDynamic* M)
+{
+    int32 Count=0;
+    if(!Part||!Part->GetStaticMesh()||!M)return Count;
+    const TArray<FStaticMaterial>& Slots=Part->GetStaticMesh()->GetStaticMaterials();
+    for(int I=0;I<Slots.Num();++I)
+        if(Slots[I].MaterialSlotName.ToString().Contains(Key)){Part->SetMaterial(I,M);++Count;}
+    if(Count==0)UE_LOG(LogTemp,Warning,TEXT("C26_CHARACTER_DRESS_MISS part=%s key=%s slots=%d"),
+        *GetNameSafe(Part->GetStaticMesh()),Key,Slots.Num());
+    return Count;
+}
+void UC26CharacterPresentationComponent::DressEquipment(int32 TeamId)
+{
+    if(!bActive)return;
+    auto* Base=LoadObject<UMaterialInterface>(nullptr,TEXT("/Game/Cricket26/Materials/M_Surface.M_Surface"));
+    if(!Base)return;
+    auto* ClothMat=LoadObject<UMaterialInterface>(nullptr,TEXT("/Game/Cricket26/Materials/M_C26_Cloth.M_C26_Cloth"));
+    auto* GearMat=LoadObject<UMaterialInterface>(nullptr,TEXT("/Game/Cricket26/Materials/M_C26_Gear.M_C26_Gear"));
+    auto* ShellMat=LoadObject<UMaterialInterface>(nullptr,TEXT("/Game/Cricket26/Materials/M_C26_Shell.M_C26_Shell"));
+    auto* Willow=LoadObject<UMaterialInterface>(nullptr,TEXT("/Game/Cricket26/Materials/M_Willow.M_Willow"));
+    auto Make=[&](UMaterialInterface* From,FLinearColor C,float Rough)
+    {
+        auto* M=UMaterialInstanceDynamic::Create(From?From:Base,GetOwner());
+        M->SetVectorParameterValue(TEXT("Tint"),C);
+        M->SetScalarParameterValue(TEXT("Roughness"),Rough);
+        M->SetScalarParameterValue(TEXT("Glow"),0.f);return M;
+    };
+    // Same slot keys and tones as the legacy kit dressing: equipment meshes are
+    // shared originals, so a slot named Willow takes willow here exactly as there.
+    const FLinearColor Kit=TeamId==0?FLinearColor(.030,.345,.395):FLinearColor(.660,.100,.058);
+    auto Find=[this](EC26EquipmentSlot Slot){auto* P=Equipment.Find(Slot);return P?*P:nullptr;};
+    if(auto Bat=Find(EC26EquipmentSlot::Bat))
+    {
+        Dress(Bat,TEXT("Willow"),Make(Willow,FLinearColor(.402,.330,.196),.42f));
+        Dress(Bat,TEXT("Grip"),Make(GearMat,FLinearColor(.016,.018,.022),.88f));
+        Dress(Bat,TEXT("Cane"),Make(GearMat,FLinearColor(.300,.222,.118),.56f));
+        Dress(Bat,TEXT("Twine"),Make(GearMat,FLinearColor(.052,.046,.040),.80f));
+        Dress(Bat,TEXT("Label"),Make(Base,Kit*1.15f+FLinearColor(.03,.03,.03),.34f));
+    }
+    if(auto Helmet=Find(EC26EquipmentSlot::Helmet))
+    {
+        Dress(Helmet,TEXT("Shell"),Make(ShellMat,Kit*.92f,.24f));
+        Dress(Helmet,TEXT("Crown"),Make(ClothMat,Kit*.92f,.86f));
+        Dress(Helmet,TEXT("Peak"),Make(ShellMat,Kit*.66f,.28f));
+        Dress(Helmet,TEXT("Trim"),Make(GearMat,FLinearColor(.022,.024,.029),.62f));
+        Dress(Helmet,TEXT("Pad"),Make(GearMat,FLinearColor(.036,.034,.032),.93f));
+    }
+    auto* PadFace=Make(GearMat,FLinearColor(.700,.712,.686),.78f);
+    auto* PadRoll=Make(GearMat,FLinearColor(.612,.624,.600),.84f);
+    auto* Strap=Make(GearMat,FLinearColor(.028,.030,.036),.70f);
+    auto* Buckle=Make(ShellMat,FLinearColor(.330,.342,.362),.26f);
+    for(auto Slot:{EC26EquipmentSlot::BattingPadL,EC26EquipmentSlot::BattingPadR,
+        EC26EquipmentSlot::KeeperPadL,EC26EquipmentSlot::KeeperPadR})if(auto P=Find(Slot))
+    {
+        Dress(P,TEXT("PadFace"),PadFace);Dress(P,TEXT("PadRoll"),PadRoll);
+        Dress(P,TEXT("PadStrap"),Strap);Dress(P,TEXT("PadBuckle"),Buckle);
+    }
+    auto* GlovePalm=Make(GearMat,FLinearColor(.212,.150,.098),.52f);
+    auto* GlovePad=Make(GearMat,FLinearColor(.732,.744,.716),.76f);
+    for(auto Slot:{EC26EquipmentSlot::BattingGloveL,EC26EquipmentSlot::BattingGloveR,
+        EC26EquipmentSlot::KeeperGloveL,EC26EquipmentSlot::KeeperGloveR})if(auto P=Find(Slot))
+    {
+        Dress(P,TEXT("GlovePalm"),GlovePalm);Dress(P,TEXT("GlovePad"),GlovePad);
+        Dress(P,TEXT("GloveCuff"),PadRoll);Dress(P,TEXT("PadStrap"),Strap);
+    }
+}
 void UC26CharacterPresentationComponent::ApplyVisualRole(EC26VisualRole Role)
 {
     if(!bActive||uint8(Role)>uint8(EC26VisualRole::Umpire))return;
+    if(Role!=VisualRole)
+    {
+        const auto Errors=Profile->InspectRole(Role);
+        if(!Errors.IsEmpty())
+        {
+            UE_LOG(LogTemp,Warning,TEXT("C26_CHARACTER_ROLE_BLOCKED role=%d %s"),int32(Role),*Errors[0]);return;
+        }
+    }
     VisualRole=Role;
     AssignBodyMesh(Profile->ResolveBody(Role,Appearance.BodyPreset));
     // Explicitly set BOTH visible and hidden flags on every role change, regardless of LOD.
@@ -188,7 +320,12 @@ FName UC26CharacterPresentationComponent::SelectState(const AC26Athlete* Athlete
     const bool Batter=VisualRole==EC26VisualRole::Batter||VisualRole==EC26VisualRole::NonStriker;
     switch(Athlete->Action)
     {
-    case EC26Action::Batting:return C26Character::ShotKey(Athlete->ShotLabel,Appearance.LeftHandedBat);
+    case EC26Action::Batting:
+        // An empty label means no stroke was selected; holding the ready stance is
+        // the only cricket-correct answer, never a "_R" lookup that warns and falls
+        // back through the generic defence chain.
+        if(Athlete->ShotLabel.IsEmpty())return ReadyKey();
+        return C26Character::ShotKey(Athlete->ShotLabel,Appearance.LeftHandedBat);
     case EC26Action::Bowling:return C26Character::BowlingKey(Athlete->DeliveryStyle,Appearance.LeftArmBowl);
     case EC26Action::Pickup:return TEXT("Pickup");
     case EC26Action::Throw:return TEXT("Throw");
@@ -228,6 +365,7 @@ void UC26CharacterPresentationComponent::ResetMotion()
 {
     Locomotion.Reset(GetOwner()->GetActorTransform());Clock=BlendClock=0;Transition=NAME_None;bWasMoving=false;
     CurrentClip=nullptr;CurrentState=NAME_None;FrozenSeconds=0;
+    if(Body)Body->SetRelativeLocation(FVector::ZeroVector);
 }
 void UC26CharacterPresentationComponent::UpdateFromMatch(AC26Athlete* Athlete,float Dt)
 {
@@ -238,7 +376,9 @@ void UC26CharacterPresentationComponent::UpdateFromMatch(AC26Athlete* Athlete,fl
     {bDebugRole=true;if(VisualRole!=EC26VisualRole(PreviewRole))ApplyVisualRole(EC26VisualRole(PreviewRole));}
     else if(bDebugRole){bDebugRole=false;Configure(Athlete);}
 #endif
-    Locomotion.Update(Athlete->GetActorTransform(),Dt);Clock+=FMath::Max(0.f,Dt);
+    Locomotion.Update(Athlete->GetActorTransform(),Dt);
+    if(Locomotion.Teleported)ResetMotion();
+    Clock+=FMath::Max(0.f,Dt);
     FName State=SelectState(Athlete,Dt);const FC26CricketClip* Clip=Profile->FindClip(State);
     if(!Clip)
     {
@@ -262,6 +402,7 @@ void UC26CharacterPresentationComponent::UpdateFromMatch(AC26Athlete* Athlete,fl
         PreviousState=CurrentState.IsNone()?State:CurrentState;
         Anim->PreviousSequence=Anim->CurrentSequence?Anim->CurrentSequence:Clip->Sequence;
         Anim->PreviousTime=Anim->CurrentTime;CurrentClip=Clip;CurrentState=State;BlendClock=0;
+        UpdateWarp(Athlete,Clip);
     }
     BlendClock+=FMath::Max(0.f,Dt);
     float Time=Athlete->ActionTime;
@@ -287,7 +428,34 @@ void UC26CharacterPresentationComponent::UpdateFromMatch(AC26Athlete* Athlete,fl
     Anim->GroundSpeed=Locomotion.GroundSpeed;Anim->MovementDirection=Locomotion.Direction;
     Anim->Acceleration=Locomotion.Acceleration;Anim->TurnRate=Locomotion.TurnRate;Anim->State=State;
     Body->TickAnimation(FMath::Max(0.f,Dt),false);Body->RefreshBoneTransforms();
+    LearnWarp(Athlete);
     Debug(Athlete,Dt);
+}
+void UC26CharacterPresentationComponent::LearnWarp(const AC26Athlete* Athlete)
+{
+    // Pure measurement (no visual shifting): at the contact frame, log where the
+    // authored hands are versus the simulation contact point. The old blade check
+    // sampled the ball a frame AFTER contact (already travelled ~1m), so it could
+    // never pass for any system; this is the honest sync signal.
+    if(!CurrentClip||CurrentClip->Event!=TEXT("BatContact"))return;
+    const float Tc=C26Field::BatContactPoseTime;
+    const bool Crossed=(WarpPrevTime<Tc&&Athlete->ActionTime>=Tc)
+        ||(Athlete->ActionTime==Tc&&Tc>0.f);
+    WarpPrevTime=Athlete->ActionTime;
+    if(!Crossed||Athlete->ContactTarget.IsZero())return;
+    const FVector Miss=Athlete->ContactTarget-ReceivePosition();
+    UE_LOG(LogTemp,Display,TEXT("C26_CHARACTER_CONTACT clip=%s hands=%s simContact=%s miss=%s (|%.1fcm|)"),
+        *CurrentState.ToString(),*ReceivePosition().ToString(),*Athlete->ContactTarget.ToString(),
+        *Miss.ToString(),Miss.Size());
+}
+void UC26CharacterPresentationComponent::UpdateWarp(const AC26Athlete* Athlete,const FC26CricketClip* Clip)
+{
+    // No visual shifting: per-ball root warps were built for a broken metric
+    // (the old blade check sampled the ball a frame after contact) and lurched
+    // visibly. Contact sync is fixed structurally (guard mark + shot-matched
+    // contact depth); this function now only resets the body offset.
+    if(Body)Body->SetRelativeLocation(FVector::ZeroVector);
+    WarpPrevTime=0.f;
 }
 FVector UC26CharacterPresentationComponent::BallHandPosition() const
 {return Body->GetSocketLocation(Appearance.LeftArmBowl?Profile->LeftHandSocket:Profile->RightHandSocket);}
@@ -333,7 +501,7 @@ void UC26CharacterPresentationComponent::Debug(const AC26Athlete* Athlete,float 
     }
     if(C26CharacterDebug.GetValueOnGameThread())
     {
-        const FString Text=FString::Printf(TEXT("%s Role:%d %s\n%s LOD:%d Speed:%.0f Dir:%.0f\nAnim:%s Gear:%d RootMotion:off IK:authored"),
+        const FString Text=FString::Printf(TEXT("%s Role:%d %s\n%s LOD:%d Speed:%.0f Dir:%.0f\nAnim:%s Gear:%d RootMotion:off RuntimeIK:off"),
             *Appearance.PlayerID.ToString(),int32(VisualRole),*CurrentState.ToString(),*GetNameSafe(Body->GetSkeletalMeshAsset()),Body->GetPredictedLODLevel(),
             Locomotion.GroundSpeed,Locomotion.Direction,*GetNameSafe(Body->GetAnimClass()),Equipment.Num());
         DrawDebugString(GetWorld(),Athlete->GetActorLocation()+FVector(0,0,210),Text,nullptr,FColor::White,0.f,true);

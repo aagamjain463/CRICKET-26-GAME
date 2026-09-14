@@ -174,7 +174,11 @@ void AC26MatchGameMode::UpdateGoldenGate(float Dt)
     {
         if(PhaseTime==0&&CaptureFrame(TEXT("05_contact")))
         {
-            const FVector Local=Athletes[11]->VisualBat()->GetComponentTransform().InverseTransformPosition(Simulation.Ball.Position);
+            // Measure against the simulation's recorded contact point, NOT the live
+            // ball: one frame after contact the ball has already travelled ~1m down
+            // the pitch, so ball-vs-blade could never pass for any system, old or
+            // new (it never did). ContactPoint is exact and integration-free.
+            const FVector Local=Athletes[11]->VisualBat()->GetComponentTransform().InverseTransformPosition(LastContact.ContactPoint);
             // Measure the actual rendered blade triangles, not just the simulation contact plane.
             // The bat is now an authored static mesh rather than a generated procedural section,
             // so the same assertion reads LOD0 of the imported willow. Keeping the measurement on
@@ -200,6 +204,7 @@ void AC26MatchGameMode::UpdateGoldenGate(float Dt)
                 }
             Check(BladeTris>0,TEXT("bat mesh exposes blade triangles to measure"));
             UE_LOG(LogC26,Display,TEXT("C26_GATE_CONTACT gap_cm=%.3f ball_local=%s pose_time=%.4f blade_tris=%d"),Gap,*Local.ToString(),Athletes[11]->ActionTime,BladeTris);
+            UE_LOG(LogC26,Display,TEXT("C26_GATE_TRUECONTACT sim=%s"),*LastContact.ContactPoint.ToString());
             Check(LastContact.Shot==TEXT("STRAIGHT DRIVE")&&Simulation.Ball.Struck&&!Intent.Loft,
                 TEXT("real straight-drive contact, ground intent"));
             Check(Gap<=Tuning.BallRadius,TEXT("ball intersects rendered blade triangles"));
