@@ -1,0 +1,23 @@
+{
+  "neutral": {
+    "min_m": 0.0008,
+    "verts": 24694,
+    "under_4mm": 19,
+    "under_8mm": 120,
+    "under_4mm_pct": 0.077
+  },
+  "bent_knee": {
+    "min_m": 0.0011,
+    "verts": 24694,
+    "under_4mm": 15,
+    "under_8mm": 190,
+    "under_4mm_pct": 0.061
+  },
+  "batting_stance": {
+    "min_m": 0.0004,
+    "verts": 24694,
+    "under_4mm": 272,
+    "under_8mm": 1067,
+    "under_4mm_pct": 1.101
+  }
+}

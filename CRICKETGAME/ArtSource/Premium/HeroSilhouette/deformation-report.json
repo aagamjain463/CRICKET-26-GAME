@@ -1,0 +1,62 @@
+{
+  "before": [
+    {
+      "pose": "neutral",
+      "finite": true,
+      "edge_stretch_p99": 1.0784,
+      "edge_stretch_max": 3.2643,
+      "note": "Numerical diagnostic, not a self-intersection or animation-quality certification"
+    },
+    {
+      "pose": "elbow_90",
+      "finite": true,
+      "edge_stretch_p99": 1.1009,
+      "edge_stretch_max": 3.2643,
+      "note": "Numerical diagnostic, not a self-intersection or animation-quality certification"
+    },
+    {
+      "pose": "knee_65",
+      "finite": true,
+      "edge_stretch_p99": 1.1207,
+      "edge_stretch_max": 3.2643,
+      "note": "Numerical diagnostic, not a self-intersection or animation-quality certification"
+    },
+    {
+      "pose": "shoulder_75",
+      "finite": true,
+      "edge_stretch_p99": 1.2063,
+      "edge_stretch_max": 6.9456,
+      "note": "Numerical diagnostic, not a self-intersection or animation-quality certification"
+    }
+  ],
+  "hero": [
+    {
+      "pose": "neutral",
+      "finite": true,
+      "edge_stretch_p99": 1.0912,
+      "edge_stretch_max": 5.5235,
+      "note": "Numerical diagnostic, not a self-intersection or animation-quality certification"
+    },
+    {
+      "pose": "elbow_90",
+      "finite": true,
+      "edge_stretch_p99": 1.1149,
+      "edge_stretch_max": 5.5235,
+      "note": "Numerical diagnostic, not a self-intersection or animation-quality certification"
+    },
+    {
+      "pose": "knee_65",
+      "finite": true,
+      "edge_stretch_p99": 1.1285,
+      "edge_stretch_max": 5.5235,
+      "note": "Numerical diagnostic, not a self-intersection or animation-quality certification"
+    },
+    {
+      "pose": "shoulder_75",
+      "finite": true,
+      "edge_stretch_p99": 1.2043,
+      "edge_stretch_max": 14.3303,
+      "note": "Numerical diagnostic, not a self-intersection or animation-quality certification"
+    }
+  ]
+}

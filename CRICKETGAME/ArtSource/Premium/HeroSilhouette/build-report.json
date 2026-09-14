@@ -1,0 +1,269 @@
+{
+  "hero": "HeroMale_Silhouette_01",
+  "match_approved": false,
+  "source": [
+    "C26_FullBody_Candidate.blend",
+    "C26_Athlete_Review.blend"
+  ],
+  "skeleton_sha256": "fdf359c253b75d835ad37559acb82b62631e7a750269e511cd52f742c60b02b2",
+  "bone_count": 342,
+  "skeleton_unchanged": true,
+  "weights_unchanged": true,
+  "face_head_detail_unchanged_above_m": 1.59,
+  "parts": [
+    {
+      "name": "SKM_MH_C26_Player_001_BodyMesh.001",
+      "vertices": 25898,
+      "triangles": 48856,
+      "bounds_before_cm": [
+        [
+          -56.087,
+          -28.049,
+          7.509
+        ],
+        [
+          56.087,
+          17.056,
+          153.57
+        ]
+      ],
+      "bounds_after_cm": [
+        [
+          -56.087,
+          -28.049,
+          7.509
+        ],
+        [
+          56.087,
+          11.322,
+          153.57
+        ]
+      ],
+      "weights_sha256": "2fd8b11f6779f1e2e9980fa8256c1199adcd3aabd00887f244bd4f09871ede75",
+      "unweighted_vertices": 0
+    },
+    {
+      "name": "SKM_MH_C26_Player_001_FaceMesh.001",
+      "vertices": 19283,
+      "triangles": 34514,
+      "bounds_before_cm": [
+        [
+          -20.758,
+          -14.274,
+          146.989
+        ],
+        [
+          20.758,
+          16.459,
+          182.264
+        ]
+      ],
+      "bounds_after_cm": [
+        [
+          -20.77,
+          -14.274,
+          146.989
+        ],
+        [
+          20.77,
+          13.333,
+          182.264
+        ]
+      ],
+      "weights_sha256": "e8cad96fcf168d544e39718ba915e2c3625e3ff01f76aba4c69b8f24302b59e8",
+      "unweighted_vertices": 0
+    },
+    {
+      "name": "C26_Trousers",
+      "vertices": 6308,
+      "triangles": 12446,
+      "bounds_before_cm": [
+        [
+          -22.116,
+          -19.254,
+          7.5
+        ],
+        [
+          22.116,
+          15.358,
+          102.5
+        ]
+      ],
+      "bounds_after_cm": [
+        [
+          -21.549,
+          -15.751,
+          7.5
+        ],
+        [
+          21.549,
+          12.664,
+          102.5
+        ]
+      ],
+      "weights_sha256": "b64e8b31917eeee3919ab31b01a48c049f656e22491a4181dfa10c01031c4eab",
+      "unweighted_vertices": 0
+    },
+    {
+      "name": "C26_Shoe_L",
+      "vertices": 461,
+      "triangles": 780,
+      "bounds_before_cm": [
+        [
+          10.836,
+          -22.605,
+          -0.5
+        ],
+        [
+          22.693,
+          6.741,
+          12.5
+        ]
+      ],
+      "bounds_after_cm": [
+        [
+          10.836,
+          -22.605,
+          -0.5
+        ],
+        [
+          22.693,
+          6.741,
+          12.5
+        ]
+      ],
+      "weights_sha256": "ad762d07336808c5a00fad5f793ac052a567e2a74c58f9f876a5399ba53d4eea",
+      "unweighted_vertices": 0
+    },
+    {
+      "name": "C26_Shoe_R",
+      "vertices": 461,
+      "triangles": 780,
+      "bounds_before_cm": [
+        [
+          -22.693,
+          -22.605,
+          -0.5
+        ],
+        [
+          -10.836,
+          6.741,
+          12.5
+        ]
+      ],
+      "bounds_after_cm": [
+        [
+          -22.693,
+          -22.605,
+          -0.5
+        ],
+        [
+          -10.836,
+          6.741,
+          12.5
+        ]
+      ],
+      "weights_sha256": "4d3bcf8fbc0cc2e87a629c3e12a90b9f2fe5465166e08ef128752ef2fdf3cfbc",
+      "unweighted_vertices": 0
+    },
+    {
+      "name": "C26_ContinuousJersey",
+      "vertices": 5583,
+      "triangles": 10896,
+      "bounds_before_cm": [
+        [
+          -34.011,
+          -20.602,
+          97.5
+        ],
+        [
+          34.011,
+          19.167,
+          155.897
+        ]
+      ],
+      "bounds_after_cm": [
+        [
+          -34.499,
+          -16.653,
+          97.5
+        ],
+        [
+          34.499,
+          13.325,
+          158.58
+        ]
+      ],
+      "weights_sha256": "32e733b1557d40b63b122b9137bdd450f6f57ccda92d05ac7c1520de522a9b65",
+      "unweighted_vertices": 0
+    }
+  ],
+  "joint_lengths_cm": {
+    "upperarm_l:lowerarm_l": 28.002,
+    "lowerarm_l:hand_l": 27.06,
+    "thigh_l:calf_l": 45.386,
+    "calf_l:foot_l": 42.204
+  },
+  "body_cross_sections_cm": {
+    "0.9": {
+      "before_width_depth": [
+        41.036,
+        27.644
+      ],
+      "after_width_depth": [
+        35.947,
+        23.484
+      ]
+    },
+    "1.0": {
+      "before_width_depth": [
+        39.606,
+        30.576
+      ],
+      "after_width_depth": [
+        34.13,
+        25.342
+      ]
+    },
+    "1.1": {
+      "before_width_depth": [
+        34.949,
+        25.45
+      ],
+      "after_width_depth": [
+        32.997,
+        18.661
+      ]
+    },
+    "1.2": {
+      "before_width_depth": [
+        28.048,
+        22.897
+      ],
+      "after_width_depth": [
+        32.536,
+        21.272
+      ]
+    },
+    "1.3": {
+      "before_width_depth": [
+        32.979,
+        23.613
+      ],
+      "after_width_depth": [
+        38.197,
+        24.219
+      ]
+    },
+    "1.4": {
+      "before_width_depth": [
+        41.682,
+        29.708
+      ],
+      "after_width_depth": [
+        44.62,
+        25.295
+      ]
+    }
+  }
+}
