@@ -50,7 +50,8 @@ for clip in actions.build_manifest():
         manifest.append(old_manifest[name])
         continue
     action = rig_lib.bake(rig, f'A_C26_{name}', clip['keys'], loop=clip.get('loop', False),
-                          dense=clip.get('dense', False))
+                          dense=clip.get('dense', False), travel=clip.get('travel'),
+                          resolve_mixed=clip.get('resolve_mixed', False))
     path = OUT / f'A_C26_{name}.fbx'
     rig_lib.export(rig, action, path)
     start, end = action.frame_range

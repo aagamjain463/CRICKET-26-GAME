@@ -78,6 +78,7 @@ public:
     int SkipPhase=0;
     FVector ReceivingPosition() const;
     EC26Delivery DeliveryStyle=EC26Delivery::Pace;
+    EC26BowlerKind BowlerKind=EC26BowlerKind::Fast;
     FVector ContactTarget=FVector::ZeroVector;
     /** Optional world point for the head to track. Zero disables head aim. */
     FVector LookAt=FVector::ZeroVector;

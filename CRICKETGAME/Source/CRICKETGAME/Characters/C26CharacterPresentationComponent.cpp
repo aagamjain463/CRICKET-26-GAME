@@ -315,6 +315,62 @@ FName UC26CharacterPresentationComponent::ReadyKey() const
     default:return TEXT("FielderReady");
     }
 }
+FName UC26CharacterPresentationComponent::Variant(const AC26Athlete* Athlete)
+{
+    if(!LatchedKey.IsNone())return LatchedKey;
+    const bool Keeper=VisualRole==EC26VisualRole::Keeper;
+    const auto Pick=[this](const TCHAR* Want,const TCHAR* Base){return Profile->FindClip(Want)?FName(Want):FName(Base);};
+    const FVector Local=Athlete->GetActorTransform().InverseTransformPosition(Athlete->ContactTarget);
+    // A variant keyed on where the ball is only means something once the ball is within reach.
+    const bool InReach=!Athlete->ContactTarget.IsZero()&&FVector2D(Local.X,Local.Y).Size()<260.f;
+    const bool Left=Local.Y<0.f;   // UE +Y is the athlete's right
+    FName Key;bool Latch=true;
+    switch(Athlete->Action)
+    {
+    case EC26Action::Bowling:
+    {
+        Key=C26Character::BowlingKey(Athlete->DeliveryStyle,Athlete->LeftArmBowl);
+        const bool Pace=Key.ToString().StartsWith(TEXT("FastBowl"));
+        const bool Medium=Athlete->BowlerKind==EC26BowlerKind::FastMedium||Athlete->BowlerKind==EC26BowlerKind::Medium;
+        if(Pace&&Medium)Key=Pick(Athlete->LeftArmBowl?TEXT("FastMedium_L"):TEXT("FastMedium_R"),*Key.ToString());
+        break;
+    }
+    case EC26Action::Pickup:Key=EntrySpeed>150.f?Pick(TEXT("PickupRunning"),TEXT("Pickup")):FName(TEXT("Pickup"));break;
+    case EC26Action::Throw:
+    {
+        // An infield return close to either set of stumps is snapped flat, not crow-hopped.
+        const FVector P=Athlete->GetActorLocation();
+        const float ToStumps=FMath::Min(FVector::Dist2D(P,FVector(0,C26Field::WicketY,0)),FVector::Dist2D(P,FVector(0,-C26Field::WicketY,0)));
+        Key=ToStumps<1800.f?Pick(TEXT("ThrowQuick"),TEXT("Throw")):FName(TEXT("Throw"));
+        break;
+    }
+    case EC26Action::Slide:Key=Pick(TEXT("SlideSave"),TEXT("Pickup"));break;
+    case EC26Action::Dive:
+        Key=Local.Z>40.f?Pick(Left?TEXT("DiveCatch_L"):TEXT("DiveCatch_R"),TEXT("Catch"))
+                        :Pick(Left?TEXT("DiveStop_L"):TEXT("DiveStop_R"),TEXT("Pickup"));
+        Latch=InReach;
+        break;
+    case EC26Action::Catch:
+        Latch=InReach;
+        if(Keeper)
+        {
+            Key=TEXT("KeeperReceive");
+            if(!InReach)break;
+            if(FMath::Abs(Local.Y)>70.f)Key=Pick(Left?TEXT("KeeperDive_L"):TEXT("KeeperDive_R"),TEXT("KeeperReceive"));
+            else if(Local.Z<35.f)Key=Pick(TEXT("KeeperTakeLow"),TEXT("KeeperReceive"));
+            break;
+        }
+        Key=TEXT("Catch");
+        if(!InReach)break;
+        if(FMath::Abs(Local.Y)>85.f)Key=Pick(Left?TEXT("DiveCatch_L"):TEXT("DiveCatch_R"),TEXT("Catch"));
+        else if(Local.Z>165.f)Key=Pick(TEXT("CatchHigh"),TEXT("Catch"));
+        else if(Local.Z<70.f)Key=Pick(TEXT("CatchLow"),TEXT("Catch"));
+        break;
+    default:Key=ReadyKey();Latch=false;break;
+    }
+    if(Latch)LatchedKey=Key;
+    return Key;
+}
 FName UC26CharacterPresentationComponent::SelectState(const AC26Athlete* Athlete,float Dt)
 {
     const bool Batter=VisualRole==EC26VisualRole::Batter||VisualRole==EC26VisualRole::NonStriker;
@@ -326,10 +382,8 @@ FName UC26CharacterPresentationComponent::SelectState(const AC26Athlete* Athlete
         // back through the generic defence chain.
         if(Athlete->ShotLabel.IsEmpty())return ReadyKey();
         return C26Character::ShotKey(Athlete->ShotLabel,Appearance.LeftHandedBat);
-    case EC26Action::Bowling:return C26Character::BowlingKey(Athlete->DeliveryStyle,Appearance.LeftArmBowl);
-    case EC26Action::Pickup:return TEXT("Pickup");
-    case EC26Action::Throw:return TEXT("Throw");
-    case EC26Action::Catch:return VisualRole==EC26VisualRole::Keeper?TEXT("KeeperReceive"):TEXT("Catch");
+    case EC26Action::Bowling:case EC26Action::Pickup:case EC26Action::Throw:case EC26Action::Catch:
+    case EC26Action::Dive:case EC26Action::Slide:return Variant(Athlete);
     case EC26Action::Celebrate:return Batter?(Appearance.LeftHandedBat?TEXT("BatterCelebrate_L"):TEXT("BatterCelebrate_R")):TEXT("Celebrate");
     case EC26Action::Disappointed:return TEXT("Disappointed");
     case EC26Action::SignalFour:return TEXT("SignalFour");
@@ -355,7 +409,12 @@ FName UC26CharacterPresentationComponent::SelectState(const AC26Athlete* Athlete
     if(Moving)
     {
         if(Batter)return Appearance.LeftHandedBat?TEXT("BatterRun_L"):TEXT("BatterRun_R");
-        if(VisualRole==EC26VisualRole::Keeper&&Profile->FindClip(TEXT("KeeperShuffle")))return TEXT("KeeperShuffle");
+        if(VisualRole==EC26VisualRole::Keeper)
+        {
+            // Square-on lateral shuffle: the athlete's left is -Right.
+            const FName Shuffle=FVector::DotProduct(Locomotion.Velocity,Athlete->GetActorRightVector())<0?TEXT("KeeperShuffle_L"):TEXT("KeeperShuffle_R");
+            if(Profile->FindClip(Shuffle))return Shuffle;
+        }
         if(VisualRole==EC26VisualRole::Umpire&&Profile->FindClip(TEXT("UmpireWalk")))return TEXT("UmpireWalk");
         return Locomotion.GroundSpeed<180.f?TEXT("Walk"):TEXT("Run");
     }
@@ -364,7 +423,7 @@ FName UC26CharacterPresentationComponent::SelectState(const AC26Athlete* Athlete
 void UC26CharacterPresentationComponent::ResetMotion()
 {
     Locomotion.Reset(GetOwner()->GetActorTransform());Clock=BlendClock=0;Transition=NAME_None;bWasMoving=false;
-    CurrentClip=nullptr;CurrentState=NAME_None;FrozenSeconds=0;
+    CurrentClip=nullptr;CurrentState=NAME_None;FrozenSeconds=0;LatchedKey=NAME_None;
     if(Body)Body->SetRelativeLocation(FVector::ZeroVector);
 }
 void UC26CharacterPresentationComponent::UpdateFromMatch(AC26Athlete* Athlete,float Dt)
@@ -376,7 +435,20 @@ void UC26CharacterPresentationComponent::UpdateFromMatch(AC26Athlete* Athlete,fl
     {bDebugRole=true;if(VisualRole!=EC26VisualRole(PreviewRole))ApplyVisualRole(EC26VisualRole(PreviewRole));}
     else if(bDebugRole){bDebugRole=false;Configure(Athlete);}
 #endif
+    const float PreviousSpeed=Locomotion.GroundSpeed;
     Locomotion.Update(Athlete->GetActorTransform(),Dt);
+    // The match stops the athlete on the frame an action starts, so the approach speed is the
+    // speed measured before that frame.
+    if(Athlete->Action!=LatchedAction)
+    {
+        // A dive that ends in the gather is one motion: the match switches Dive -> Pickup/Catch on the
+        // take, and the dive clip already carries that Pickup/Catch event at the moment the hands arrive.
+        const bool DiveTake=LatchedAction==EC26Action::Dive&&LatchedKey.ToString().StartsWith(TEXT("Dive"))
+            &&(Athlete->Action==EC26Action::Pickup||Athlete->Action==EC26Action::Catch);
+        LatchedAction=Athlete->Action;EntrySpeed=PreviousSpeed;
+        if(!DiveTake)LatchedKey=NAME_None;
+    }
+    Appearance.LeftArmBowl=Athlete->LeftArmBowl;
     if(Locomotion.Teleported)ResetMotion();
     Clock+=FMath::Max(0.f,Dt);
     FName State=SelectState(Athlete,Dt);const FC26CricketClip* Clip=Profile->FindClip(State);
@@ -402,12 +474,16 @@ void UC26CharacterPresentationComponent::UpdateFromMatch(AC26Athlete* Athlete,fl
         Anim->PreviousTime=Anim->CurrentTime;CurrentClip=Clip;CurrentState=State;BlendClock=0;
         UpdateWarp(Athlete,Clip);
     }
-    BlendClock+=FMath::Max(0.f,Dt);
+    // The match poses event-driven athletes (pickup, catch, throw, keeper take) with Dt==0 and drives
+    // ActionTime itself, so the blend must advance on action time too. Advancing on Dt alone left the
+    // blend at zero for the whole gather: the previous run pose was rendered and the ball met it.
+    BlendClock+=Dt>0.f?Dt:FMath::Clamp(Athlete->ActionTime-LastActionTime,0.f,.1f);
+    LastActionTime=Athlete->ActionTime;
     float Time=Athlete->ActionTime;
     if(State==Transition)Time=TransitionAge;
     else if(Clip->Loop)
     {
-        const bool Move=State==TEXT("Run")||State==TEXT("Walk")||State==TEXT("BatterRun_R")||State==TEXT("BatterRun_L")||State==TEXT("KeeperShuffle")||State==TEXT("UmpireWalk");
+        const bool Move=State==TEXT("Run")||State==TEXT("Walk")||State==TEXT("BatterRun_R")||State==TEXT("BatterRun_L")||State==TEXT("KeeperShuffle_L")||State==TEXT("KeeperShuffle_R")||State==TEXT("UmpireWalk");
         Time=Move?Locomotion.Distance/FMath::Max(1.f,Clip->GroundSpeed):Clock;
         Time=FMath::Fmod(Time,Clip->Sequence->GetPlayLength());
     }
@@ -422,7 +498,7 @@ void UC26CharacterPresentationComponent::UpdateFromMatch(AC26Athlete* Athlete,fl
     Anim->CurrentSequence=Clip->Sequence;Anim->CurrentTime=Time;
     Anim->BlendAlpha=FMath::SmoothStep(0.f,FMath::Max(.02f,Clip->BlendSeconds),BlendClock);
     // An exact authoritative contact sample must render that event pose this frame.
-    if(Dt==0.f&&!Clip->Event.IsNone()&&FMath::IsNearlyEqual(Time,Clip->EventTime(),.001f))Anim->BlendAlpha=1.f;
+    if(Dt==0.f&&!Clip->Event.IsNone()&&FMath::Abs(Time-Clip->EventTime())<=1.f/30.f)Anim->BlendAlpha=1.f;
     Anim->GroundSpeed=Locomotion.GroundSpeed;Anim->MovementDirection=Locomotion.Direction;
     Anim->Acceleration=Locomotion.Acceleration;Anim->TurnRate=Locomotion.TurnRate;Anim->State=State;
     Body->TickAnimation(FMath::Max(0.f,Dt),false);Body->RefreshBoneTransforms();
@@ -431,19 +507,29 @@ void UC26CharacterPresentationComponent::UpdateFromMatch(AC26Athlete* Athlete,fl
 }
 void UC26CharacterPresentationComponent::LearnWarp(const AC26Athlete* Athlete)
 {
-    // Pure measurement (no visual shifting): at the contact frame, log where the
-    // authored hands are versus the simulation contact point. The old blade check
-    // sampled the ball a frame AFTER contact (already travelled ~1m), so it could
-    // never pass for any system; this is the honest sync signal.
-    if(!CurrentClip||CurrentClip->Event!=TEXT("BatContact"))return;
-    const float Tc=C26Field::BatContactPoseTime;
-    const bool Crossed=(WarpPrevTime<Tc&&Athlete->ActionTime>=Tc)
-        ||(Athlete->ActionTime==Tc&&Tc>0.f);
+    // Pure measurement (no visual shifting): on the frame the match crosses a clip's event, log the
+    // rendered hands against the simulation so hand/ball sync and handedness are read, not assumed.
+    if(!CurrentClip||CurrentClip->Event.IsNone())return;
+    const FName Event=CurrentClip->Event;
+    const float Tc=Event==TEXT("BatContact")?C26Field::BatContactPoseTime:Event==TEXT("BallRelease")?C26Field::ReleasePoseTime:
+        Event==TEXT("ThrowRelease")?.2f:.18f;
+    const bool Crossed=(WarpPrevTime<Tc&&Athlete->ActionTime>=Tc)||(Athlete->ActionTime==Tc&&Tc>0.f);
     WarpPrevTime=Athlete->ActionTime;
-    if(!Crossed||Athlete->ContactTarget.IsZero())return;
+    if(!Crossed)return;
+    if(Event==TEXT("BallRelease")||Event==TEXT("ThrowRelease"))
+    {
+        const bool Left=Event==TEXT("BallRelease")&&Appearance.LeftArmBowl;
+        const FVector Ball=Body->GetSocketLocation(Left?Profile->LeftHandSocket:Profile->RightHandSocket);
+        const FVector Other=Body->GetSocketLocation(Left?Profile->RightHandSocket:Profile->LeftHandSocket);
+        const FVector Head=Body->GetBoneLocation(TEXT("head"));
+        UE_LOG(LogTemp,Display,TEXT("C26_CHARACTER_RELEASE clip=%s arm=%s ballHandAboveHead=%.1fcm ballHandAboveOther=%.1fcm hand=%s"),
+            *CurrentState.ToString(),Left?TEXT("L"):TEXT("R"),Ball.Z-Head.Z,Ball.Z-Other.Z,*Ball.ToString());
+        return;
+    }
+    if(Athlete->ContactTarget.IsZero())return;
     const FVector Miss=Athlete->ContactTarget-ReceivePosition();
-    UE_LOG(LogTemp,Display,TEXT("C26_CHARACTER_CONTACT clip=%s hands=%s simContact=%s miss=%s (|%.1fcm|)"),
-        *CurrentState.ToString(),*ReceivePosition().ToString(),*Athlete->ContactTarget.ToString(),
+    UE_LOG(LogTemp,Display,TEXT("C26_CHARACTER_CONTACT clip=%s event=%s hands=%s simContact=%s miss=%s (|%.1fcm|)"),
+        *CurrentState.ToString(),*Event.ToString(),*ReceivePosition().ToString(),*Athlete->ContactTarget.ToString(),
         *Miss.ToString(),Miss.Size());
 }
 void UC26CharacterPresentationComponent::UpdateWarp(const AC26Athlete* Athlete,const FC26CricketClip* Clip)

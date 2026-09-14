@@ -22,6 +22,28 @@
   "fps": 30
  },
  {
+  "name": "KeeperShuffle_L",
+  "asset": "A_C26_KeeperShuffle_L",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_KeeperShuffle_L.fbx",
+  "event": null,
+  "event_time": null,
+  "loop": true,
+  "ground_speed": 130.0,
+  "length": 0.5,
+  "fps": 30
+ },
+ {
+  "name": "KeeperShuffle_R",
+  "asset": "A_C26_KeeperShuffle_R",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_KeeperShuffle_R.fbx",
+  "event": null,
+  "event_time": null,
+  "loop": true,
+  "ground_speed": 130.0,
+  "length": 0.5,
+  "fps": 30
+ },
+ {
   "name": "UmpireReady",
   "asset": "A_C26_UmpireReady",
   "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_UmpireReady.fbx",
@@ -246,10 +268,21 @@
   "asset": "A_C26_Pickup",
   "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_Pickup.fbx",
   "event": "Pickup",
-  "event_time": 0.6667,
+  "event_time": 0.2,
   "loop": false,
   "ground_speed": 0.0,
-  "length": 1.4,
+  "length": 0.5667,
+  "fps": 30
+ },
+ {
+  "name": "PickupRunning",
+  "asset": "A_C26_PickupRunning",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_PickupRunning.fbx",
+  "event": "Pickup",
+  "event_time": 0.2,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 0.5667,
   "fps": 30
  },
  {
@@ -257,10 +290,21 @@
   "asset": "A_C26_Throw",
   "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_Throw.fbx",
   "event": "ThrowRelease",
-  "event_time": 0.8667,
+  "event_time": 0.2,
   "loop": false,
   "ground_speed": 0.0,
-  "length": 1.6,
+  "length": 1.0,
+  "fps": 30
+ },
+ {
+  "name": "ThrowQuick",
+  "asset": "A_C26_ThrowQuick",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_ThrowQuick.fbx",
+  "event": "ThrowRelease",
+  "event_time": 0.1667,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 0.8,
   "fps": 30
  },
  {
@@ -268,10 +312,43 @@
   "asset": "A_C26_Catch",
   "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_Catch.fbx",
   "event": "Catch",
-  "event_time": 0.6,
+  "event_time": 0.2,
   "loop": false,
   "ground_speed": 0.0,
-  "length": 1.3333,
+  "length": 0.8,
+  "fps": 30
+ },
+ {
+  "name": "CatchHigh",
+  "asset": "A_C26_CatchHigh",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_CatchHigh.fbx",
+  "event": "Catch",
+  "event_time": 0.2,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 0.8,
+  "fps": 30
+ },
+ {
+  "name": "CatchLow",
+  "asset": "A_C26_CatchLow",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_CatchLow.fbx",
+  "event": "Catch",
+  "event_time": 0.2,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 0.8667,
+  "fps": 30
+ },
+ {
+  "name": "SlideSave",
+  "asset": "A_C26_SlideSave",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_SlideSave.fbx",
+  "event": "Pickup",
+  "event_time": 0.2667,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 1.0667,
   "fps": 30
  },
  {
@@ -279,10 +356,175 @@
   "asset": "A_C26_KeeperReceive",
   "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_KeeperReceive.fbx",
   "event": "Catch",
-  "event_time": 0.5333,
+  "event_time": 0.2,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 1.0,
+  "fps": 30
+ },
+ {
+  "name": "KeeperTakeLow",
+  "asset": "A_C26_KeeperTakeLow",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_KeeperTakeLow.fbx",
+  "event": "Catch",
+  "event_time": 0.2,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 0.8667,
+  "fps": 30
+ },
+ {
+  "name": "DiveCatch_L",
+  "asset": "A_C26_DiveCatch_L",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_DiveCatch_L.fbx",
+  "event": "Catch",
+  "event_time": 0.2667,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 1.3333,
+  "fps": 30
+ },
+ {
+  "name": "DiveCatch_R",
+  "asset": "A_C26_DiveCatch_R",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_DiveCatch_R.fbx",
+  "event": "Catch",
+  "event_time": 0.2667,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 1.3333,
+  "fps": 30
+ },
+ {
+  "name": "DiveStop_L",
+  "asset": "A_C26_DiveStop_L",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_DiveStop_L.fbx",
+  "event": "Pickup",
+  "event_time": 0.2667,
   "loop": false,
   "ground_speed": 0.0,
   "length": 1.2,
+  "fps": 30
+ },
+ {
+  "name": "DiveStop_R",
+  "asset": "A_C26_DiveStop_R",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_DiveStop_R.fbx",
+  "event": "Pickup",
+  "event_time": 0.2667,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 1.2,
+  "fps": 30
+ },
+ {
+  "name": "KeeperDive_L",
+  "asset": "A_C26_KeeperDive_L",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_KeeperDive_L.fbx",
+  "event": "Catch",
+  "event_time": 0.2333,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 1.0,
+  "fps": 30
+ },
+ {
+  "name": "KeeperDive_R",
+  "asset": "A_C26_KeeperDive_R",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_KeeperDive_R.fbx",
+  "event": "Catch",
+  "event_time": 0.2333,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 1.0,
+  "fps": 30
+ },
+ {
+  "name": "FastBowl_R",
+  "asset": "A_C26_FastBowl_R",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_FastBowl_R.fbx",
+  "event": "BallRelease",
+  "event_time": 0.6333,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 1.7333,
+  "fps": 30
+ },
+ {
+  "name": "FastBowl_L",
+  "asset": "A_C26_FastBowl_L",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_FastBowl_L.fbx",
+  "event": "BallRelease",
+  "event_time": 0.6333,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 1.7333,
+  "fps": 30
+ },
+ {
+  "name": "FastMedium_R",
+  "asset": "A_C26_FastMedium_R",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_FastMedium_R.fbx",
+  "event": "BallRelease",
+  "event_time": 0.6333,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 1.7333,
+  "fps": 30
+ },
+ {
+  "name": "FastMedium_L",
+  "asset": "A_C26_FastMedium_L",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_FastMedium_L.fbx",
+  "event": "BallRelease",
+  "event_time": 0.6333,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 1.7333,
+  "fps": 30
+ },
+ {
+  "name": "OffSpin_R",
+  "asset": "A_C26_OffSpin_R",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_OffSpin_R.fbx",
+  "event": "BallRelease",
+  "event_time": 0.6333,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 1.5333,
+  "fps": 30
+ },
+ {
+  "name": "OffSpin_L",
+  "asset": "A_C26_OffSpin_L",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_OffSpin_L.fbx",
+  "event": "BallRelease",
+  "event_time": 0.6333,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 1.5333,
+  "fps": 30
+ },
+ {
+  "name": "LegSpin_R",
+  "asset": "A_C26_LegSpin_R",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_LegSpin_R.fbx",
+  "event": "BallRelease",
+  "event_time": 0.6333,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 1.5333,
+  "fps": 30
+ },
+ {
+  "name": "LegSpin_L",
+  "asset": "A_C26_LegSpin_L",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_LegSpin_L.fbx",
+  "event": "BallRelease",
+  "event_time": 0.6333,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 1.5333,
   "fps": 30
  },
  {
@@ -627,28 +869,6 @@
   "fps": 30
  },
  {
-  "name": "FastBowl_R",
-  "asset": "A_C26_FastBowl_R",
-  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_FastBowl_R.fbx",
-  "event": "BallRelease",
-  "event_time": 0.9333,
-  "loop": false,
-  "ground_speed": 0.0,
-  "length": 1.8,
-  "fps": 30
- },
- {
-  "name": "FastBowl_L",
-  "asset": "A_C26_FastBowl_L",
-  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_FastBowl_L.fbx",
-  "event": "BallRelease",
-  "event_time": 0.9333,
-  "loop": false,
-  "ground_speed": 0.0,
-  "length": 1.8,
-  "fps": 30
- },
- {
   "name": "FastBowlOutswing_R",
   "asset": "A_C26_FastBowlOutswing_R",
   "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_FastBowlOutswing_R.fbx",
@@ -715,28 +935,6 @@
   "fps": 30
  },
  {
-  "name": "OffSpin_R",
-  "asset": "A_C26_OffSpin_R",
-  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_OffSpin_R.fbx",
-  "event": "BallRelease",
-  "event_time": 0.9333,
-  "loop": false,
-  "ground_speed": 0.0,
-  "length": 1.7333,
-  "fps": 30
- },
- {
-  "name": "OffSpin_L",
-  "asset": "A_C26_OffSpin_L",
-  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_OffSpin_L.fbx",
-  "event": "BallRelease",
-  "event_time": 0.9333,
-  "loop": false,
-  "ground_speed": 0.0,
-  "length": 1.7333,
-  "fps": 30
- },
- {
   "name": "OffSpinDoosra_R",
   "asset": "A_C26_OffSpinDoosra_R",
   "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_OffSpinDoosra_R.fbx",
@@ -751,28 +949,6 @@
   "name": "OffSpinDoosra_L",
   "asset": "A_C26_OffSpinDoosra_L",
   "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_OffSpinDoosra_L.fbx",
-  "event": "BallRelease",
-  "event_time": 0.9333,
-  "loop": false,
-  "ground_speed": 0.0,
-  "length": 1.7333,
-  "fps": 30
- },
- {
-  "name": "LegSpin_R",
-  "asset": "A_C26_LegSpin_R",
-  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_LegSpin_R.fbx",
-  "event": "BallRelease",
-  "event_time": 0.9333,
-  "loop": false,
-  "ground_speed": 0.0,
-  "length": 1.7333,
-  "fps": 30
- },
- {
-  "name": "LegSpin_L",
-  "asset": "A_C26_LegSpin_L",
-  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_LegSpin_L.fbx",
   "event": "BallRelease",
   "event_time": 0.9333,
   "loop": false,

@@ -2105,6 +2105,13 @@ void AC26MatchGameMode::RefreshBowlerProfile()
     P.Control *= FMath::Lerp(0.85f, 1.f, P.Stamina);
     P.MaxSpeedKph -= (1.f - P.Stamina) * 9.f;
     BowlerProfile = P;
+    // The bowler actor carries the arm and kind so presentation picks the genuine left-arm or
+    // fast-medium action; before this every bowler rendered right-arm regardless of profile.
+    if (Athletes.IsValidIndex(0) && Athletes[0])
+    {
+        Athletes[0]->LeftArmBowl = P.bLeftArm;
+        Athletes[0]->BowlerKind = P.Kind;
+    }
 
     C26Delivery::Library(BowlerProfile, DeliveryLibrary);
     // Reverse swing is conditional: strip it out until the ball is old enough.

@@ -107,7 +107,10 @@ for clip in manifest:
     if delta > 0.05:
         failures.append(f"{clip['name']}: length {length:.3f}s, authored {clip['length']:.3f}s")
 
-u.EditorAssetLibrary.save_directory(DEST, False, True)
+# Save only this run's clips: save_directory also re-saved every other clip in the folder.
+for clip in manifest:
+    if u.EditorAssetLibrary.does_asset_exist(f"{DEST}/{clip['asset']}"):
+        u.EditorAssetLibrary.save_asset(f"{DEST}/{clip['asset']}", only_if_is_dirty=False)
 out = ROOT / 'Artifacts/CharacterAudit/import-cricket-actions.json'
 out.write_text(json.dumps({'imported': len(manifest) - len(failures),
                            'total': len(manifest),

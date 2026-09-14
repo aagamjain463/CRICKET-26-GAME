@@ -68,6 +68,12 @@ private:
     FVector LastLeftFoot=FVector::ZeroVector,LastRightFoot=FVector::ZeroVector;
     float FrozenSeconds=0;
     float WarpPrevTime=0.f;
+    /** One-shot variant (running pickup, dive side, catch height...) chosen when the action starts and
+        held until it ends, so a clip never swaps mid-action as the ball or the athlete moves. */
+    EC26Action LatchedAction=EC26Action::Ready;
+    FName LatchedKey;
+    float EntrySpeed=0.f,LastActionTime=0.f;
+    FName Variant(const AC26Athlete* Athlete);
     void UpdateWarp(const AC26Athlete* Athlete,const FC26CricketClip* Clip);
     void LearnWarp(const AC26Athlete* Athlete);
     UPROPERTY(Transient) TObjectPtr<ACameraActor> ReviewCamera;

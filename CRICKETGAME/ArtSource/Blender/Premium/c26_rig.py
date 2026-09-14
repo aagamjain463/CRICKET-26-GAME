@@ -594,7 +594,46 @@ def spec_at(keys, frame):
     return out
 
 
-def bake(rig, name, keys, loop=False, dense=False):
+def shift_to_actor(spec, travel):
+    """World-authored pose -> actor space. The match moves the athlete's root itself (run-up, bowling
+    follow-through), so a clip authored with feet planted in the world and the gameplay root travel
+    subtracted plays back with no foot skating once the root is added back in game."""
+    tx, ty = travel
+    out = {}
+    for key, value in spec.items():
+        if key == 'pelvis' and len(value) > 3:
+            out[key] = (value[0], value[1], value[2], value[3] - tx, value[4] - ty, value[5])
+        elif (key.startswith(('foot_', 'knee_', 'elbow_', 'hand_')) and isinstance(value, tuple)
+              and len(value) == 3 and all(isinstance(c, (int, float)) for c in value)):
+            out[key] = (value[0] - tx, value[1] - ty, value[2])
+        else:
+            out[key] = value
+    return out
+
+
+def absolute_limbs(rig, keys):
+    """spec_at can only interpolate a limb target that keeps one form across keys; a limb that switches
+    between a reach fraction R() and an absolute position steps on the key, which teleports the hand.
+    Resolve those R() targets to the position the solver puts them at on their own key."""
+    limbs = ('hand_l', 'hand_r', 'foot_l', 'foot_r')
+    forms = {k: {s[k][0] if isinstance(s[k][0], str) else 'P' for _, s in keys if k in s} for k in limbs}
+    mixed = [k for k in limbs if len(forms[k]) > 1 and 'OFF' not in forms[k]]
+    if not mixed:
+        return keys
+    out = []
+    for frame, spec in keys:
+        spec = dict(spec)
+        if any(isinstance(spec.get(k), tuple) and spec[k][:1] == ('R',) for k in mixed):
+            apply(rig, spec)
+            for k in mixed:
+                if spec.get(k, ())[:1] == ('R',) and k in apply.last_targets:
+                    t = apply.last_targets[k]
+                    spec[k] = (t.x, -t.y, t.z)        # rig frame -> authoring frame
+        out.append((frame, spec))
+    return out
+
+
+def bake(rig, name, keys, loop=False, dense=False, travel=None, resolve_mixed=False):
     """Write one action. `keys` is [(frame, spec), ...]; the pose at each frame is resolved and
     stamped onto every controlled bone so interpolation never drifts through an unkeyed joint.
     `dense` resolves the interpolated technique on every frame (batting: two hands, one bat)."""
@@ -604,7 +643,12 @@ def bake(rig, name, keys, loop=False, dense=False):
     if loop and keys[0][1] != keys[-1][1]:
         keys = list(keys) + [(keys[-1][0] + (keys[1][0] - keys[0][0]), keys[0][1])]
     if dense:
+        if resolve_mixed:
+            rig.animation_data.action = None
+            keys = absolute_limbs(rig, keys)
         keys = [(f, spec_at(keys, f)) for f in range(int(keys[0][0]), int(keys[-1][0]) + 1)]
+        if travel is not None:
+            keys = [(f, shift_to_actor(spec, travel(f))) for f, spec in keys]
     # Solve every pose with no action bound. With an action attached, a depsgraph update can
     # re-evaluate the previous clip over the pose being solved and leak it into this one.
     rig.animation_data.action = None
