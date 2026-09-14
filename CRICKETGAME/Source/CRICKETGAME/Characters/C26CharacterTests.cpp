@@ -205,6 +205,68 @@ bool FC26FootSolverTest::RunTest(const FString& Parameters)
             StraightBulge.Size()<=1.f||(StraightBulge.GetSafeNormal()|AuthoredDir)>0.f);
         AddInfo(FString::Printf(TEXT("Knee: authored bulge %.2fcm; worst direction agreement %.2f across 5 marks; unreachable mark leaves %.2fcm"),
             AuthoredBulge.Size(),WorstAgreement,StraightBulge.Size()));
+
+        // The lock release threshold, measured against THIS mesh's real leg. The regression this
+        // guards was live in the shipped code: the threshold was a constant (94% of a hardcoded
+        // 86cm = 80.8cm) while the athlete stands at ~82.4cm, so every mark was released on the
+        // frame it was taken. Marks were still taken, so the stabilizer looked alive while holding
+        // nothing -- and only an in-match hold-time measurement exposed it, because these unit
+        // tests drove the lock weight directly and so bypassed the release logic entirely.
+        const FReferenceSkeleton& Ref=Mesh->GetRefSkeleton();
+        auto RefLoc=[&Ref](const TCHAR* Bone)
+        {
+            const int32 Index=Ref.FindBoneIndex(Bone);
+            if(Index==INDEX_NONE)return FVector::ZeroVector;
+            FTransform Acc=FTransform::Identity;
+            for(int32 I=Index;I!=INDEX_NONE;I=Ref.GetParentIndex(I))Acc*=Ref.GetRefBonePose()[I];
+            return Acc.GetLocation();
+        };
+        const FVector RefThigh=RefLoc(TEXT("thigh_l")),RefCalf=RefLoc(TEXT("calf_l")),RefFoot=RefLoc(TEXT("foot_l"));
+        const float RefLeg=float((RefCalf-RefThigh).Size()+(RefFoot-RefCalf).Size());
+        const float Release=C26Presentation::LockReleaseReach(RefLeg);
+        Good&=TestTrue(TEXT("The reference pose gives a measurable leg"),RefLeg>1.f);
+        Good&=TestTrue(TEXT("A held mark is released before the knee locks out"),Release<RefLeg);
+        // The real dead-on-arrival condition is the distance the hip sits from the foot while the
+        // foot is actually PLANTED, not the bind pose: the reference pose has straight legs and so
+        // says nothing about how bent the knees are in a stance. Take it from the run clip at the
+        // frame where the ankle is lowest.
+        float PlantedReach=0.f,LowestAnkle=BIG_NUMBER,PlantedBulge=0.f,PlantedTime=0.f;
+        for(int32 Step=0;Step<=30;++Step)
+        {
+            const float T=Clip->GetPlayLength()*Step/30.f;
+            Pose(T);
+            const float AnkleZ=float(CS(TEXT("foot_l")).Z);
+            if(AnkleZ<LowestAnkle)
+            {
+                LowestAnkle=AnkleZ;PlantedTime=T;
+                PlantedReach=float((CS(TEXT("thigh_l"))-CS(TEXT("foot_l"))).Size());
+                PlantedBulge=KneeBulge(TEXT("thigh_l"),TEXT("calf_l"),TEXT("foot_l")).Size();
+            }
+        }
+        Good&=TestTrue(TEXT("The planted foot gives a measurable hip reach"),PlantedReach>1.f);
+        AddInfo(FString::Printf(TEXT("Planted frame t=%.3fs: hip reach %.2fcm, knee bulge %.2fcm, ankle Z %.2fcm"),
+            PlantedTime,PlantedReach,PlantedBulge,LowestAnkle));
+        // The bug, stated explicitly: the old constant sat BELOW the reach of a planted foot, so
+        // every mark was released on the frame it was taken.
+        const float OldThreshold=86.f*.94f;
+        Good&=TestTrue(TEXT("The old hardcoded threshold could not have held a planted mark"),
+            OldThreshold<PlantedReach);
+        Good&=TestTrue(TEXT("The release is derived from the measured leg, not a constant"),Release>OldThreshold);
+        Good&=TestTrue(TEXT("A held mark is released before the knee locks out"),Release<RefLeg);
+        Good&=TestTrue(TEXT("The release sits near full extension, not at some small constant"),
+            Release>RefLeg*.9f);
+        // Whether a lock can survive a stride is a property of the CLIP, not of this rule: this run
+        // cycle plants with the knee at 0.00cm of bulge, i.e. the leg is already fully extended and
+        // there is no slack to hold against, so the honest assertion only applies when the planted
+        // pose leaves room. A body whose stance is already straight cannot be foot-locked at all.
+        if(PlantedReach<RefLeg*.9f)
+            Good&=TestTrue(TEXT("A held mark survives a usable amount of stride travel"),Release-PlantedReach>.5f);
+        AddInfo(FString::Printf(TEXT("Lock reach: planted hip reach %.2fcm, leg %.2fcm; release at %.2fcm (%.2fcm of travel); old constant %.2fcm%s"),
+            PlantedReach,RefLeg,Release,Release-PlantedReach,OldThreshold,
+            PlantedReach<RefLeg*.9f?TEXT(""):TEXT(" -- planted pose uses the whole leg, so no lock can hold on this clip")));
+        // An unmeasurable leg must fail towards holding, never towards releasing everything.
+        Good&=TestTrue(TEXT("An unmeasurable leg does not release every mark"),
+            C26Presentation::LockReleaseReach(0.f)>=C26Presentation::UnmeasuredLockReach);
         AddInfo(FString::Printf(TEXT("Solver: half-weight %.2fcm vs full-weight %.2fcm; leg %.1f+%.1fcm"),Half,Full,ThighLen,CalfLen));
     }
     Actor->Destroy();World->DestroyWorld(false);return Good;

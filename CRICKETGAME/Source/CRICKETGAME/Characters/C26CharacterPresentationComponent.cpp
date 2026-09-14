@@ -24,7 +24,32 @@
 static TAutoConsoleVariable<int32> C26CharacterDebug(TEXT("c26.Character.Debug"),0,TEXT("1: role, state, speed, LOD, sockets and equipment"));
 static TAutoConsoleVariable<int32> C26CharacterRole(TEXT("c26.Character.Role"),-1,TEXT("Visual role 0..5, -1 match role; affects selected number only"));
 static TAutoConsoleVariable<int32> C26CharacterNumber(TEXT("c26.Character.Number"),7,TEXT("Squad number for development role preview"));
+static TAutoConsoleVariable<int32> C26CharacterFootLock(TEXT("c26.Character.FootLock"),1,
+    TEXT("0: stop applying planted-foot locking, so the drift log measures the unassisted stride"));
 #endif
+/** True when planted-foot locking is applied. Defined for EVERY configuration: this is real
+    shipping behaviour, and the A/B switch above is a development-only control, so shipping always
+    returns true rather than depending on a console variable that does not exist there. */
+static bool C26AppliesFootLock()
+{
+#if !UE_BUILD_SHIPPING
+    return C26CharacterFootLock.GetValueOnGameThread()!=0;
+#else
+    return true;
+#endif
+}
+/** True when the development character diagnostics are switched on. Defined for EVERY
+    configuration on purpose: the foot stabilizer is real shipping behaviour and cannot sit inside
+    a #if !UE_BUILD_SHIPPING block, so it must gate its logging through this rather than reference
+    a console variable that does not exist in a shipping build. */
+static bool C26WantsCharacterDiag()
+{
+#if !UE_BUILD_SHIPPING
+    return C26CharacterDebug.GetValueOnGameThread()!=0;
+#else
+    return false;
+#endif
+}
 void FC26LocomotionSample::Reset(const FTransform& Transform)
 {
     *this=FC26LocomotionSample();Initialized=true;Position=Transform.GetLocation();Yaw=Transform.Rotator().Yaw;
@@ -326,6 +351,17 @@ float C26Presentation::BlendWeight(float BlendClock,float BlendSeconds)
 {
     return FMath::SmoothStep(0.f,FMath::Max(MinBlendSeconds,BlendSeconds),BlendClock);
 }
+float C26Presentation::LockReleaseReach(float RefLegLength)
+{
+    // A mark is held until the leg would have to straighten past LockoutReachFraction of its true
+    // length. This cannot be a constant. The shipped code released at 94% of a hardcoded 86cm
+    // (80.8cm) while the athlete stands at 82.4cm, so every mark was released on the frame it was
+    // taken: marks were still taken, the drift log looked alive, and nothing was ever stabilized.
+    // The leg length is measured from the reference pose because segment lengths do not depend on
+    // the pose -- the reference pose itself is a straight bind pose and says nothing about how bent
+    // the knees are in a stance.
+    return RefLegLength>0.f?RefLegLength*LockoutReachFraction:UnmeasuredLockReach;
+}
 bool UC26CharacterPresentationComponent::StateAllowsFootLock(FName State)
 {
     // Only the shared locomotion and stance clips. Batting, bowling and fielding actions carry
@@ -437,9 +473,10 @@ void UC26CharacterPresentationComponent::UpdateFootStabilization(const AC26Athle
         if(!bLoggedFootSkip)
         {
             bLoggedFootSkip=true;
-            UE_LOG(LogTemp,Display,TEXT("C26_CHARACTER_FOOT_SKIP id=%s profile=%d visible=%d lod=%d quality=%d"),
-                *Appearance.PlayerID.ToString(),Profile?1:0,Body->IsVisible()?1:0,
-                Body->GetPredictedLODLevel(),int32(Quality));
+            if(C26WantsCharacterDiag())
+                UE_LOG(LogTemp,Display,TEXT("C26_CHARACTER_FOOT_SKIP id=%s profile=%d visible=%d lod=%d quality=%d"),
+                    *Appearance.PlayerID.ToString(),Profile?1:0,Body->IsVisible()?1:0,
+                    Body->GetPredictedLODLevel(),int32(Quality));
         }
         Anim->FootIKWeight=Anim->LeftFootLockAlpha=Anim->RightFootLockAlpha=Anim->PelvisOffsetZ=0.f;
         LeftFootLock=RightFootLock=FC26FootLockState();PelvisCompensationZ=0.f;
@@ -457,24 +494,32 @@ void UC26CharacterPresentationComponent::UpdateFootStabilization(const AC26Athle
 
     // The height a planted ankle sits at is a property of the body, so it is measured from the
     // reference pose once rather than assumed. Guessing it high floats the foot above the pitch;
-    // guessing it low presses it through.
+    // guessing it low presses it through. The same pass measures the leg itself, because the lock
+    // release has to be derived from the athlete's real leg: the standing hip-to-ankle distance is
+    // ~94% of the true leg length, so a release threshold even slightly below it silently releases
+    // every mark on the frame it was taken.
     if(RefAnkleHeight<0.f)
     {
         RefAnkleHeight=0.f;
         if(const USkeletalMesh* Asset=Body->GetSkeletalMeshAsset())
         {
             const FReferenceSkeleton& Ref=Asset->GetRefSkeleton();
-            auto RefAnkleZ=[&Ref](FName Bone)
+            auto RefLoc=[&Ref](FName Bone)
             {
                 const int32 Index=Ref.FindBoneIndex(Bone);
-                if(Index==INDEX_NONE)return 0.f;
+                if(Index==INDEX_NONE)return FVector::ZeroVector;
                 FTransform Accumulated=FTransform::Identity;
                 for(int32 I=Index;I!=INDEX_NONE;I=Ref.GetParentIndex(I))Accumulated*=Ref.GetRefBonePose()[I];
-                return float(Accumulated.GetLocation().Z);
+                return Accumulated.GetLocation();
             };
-            RefAnkleHeight=FMath::Min(RefAnkleZ(Profile->LeftFootBone),RefAnkleZ(Profile->RightFootBone));
+            const FVector LeftFoot=RefLoc(Profile->LeftFootBone),RightFoot=RefLoc(Profile->RightFootBone);
+            RefAnkleHeight=FMath::Min(float(LeftFoot.Z),float(RightFoot.Z));
+            const FVector Thigh=RefLoc(TEXT("thigh_l")),Calf=RefLoc(TEXT("calf_l"));
+            RefLegLength=float((Calf-Thigh).Size()+(LeftFoot-Calf).Size());
         }
-        UE_LOG(LogTemp,Display,TEXT("C26_CHARACTER_ANKLE_HEIGHT mesh=%s height=%.2fcm"),*GetNameSafe(Body->GetSkeletalMeshAsset()),RefAnkleHeight);
+        UE_LOG(LogTemp,Display,TEXT("C26_CHARACTER_ANKLE_HEIGHT mesh=%s height=%.2fcm legLength=%.2fcm releaseAt=%.2fcm"),
+            *GetNameSafe(Body->GetSkeletalMeshAsset()),RefAnkleHeight,RefLegLength,
+            C26Presentation::LockReleaseReach(RefLegLength));
     }
 
     const FVector ActorLoc=Athlete->GetActorLocation();
@@ -498,6 +543,8 @@ void UC26CharacterPresentationComponent::UpdateFootStabilization(const AC26Athle
     // Landing tolerance widens as the athlete slows: a decelerating or settling stride plants
     // heavily and the authored ankle sits further off the plane than it does at a steady jog.
     const float PlantTolerance=Locomotion.GroundSpeed<60.f?6.f:4.f;
+    // Derived from the measured leg, never a constant: see C26Presentation::LockReleaseReach.
+    const float LockReleaseReach=C26Presentation::LockReleaseReach(RefLegLength);
 
     // Judge every plant and lift from the authored pose, never from the stabilized skeleton.
     // Feeding the solver its own output would make a held foot look permanently grounded, so it
@@ -509,18 +556,22 @@ void UC26CharacterPresentationComponent::UpdateFootStabilization(const AC26Athle
         const FVector Hip=Body->GetSocketLocation(ThighBone);
         const float AboveGround=Foot.Z-PlantedAnkleZ;
 
+        if(Lock.bLocked)++Lock.HeldFrames;
+
         // Only take a fresh mark once the previous one has faded out, otherwise the solver would
         // jump the foot from one world point to another inside a single frame. Marking at ground
         // height rather than at the authored height is what conforms the foot to the pitch.
         if(bAllowNewMarks&&!Lock.bLocked&&Lock.LockAlpha<.25f&&FMath::Abs(AboveGround)<PlantTolerance)
         {
-            Lock.bLocked=true;
+            Lock.bLocked=true;Lock.MaxDrift=0.f;Lock.MaxAuthoredDrift=0.f;Lock.HeldFrames=0;
             Lock.LockedWorldPos=FVector(Foot.X,Foot.Y,PlantedAnkleZ);
             // Under the debug CVar only: proof in a log that a mark was really taken in a match,
-            // rather than an on-screen weight read off a screenshot.
-            if(C26CharacterDebug.GetValueOnGameThread())
-                UE_LOG(LogTemp,Display,TEXT("C26_CHARACTER_FOOT_LOCK id=%s foot=%s above=%.1fcm speed=%.0f state=%s"),
-                    *Appearance.PlayerID.ToString(),*FootBone.ToString(),AboveGround,Locomotion.GroundSpeed,*CurrentState.ToString());
+            // rather than an on-screen weight read off a screenshot. The reach is logged because a
+            // mark taken at a hip distance already past the release threshold is dead on arrival.
+            if(C26WantsCharacterDiag())
+                UE_LOG(LogTemp,Display,TEXT("C26_CHARACTER_FOOT_LOCK id=%s foot=%s above=%.1fcm reach=%.1fcm speed=%.0f state=%s"),
+                    *Appearance.PlayerID.ToString(),*FootBone.ToString(),AboveGround,FVector::Dist(Hip,Lock.LockedWorldPos),
+                    Locomotion.GroundSpeed,*CurrentState.ToString());
         }
         if(Lock.bLocked)
         {
@@ -529,12 +580,26 @@ void UC26CharacterPresentationComponent::UpdateFootStabilization(const AC26Athle
             // speed but do pick the feet up, so lift-off is checked at every speed. Both releases
             // fade the weight out rather than switching it.
             const float Reach=FVector::Dist(Hip,Lock.LockedWorldPos);
-            if(!bAllowNewMarks)Lock.bLocked=false;
-            else if(Reach>C26Presentation::LegReach*.94f)Lock.bLocked=false;
-            else if(AboveGround>C26Presentation::LiftHeight)Lock.bLocked=false;
+            const TCHAR* Why=nullptr;
+            if(!bAllowNewMarks)Why=TEXT("state");
+            else if(Reach>LockReleaseReach)Why=TEXT("reach");
+            else if(AboveGround>C26Presentation::LiftHeight)Why=TEXT("lift");
+            if(Why)
+            {
+                Lock.bLocked=false;
+                // One line per completed lock cycle: the PART A claim measured in a real match.
+                if(C26WantsCharacterDiag())
+                    UE_LOG(LogTemp,Display,TEXT("C26_CHARACTER_FOOT_DRIFT id=%s foot=%s state=%s applied=%d held=%d frames rendered=%.2fcm authored=%.2fcm reach=%.1fcm above=%.1fcm why=%s"),
+                        *Appearance.PlayerID.ToString(),*FootBone.ToString(),*CurrentState.ToString(),
+                        C26AppliesFootLock()?1:0,Lock.HeldFrames,Lock.MaxDrift,Lock.MaxAuthoredDrift,
+                        Reach,AboveGround,Why);
+            }
         }
         Lock.LockAlpha=FMath::FInterpTo(Lock.LockAlpha,Lock.bLocked?1.f:0.f,Dt,Lock.bLocked?18.f:24.f);
-        if(Lock.LockAlpha<=.001f){Lock.LockAlpha=0.f;OutAlpha=0.f;OutTarget=ToWorld.InverseTransformPosition(Foot);return;}
+        // The ramp keeps running even when locking is switched off, so both runs of the A/B plant
+        // and lift on the same cadence and the drift numbers are comparable.
+        if(!C26AppliesFootLock()||Lock.LockAlpha<=.001f)
+        {OutAlpha=0.f;OutTarget=ToWorld.InverseTransformPosition(Foot);return;}
         // The solver is given the mark itself; LockAlpha is the weight the solved leg is blended
         // in at, so partial weights read as the leg easing onto and off the mark.
         OutAlpha=Lock.LockAlpha;
@@ -544,7 +609,7 @@ void UC26CharacterPresentationComponent::UpdateFootStabilization(const AC26Athle
     const FVector RightAnimated=bCleanFeet?ToWorld.TransformPosition(Anim->AnimatedRightFootCS):Body->GetSocketLocation(Profile->RightFootBone);
     Process(LeftFootLock,Profile->LeftFootBone,TEXT("thigh_l"),Anim->AnimatedLeftFootCS,Anim->LeftFootLockAlpha,Anim->LeftFootTargetCS);
     Process(RightFootLock,Profile->RightFootBone,TEXT("thigh_r"),Anim->AnimatedRightFootCS,Anim->RightFootLockAlpha,Anim->RightFootTargetCS);
-    Anim->FootIKWeight=1.f;
+    Anim->FootIKWeight=C26AppliesFootLock()?1.f:0.f;
 
     // Subtle pelvis compensation: when a held mark sits below the animated ankle the leg would
     // have to reach for it, so the hips drop by the deeper of the two gaps and the knees keep
@@ -562,6 +627,29 @@ void UC26CharacterPresentationComponent::UpdateFootStabilization(const AC26Athle
     else if(RightFootLock.LockAlpha>.1f)Desired=RightGap*.5f;
     PelvisCompensationZ=FMath::FInterpTo(PelvisCompensationZ,FMath::Clamp(Desired,-6.f,0.f),Dt,12.f);
     Anim->PelvisOffsetZ=PelvisCompensationZ;
+}
+void UC26CharacterPresentationComponent::MeasureFootDrift()
+{
+    // Measured AFTER the pose is refreshed, and deliberately so. Reading the rendered ankle from
+    // inside UpdateFootStabilization gets the PREVIOUS frame's bone local combined with the CURRENT
+    // component transform, which silently adds a whole frame of actor movement -- 13cm at a 400cm/s
+    // run and 30fps -- and made the stabilizer look like it was making the drift worse. Both ankles
+    // are read from the same frame here, so one lock cycle carries its own honest control and no
+    // cross-run comparison is needed (two matches differ in gameplay timing anyway).
+    auto* Anim=Cast<UC26CricketerAnimInstance>(Body?Body->GetAnimInstance():nullptr);
+    if(!Anim||!Profile)return;
+    const bool bCleanFeet=Anim->bAnimatedFeetValid;
+    const FTransform ToWorld=Body->GetComponentTransform();
+    auto One=[&](FC26FootLockState& Lock,FName FootBone,const FVector& AnimatedCS)
+    {
+        if(!Lock.bLocked)return;
+        const FVector Rendered=Body->GetSocketLocation(FootBone);
+        Lock.MaxDrift=FMath::Max(Lock.MaxDrift,float(FVector::Dist2D(Rendered,Lock.LockedWorldPos)));
+        const FVector Authored=bCleanFeet?ToWorld.TransformPosition(AnimatedCS):Rendered;
+        Lock.MaxAuthoredDrift=FMath::Max(Lock.MaxAuthoredDrift,float(FVector::Dist2D(Authored,Lock.LockedWorldPos)));
+    };
+    One(LeftFootLock,Profile->LeftFootBone,Anim->AnimatedLeftFootCS);
+    One(RightFootLock,Profile->RightFootBone,Anim->AnimatedRightFootCS);
 }
 void UC26CharacterPresentationComponent::UpdateFromMatch(AC26Athlete* Athlete,float Dt)
 {
@@ -640,6 +728,7 @@ void UC26CharacterPresentationComponent::UpdateFromMatch(AC26Athlete* Athlete,fl
     UpdateOrientationSmoothing(Athlete,Dt);
     UpdateFootStabilization(Athlete,Dt);
     Body->TickAnimation(FMath::Max(0.f,Dt),false);Body->RefreshBoneTransforms();
+    MeasureFootDrift();
     LearnWarp(Athlete);
     Debug(Athlete,Dt);
 }
