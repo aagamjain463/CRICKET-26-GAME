@@ -567,7 +567,15 @@ bool FC26PremiumFieldingSequenceTest::RunTest(const FString& Parameters)
     const float AnkleZ = 12.f;
     const float ShoulderZ = 145.f;
     const float PalmReach = 85.f;
-    const FVector BallGroundTarget = C26Motion::Rig(32.f, 0.f, 16.f);
+    // The ball as the match actually hands it to the gather: resting on the turf, which in this
+    // solve's mesh-local space is BELOW the rig origin. The match sets the rig origin 5 cm above
+    // the turf plane and the ball's centre sits one radius above the plane, so a ball on the grass
+    // is at -1.4 cm -- not the 16 cm this used to be. A target at shin height hid the fact that the
+    // solver's floor was holding the hands a hand's length above the grass: every assertion here
+    // passed while the in-match gate was measuring a 65 cm gap. These are the same numbers the gate
+    // reports (gather_minus_root Z = -1.40), so the solver test and the match agree on the datum.
+    const float TurfZ = -5.f;
+    const FVector BallGroundTarget = C26Motion::Rig(32.f, 0.f, TurfZ + C26Field::BallDiameter * .5f);
 
     // 1. Approach deceleration & whole-body ground lowering (ActionTime: 0.00s -> 0.20s)
     const C26Motion::FFielderPose ApproachPose = C26Motion::SolveFielderPickup(0.00f, BallGroundTarget, AnkleZ, ShoulderZ, PalmReach);
@@ -576,7 +584,13 @@ bool FC26PremiumFieldingSequenceTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("Approach pose starts in athletic running deceleration"), ApproachPose.Crouch >= -10.f && ApproachPose.LeanForward <= 16.f);
     TestTrue(TEXT("Contact pose achieves whole-body lowering"), ContactPose.Crouch <= -45.f && ContactPose.LeanForward >= 35.f);
     TestTrue(TEXT("Contact pose knee flexion rolls back toe"), ContactPose.PitchR >= 20.f);
-    TestTrue(TEXT("Contact pose hands reach safely above turf without penetration"), ContactPose.RightHand.Z >= AnkleZ + 3.f);
+    // The assertion that was missing. The palms have to actually arrive at the ball: the midpoint of
+    // the two wrist targets is what the match feeds into ReceivingPosition, and this fails by ~17 cm
+    // against any floor that treats the ankle's height as the ground. The hands may close around the
+    // ball, but they may not sink through the grass it is resting on.
+    const FVector Palms = (ContactPose.LeftHand + ContactPose.RightHand) * .5f;
+    TestTrue(TEXT("Contact pose palms arrive at the ball on the turf"), FVector::Dist(Palms, BallGroundTarget) < 5.f);
+    TestTrue(TEXT("Contact pose hands stay above the turf plane"), ContactPose.RightHand.Z >= TurfZ);
 
     // 2. Rise and throw load continuity (ActionTime: 0.20s -> 0.53s)
     const C26Motion::FFielderPose PickupEnd = C26Motion::SolveFielderPickup(0.53f, BallGroundTarget, AnkleZ, ShoulderZ, PalmReach);

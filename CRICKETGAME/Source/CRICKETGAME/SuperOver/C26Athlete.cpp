@@ -2021,10 +2021,20 @@ void AC26Athlete::Animate(float Dt)
         const int Shoulder=Bone(Right?TEXT("RightArm"):TEXT("LeftArm"));
         if(Shoulder<0||!Pose.IsValidIndex(Shoulder))return Hand;
         const FVector Origin=Pose[Shoulder].GetLocation();
-        const float MaxArm=(ArmSpan>0.f?ArmSpan:150.f)*0.492f;
+        // ArmSpan is the shoulder-to-wrist chain -- measured 51.8 cm on the shipped rig -- and that
+        // is how every other reach limit in this file reads it: the batting handle clamp and the
+        // bowling circle are both ArmSpan*.95 and up. This one treated it as a full
+        // fingertip-to-fingertip span and halved it, so the hand target was capped at half an arm
+        // from the socket. A fielder could not get his hands down to a ball on the turf: the palms
+        // stayed ~65 cm above it, level and square to the ball but out of reach, and the match then
+        // snapped the ball up into his gloves to cover the gap -- the teleport this project refuses
+        // to ship. Clamping at the real chain length leaves the guard doing its actual job, which is
+        // stopping a hand from being asked for more arm than the bind pose has.
+        const float MaxArm=(ArmSpan>0.f?ArmSpan:73.f)*.98f;
         const FVector Delta=Hand-Origin;
         return Delta.Size()>MaxArm?Origin+Delta.GetSafeNormal()*MaxArm:Hand;
     };
+    FVector LHRaw=LH,RHRaw=RH;
     if(!Batting&&Action!=EC26Action::Bowling)
     {
         LH=ReachableArm(LH,false);
@@ -2032,6 +2042,18 @@ void AC26Athlete::Animate(float Dt)
     }
     ShoulderReach(TEXT("Left"),LH,Batting?.22f:.46f);
     ShoulderReach(TEXT("Right"),RH,Batting?.22f:.46f);
+    if(!Batting&&Action!=EC26Action::Bowling)
+    {
+        // The clavicle has just carried the socket toward the target, so the arm is no longer asked
+        // for as much as it was a moment ago: the clamp above was measured against the shoulder it
+        // used to have. Re-projecting the RAW target from the new socket is what lets the arm extend
+        // into the centimetres the shoulder just bought. Re-clamping the already-clamped point would
+        // do nothing at all -- a clamp only ever pulls a target inward, and that point is now inside
+        // the arm's reach -- which is exactly the trap this used to fall into: the elbow stayed bent
+        // and the hand stopped ~8 cm short of a ball it could have touched.
+        LH=ReachableArm(LHRaw,false);
+        RH=ReachableArm(RHRaw,true);
+    }
     Limb(TEXT("LeftArm"),TEXT("LeftForeArm"),TEXT("LeftHand"),LH,PoleL);
     Limb(TEXT("RightArm"),TEXT("RightForeArm"),TEXT("RightHand"),RH,PoleR);
     if(Batting)

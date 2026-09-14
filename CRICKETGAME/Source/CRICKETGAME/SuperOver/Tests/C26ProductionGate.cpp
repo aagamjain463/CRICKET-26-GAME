@@ -88,8 +88,16 @@ void AC26MatchGameMode::UpdateProductionGate(float Dt)
         if(Rules.Now().LegalBalls==2&&PhaseTime>.45f&&!Running&&CompletedRuns==0)Run();
         if(ThrowClock>=.20f&&ThrowClock<.24f&&Frame(TEXT("pickup")))
         {
-            const float Gap=FVector::Dist(GatherPoint,Athletes[ActiveFielder]->ReceivingPosition());
-            UE_LOG(LogC26,Display,TEXT("C26_SUITE_PICKUP gap_cm=%.2f"),Gap);
+            auto* F=Athletes[ActiveFielder].Get();
+            const FVector Palms=F->ReceivingPosition();
+            const FVector Root=F->GetActorLocation();
+            const float Gap=FVector::Dist(GatherPoint,Palms);
+            // Positions, not just the scalar: a bare gap cannot distinguish "the arm ran out of
+            // reach" from "the athlete never got to the ball" from "the palms are measured off
+            // the wrist rather than the ball", and those need opposite fixes.
+            UE_LOG(LogC26,Display,TEXT("C26_SUITE_PICKUP gap_cm=%.2f gather=%s palms=%s root=%s gather_minus_root=%s"),
+                Gap,*GatherPoint.ToCompactString(),*Palms.ToCompactString(),*Root.ToCompactString(),
+                *(GatherPoint-Root).ToCompactString());
             Check(Gap<14.f,TEXT("ground pickup reaches the ball"));
         }
         if(ThrowReleased&&FMath::IsNearlyEqual(ThrowClock,.73f,.001f)&&Frame(TEXT("throw_release")))

@@ -673,8 +673,9 @@ namespace C26Motion
     }
 
     /** Smooth, athletic ground gather / pickup biomechanics.
-     * Full-body lowering (knees flexed, hips dropped, natural forward trunk hinge), authentic
-     * clean scoop at turf height with hand-ground safety clamping, and seamless rise / load into the throw. */
+     * Full-body lowering (knees flexed, hips dropped, natural forward trunk hinge), a clean scoop
+     * taken at the ball's own height rather than at a fixed distance above the grass, and a
+     * seamless rise / load into the throw. */
     inline FFielderPose SolveFielderPickup(
         float ActionTime,
         const FVector& TakeTarget,
@@ -690,10 +691,16 @@ namespace C26Motion
             const float G = FMath::Clamp(ActionTime / 0.20f, 0.f, 1.f);
             const float SmoothG = FMath::SmoothStep(0.f, 1.f, G);
 
-            // Full-body athletic crouch: COM drops naturally from running break to ground gather
-            Out.Crouch = FMath::Lerp(-8.f, -52.f, SmoothG);
+            // Full-body athletic crouch: the COM drops from a running break to a ground gather on
+            // the knees and hips, not by folding the spine and reaching out an arm. The depth is set
+            // by geometry, not by taste. The rig's shoulder-to-wrist chain is 51.8 cm and the palm
+            // adds 17.2 more, so the shoulder has to come inside about 70 cm of a ball on the grass
+            // for the hands to arrive at all; upright it is 80+ cm away and no arm reaches that.
+            // 58 cm of knee drop and 70 degrees of hip hinge is what a real fielder does -- shoulder
+            // down and over the ball -- and it puts the shoulder inside that radius.
+            Out.Crouch = FMath::Lerp(-8.f, -58.f, SmoothG);
             Out.HipShift = Rig(SmoothG * 8.f, 0.f, 0.f);
-            Out.LeanForward = FMath::Lerp(14.f, 42.f, SmoothG);
+            Out.LeanForward = FMath::Lerp(14.f, 70.f, SmoothG);
             Out.TurnRight = FMath::Lerp(0.f, -8.f, SmoothG);
             Out.LeanRight = FMath::Lerp(0.f, 4.f, SmoothG);
             Out.ChestCounter = FMath::Lerp(0.f, -4.f, SmoothG);
@@ -704,10 +711,27 @@ namespace C26Motion
             Out.PitchL = 0.f;
             Out.PitchR = FMath::Lerp(0.f, 24.f, SmoothG);
 
-            // Clean ground reach with turf safety (no penetration below turf plane)
-            FVector SafeTake = TakeTarget;
-            SafeTake.Z = FMath::Max(SafeTake.Z, AnkleZ + 4.f);
-            const FVector HandsPos = FMath::Lerp(Rig(22.f, 0.f, 96.f), SafeTake, SmoothG);
+            // Clean ground reach. There is deliberately no absolute floor on this any more. The old
+            // one was AnkleZ + 4, which reads as "the hand may not go below the turf" but is not
+            // that at all: AnkleZ is the height of the ankle JOINT above the rig origin -- 11.8 cm
+            // on the shipped rig -- so the floor sat 15.8 cm up, level with the fielder's own shins,
+            // while a ball the gameplay actually rests on the grass is at -1.4 cm in this same
+            // space. The palms could never get within 20 cm of it, and the match then snapped the
+            // ball up into the gloves to cover the gap, which is the teleport this project refuses
+            // to ship. The ball is the only ground reference this solve needs: the gameplay never
+            // rests it below the turf, so aiming the palms at the ball's own centre cannot put a
+            // hand in the ground. The guard that still earns its place -- an arm asked for more than
+            // the bind pose has -- lives in AC26Athlete::Animate, which is where reach belongs.
+            //
+            // The hands also lead the body to the ball. The match hands possession over at
+            // ThrowClock = 0.20 -- from that instant Simulation.Ball.Position IS ReceivingPosition()
+            // -- and the displayed pose is filtered toward the solved one, so hands that only arrive
+            // at 0.20 are still ~16 cm above the ball on screen at the moment it becomes theirs, and
+            // it jumps up into the gloves. Arriving a twentieth of a second early both lands the
+            // handoff on a palm that is already at the ball and is what a fielder actually does: the
+            // hands get there first and the body settles over them.
+            const float HandG = FMath::SmoothStep(0.f, 0.17f, ActionTime);
+            const FVector HandsPos = FMath::Lerp(Rig(22.f, 0.f, 96.f), TakeTarget, HandG);
             Out.RightHand = HandsPos + Rig(0.f, 4.f, 0.f);
             Out.LeftHand = HandsPos + Rig(0.f, -6.f, 2.f);
             Out.PoleL = Rig(0.20f, -0.85f, 0.15f);
@@ -721,9 +745,9 @@ namespace C26Motion
             const float SmoothR = FMath::SmoothStep(0.f, 1.f, R);
 
             // Center of mass rises smoothly; torso prepares throwing coil
-            Out.Crouch = FMath::Lerp(-52.f, -12.f, SmoothR);
+            Out.Crouch = FMath::Lerp(-58.f, -12.f, SmoothR);
             Out.HipShift = FMath::Lerp(Rig(8.f, 0.f, 0.f), Rig(4.f, 0.f, 0.f), SmoothR);
-            Out.LeanForward = FMath::Lerp(42.f, 12.f, SmoothR);
+            Out.LeanForward = FMath::Lerp(70.f, 12.f, SmoothR);
             Out.TurnRight = FMath::Lerp(-8.f, -34.f, SmoothR);
             Out.LeanRight = FMath::Lerp(4.f, -3.f, SmoothR);
             Out.ChestCounter = FMath::Lerp(-4.f, 12.f, SmoothR);
@@ -734,14 +758,14 @@ namespace C26Motion
             Out.PitchL = FMath::Lerp(0.f, 6.f, SmoothR);
             Out.PitchR = FMath::Lerp(24.f, 12.f, SmoothR);
 
-            // Hands: Ball drawn up securely; left arm extends to sight target, right arm cocks back with high elbow
-            FVector SafeTake = TakeTarget;
-            SafeTake.Z = FMath::Max(SafeTake.Z, AnkleZ + 4.f);
+            // Hands: ball drawn up securely; left arm extends to sight target, right arm cocks back
+            // with high elbow. The same datum as phase 1 -- the ball itself -- so the gather crosses
+            // the 0.20 s boundary without the hands moving.
             const FVector CockedR = Rig(-16.f, 22.f, 142.f);
             const FVector SightL = Rig(26.f, -20.f, 130.f);
 
-            Out.RightHand = FMath::Lerp(SafeTake + Rig(0.f, 4.f, 0.f), CockedR, SmoothR);
-            Out.LeftHand = FMath::Lerp(SafeTake + Rig(0.f, -6.f, 2.f), SightL, SmoothR);
+            Out.RightHand = FMath::Lerp(TakeTarget + Rig(0.f, 4.f, 0.f), CockedR, SmoothR);
+            Out.LeftHand = FMath::Lerp(TakeTarget + Rig(0.f, -6.f, 2.f), SightL, SmoothR);
             Out.PoleL = FMath::Lerp(Rig(0.20f, -0.85f, 0.15f), Rig(0.25f, -0.85f, 0.15f), SmoothR);
             Out.PoleR = FMath::Lerp(Rig(0.20f, 0.85f, 0.15f), Rig(-0.40f, 0.85f, 0.35f), SmoothR);
             Out.FingerCurl = FMath::Lerp(0.42f, 0.45f, SmoothR);
