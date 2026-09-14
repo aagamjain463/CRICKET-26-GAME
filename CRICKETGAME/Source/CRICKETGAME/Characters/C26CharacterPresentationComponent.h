@@ -25,6 +25,85 @@ struct FC26CharacterPoseSample
     float Time=0,PreviousTime=0,Alpha=1,Distance=0,Clock=0,GroundSpeed=0;
 };
 
+struct FC26FootLockState
+{
+    bool bLocked = false;
+    FVector LockedWorldPos = FVector::ZeroVector;
+    float LockAlpha = 0.f;
+    /** Worst horizontal distance the RENDERED ankle reached from its mark during this lock. With
+        the solver enabled this is the stabilized foot; disabled, the authored foot. Measuring both
+        is what makes the A/B control in c26.Character.FootLock meaningful. */
+    float MaxDrift = 0.f;
+    /** Worst horizontal distance the AUTHORED ankle would have reached from the same mark over the
+        same frames. Comparing this with MaxDrift WITHIN one lock cycle is the honest measure of
+        what the solver did: two separate runs differ in gameplay timing, so comparing them across
+        runs measures the match, not the stabilizer. */
+    float MaxAuthoredDrift = 0.f;
+    /** Frames the mark was actually held. A lock released on the frame it was taken stabilizes
+        nothing, so this is the number that says whether the feature is doing work at all. */
+    int32 HeldFrames = 0;
+};
+
+/** Shared presentation tuning and the pure rules behind it. Declared here so each number has one
+    home and the rules can be asserted without a live athlete -- SelectState and the orientation
+    filter are the only runtime callers. */
+namespace C26Presentation
+{
+    /** Locomotion hysteresis: entering costs more speed than leaving it keeps. */
+    inline constexpr float StartSpeed=22.f,StopSpeed=10.f;
+    /** A locked mark is released once it would need this fraction of the leg's true length, so the
+        knee is allowed to approach extension but never to lock out.
+
+        This MUST stay above the fraction of the leg that a standing athlete already spans from hip
+        to ankle, because a release below that distance fires on the frame the mark is taken. The
+        shipped code used .94 of a hardcoded 86cm = 80.84cm against a 82.4cm standing reach, so
+        every mark died on arrival. FC26FootSolverTest measures the standing fraction from the real
+        reference pose and asserts this number clears it, rather than trusting the comment. */
+    inline constexpr float LockoutReachFraction=.98f;
+    /** The band a real human leg falls in, in centimetres. The release threshold is derived from a
+        measured leg, so a measurement outside this band means the bone chain did not resolve and
+        the value must be rejected: a too-large leg would never release a mark and the solver would
+        drag the foot until the hip tore it off, and a too-small one reproduces the dead-on-arrival
+        bug above. The band is also the fallback -- see LockReleaseReach. */
+    inline constexpr float MinPlausibleLegLength=55.f,MaxPlausibleLegLength=120.f;
+    /** Authored ankle clearance that counts as the stride having genuinely lifted the foot. */
+    inline constexpr float LiftHeight=8.f;
+    /** A re-aim larger than this inside one frame is a snap, not a turn the athlete ran through. */
+    inline constexpr float OrientationSnapDegrees=15.f;
+    /** Bound on the mesh yaw lag, so even a 180 degree re-aim cannot spin the body. */
+    inline constexpr float MaxMeshYawLag=135.f;
+    /** Shortest blend the presentation will run; below this the switch is a visible pop. */
+    inline constexpr float MinBlendSeconds=.02f;
+
+    /** True when the athlete should be in locomotion. The band between StopSpeed and StartSpeed
+        holds whatever state the athlete is already in, so a speed hovering at the boundary cannot
+        flap idle<->locomotion and restart Start/Stop every few frames. */
+    CRICKETGAME_API bool WantsMove(bool bWasMoving,float GroundSpeed);
+    /** True once a Start/Stop clip has done its job and should hand back to locomotion or stance.
+        A turn clip always plays out. */
+    CRICKETGAME_API bool TransitionSpent(FName Transition,float GroundSpeed,float TransitionAge);
+    /** One frame of mesh-only yaw lag: absorbs an authoritative re-aim discontinuity, then unwinds
+        it. Returns the new lag in degrees; the actor rotation is never involved. */
+    CRICKETGAME_API float StepMeshYawOffset(float Offset,float AuthoritativeYawDelta,float Dt);
+    /** Advances the outgoing pose while a blend is running. Freezing it at the switch frame reads
+        as the body stalling for the whole blend, which is what an action->recovery hand-back
+        looked like; the outgoing clip keeps playing until it is inaudible. */
+    CRICKETGAME_API float AdvanceOutgoingPose(float PreviousTime,float PreviousLength,float Dt);
+    /** Weight of the incoming clip after BlendClock seconds of a BlendSeconds blend. Smoothstep,
+        so the pose leaves and arrives with zero velocity instead of snapping at both ends. */
+    CRICKETGAME_API float BlendWeight(float BlendClock,float BlendSeconds);
+    /** Hip-to-mark distance at which a held mark must be released, derived from the athlete's own
+        measured leg rather than a constant. The leg length is pose-independent, which is why it is
+        the input: the reference pose is a straight bind pose, so it says nothing about how bent the
+        athlete's knees are in a real stance.
+
+        Safe for ANY input, including the -1 sentinel and a garbage measurement, because it clamps
+        into MinPlausibleLegLength..MaxPlausibleLegLength and falls back to the most generous
+        plausible leg. A caller that forgets to validate cannot therefore produce a threshold that
+        silently never releases. */
+    CRICKETGAME_API float LockReleaseReach(float RefLegLength);
+}
+
 UCLASS(ClassGroup=(Cricket26),meta=(BlueprintSpawnableComponent))
 class CRICKETGAME_API UC26CharacterPresentationComponent : public UActorComponent
 {
@@ -57,6 +136,10 @@ public:
     void ApplyReplayPose(const FC26CharacterPoseSample& A,const FC26CharacterPoseSample& B,float Alpha);
     UStaticMeshComponent* GetBat() const;
     const FC26LocomotionSample& GetLocomotion() const{return Locomotion;}
+    /** Whether the shared foundation may take a foot mark in this state. Public so the scope
+        boundary is assertable: only the shared locomotion and stance clips are stabilized, and
+        the batting/bowling/fielding action clips another agent owns are left untouched. */
+    static bool StateAllowsFootLock(FName State);
 private:
     bool bActive=false,bWasMoving=false;
     FC26LocomotionSample Locomotion;
@@ -68,6 +151,47 @@ private:
     FVector LastLeftFoot=FVector::ZeroVector,LastRightFoot=FVector::ZeroVector;
     float FrozenSeconds=0;
     float WarpPrevTime=0.f;
+
+    /** Foot stabilization: a planted foot is pinned to the world point it was planted at,
+        so the animated stride cannot drag it across the pitch. */
+    FC26FootLockState LeftFootLock,RightFootLock;
+    float PelvisCompensationZ=0.f;
+    /** Cached ground plane under the athlete; re-traced only when it can have changed. */
+    FVector GroundProbePos=FVector::ZeroVector;
+    float GroundProbeZ=0.f,GroundProbeAge=1.f;
+    /** Standing ankle height measured from this mesh's own reference pose, not assumed. */
+    float RefAnkleHeight=-1.f;
+    /** Also measured from the reference pose: the leg's true maximum length (the sum of its
+        segments, so it does not depend on the pose). The lock release is derived from this, never
+        from a constant -- the shipped code used 94% of a hardcoded 86cm = 80.8cm, which sat BELOW
+        the 82.4cm the athlete actually stands at, so every mark was released on the frame it was
+        taken. That failure is silent: marks are still taken, so the stabilizer looks alive while
+        holding nothing.
+
+        Stays at the -1 sentinel when the chain does not resolve or measures outside
+        MinPlausibleLegLength..MaxPlausibleLegLength, which makes LockReleaseReach fall back to the
+        most generous plausible leg rather than trusting a number it cannot vouch for. */
+    float RefLegLength=-1.f;
+    /** True once the reference pose has been measured, whether or not the measurement succeeded.
+        A separate flag because RefAnkleHeight has a legitimate value of 0, so it cannot double as
+        the "not yet measured" sentinel: a mesh that failed to measure would otherwise be treated
+        as measured at height zero and pressed into the pitch forever. */
+    bool bMeasuredRefPose=false;
+    /** Mesh-only yaw lag absorbing authoritative-rotation snaps. Gameplay rotation is untouched. */
+    float MeshYawOffset=0.f,LastAuthoritativeYaw=0.f;
+    bool bInitializedYaw=false;
+    /** One-shot so the reason the stabilizer is skipped is visible in a log, not just on screen. */
+    bool bLoggedFootSkip=false;
+    /** Continuous stride phase in seconds, advanced by distance travelled, so a clip change
+        (Walk->Run) resumes the cycle instead of jumping to a new absolute time. */
+    float LocomotionPhase=0.f;
+
+    void UpdateFootStabilization(const AC26Athlete* Athlete,float Dt);
+    /** Runs after the pose is refreshed, so the rendered and authored ankles come from the same
+        frame. See the definition for why measuring any earlier is wrong. */
+    void MeasureFootDrift();
+    void UpdateOrientationSmoothing(const AC26Athlete* Athlete,float Dt);
+
     void UpdateWarp(const AC26Athlete* Athlete,const FC26CricketClip* Clip);
     void LearnWarp(const AC26Athlete* Athlete);
     UPROPERTY(Transient) TObjectPtr<ACameraActor> ReviewCamera;
