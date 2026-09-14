@@ -112,4 +112,142 @@ bool FC26RetargetedRunTest::RunTest(const FString& Parameters)
     AddInfo(FString::Printf(TEXT("New body: cumulative feet travel %.1fcm, lowest ankle %.1fcm; visual quality still requires review"),FootTravel,LowestFoot));
     Actor->Destroy();World->DestroyWorld(false);return Good&&Errors.IsEmpty();
 }
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FC26FootSolverTest,"Cricket26.Characters.FootSolver",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
+bool FC26FootSolverTest::RunTest(const FString& Parameters)
+{
+    auto* Clip=LoadObject<UAnimSequence>(nullptr,TEXT("/Game/Cricket26/Characters/Animations/Locomotion/C26_A_Run.C26_A_Run"));
+    auto* Mesh=LoadObject<USkeletalMesh>(nullptr,TEXT("/Game/Cricket26/Characters/Bodies/SK_C26_FullBody_Candidate.SK_C26_FullBody_Candidate"));
+    if(!TestNotNull(TEXT("Canonical body"),Mesh)||!TestNotNull(TEXT("Locomotion clip"),Clip))return false;
+    UWorld* World=UWorld::CreateWorld(EWorldType::Game,false);AActor* Actor=World->SpawnActor<AActor>();
+    auto* Body=NewObject<USkeletalMeshComponent>(Actor);Actor->SetRootComponent(Body);
+    Body->SetSkeletalMesh(Mesh);Body->SetAnimInstanceClass(UC26CricketerAnimInstance::StaticClass());Body->RegisterComponent();
+    auto* Anim=Cast<UC26CricketerAnimInstance>(Body->GetAnimInstance());
+    bool Good=TestNotNull(TEXT("AnimInstance active"),Anim);
+    if(Anim)
+    {
+        auto Pose=[&](float Time)
+        {
+            Anim->PreviousSequence=Anim->CurrentSequence=Clip;Anim->BlendAlpha=1;Anim->CurrentTime=Time;
+            Body->TickAnimation(.016f,false);Body->RefreshBoneTransforms();
+        };
+        auto CS=[&](const TCHAR* Bone){return Body->GetBoneLocation(Bone,EBoneSpaces::ComponentSpace);};
+
+        // Baseline: the solver must be completely inert while it carries no weight.
+        Anim->FootIKWeight=Anim->LeftFootLockAlpha=Anim->RightFootLockAlpha=Anim->PelvisOffsetZ=0.f;
+        Pose(.1f);
+        const FVector RestFoot=CS(TEXT("foot_l")),RestPelvis=CS(TEXT("pelvis")),RestThigh=CS(TEXT("thigh_l"));
+        const float ThighLen=(CS(TEXT("calf_l"))-RestThigh).Size(),CalfLen=(RestFoot-CS(TEXT("calf_l"))).Size();
+        Anim->FootIKWeight=1.f;
+        Pose(.1f);
+        Good&=TestTrue(TEXT("Zero lock weight leaves the authored pose untouched"),CS(TEXT("foot_l")).Equals(RestFoot,.01f));
+
+        // Pelvis compensation is a subtle downward adjustment, not a crouch.
+        Anim->PelvisOffsetZ=-4.f;Pose(.1f);
+        Good&=TestTrue(TEXT("Pelvis compensation lowers the hips by the requested amount"),
+            FMath::IsNearlyEqual(float(CS(TEXT("pelvis")).Z),float(RestPelvis.Z)-4.f,.5f));
+        Anim->PelvisOffsetZ=0.f;
+
+        // A full-weight lock must actually reach a reachable mark.
+        Anim->LeftFootLockAlpha=1.f;
+        Anim->LeftFootTargetCS=RestFoot+FVector(4.f,0,-3.f);
+        Pose(.1f);
+        Good&=TestTrue(TEXT("Full lock places the ankle on its mark"),CS(TEXT("foot_l")).Equals(Anim->LeftFootTargetCS,1.5f));
+        Good&=TestTrue(TEXT("Locking does not stretch the thigh"),FMath::IsNearlyEqual(float((CS(TEXT("calf_l"))-CS(TEXT("thigh_l"))).Size()),ThighLen,.5f));
+        Good&=TestTrue(TEXT("Locking does not stretch the calf"),FMath::IsNearlyEqual(float((CS(TEXT("foot_l"))-CS(TEXT("calf_l"))).Size()),CalfLen,.5f));
+
+        // An unreachable mark must fail by falling short, never by pulling the leg apart.
+        Anim->LeftFootTargetCS=RestFoot+FVector(0,0,-400.f);
+        Pose(.1f);
+        const float Reach=(CS(TEXT("foot_l"))-CS(TEXT("thigh_l"))).Size();
+        Good&=TestTrue(TEXT("Unreachable mark clamps to leg length instead of stretching"),Reach<=ThighLen+CalfLen+.5f);
+
+        // Partial weight is a partial correction: this is what stops feet snapping on and off marks.
+        Anim->LeftFootTargetCS=RestFoot+FVector(6.f,0,0);
+        Anim->LeftFootLockAlpha=.5f;Pose(.1f);
+        const float Half=(CS(TEXT("foot_l"))-RestFoot).Size();
+        Anim->LeftFootLockAlpha=1.f;Pose(.1f);
+        const float Full=(CS(TEXT("foot_l"))-RestFoot).Size();
+        Good&=TestTrue(TEXT("Half weight moves the ankle roughly half as far"),Half>.5f&&Half<Full*.8f);
+        AddInfo(FString::Printf(TEXT("Solver: half-weight %.2fcm vs full-weight %.2fcm; leg %.1f+%.1fcm"),Half,Full,ThighLen,CalfLen));
+    }
+    Actor->Destroy();World->DestroyWorld(false);return Good;
+}
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FC26FootSkateTest,"Cricket26.Characters.FootSkate",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
+bool FC26FootSkateTest::RunTest(const FString& Parameters)
+{
+    // Measures the thing the work claims to fix: how far a foot that is carrying weight travels
+    // across the ground while it is planted. The in-place run clip is played back while the actor
+    // is translated at the clip's own authored stride speed, so any residual world-space ankle
+    // motion during stance is skate.
+    auto* Clip=LoadObject<UAnimSequence>(nullptr,TEXT("/Game/Cricket26/Characters/Animations/Locomotion/C26_A_Run.C26_A_Run"));
+    auto* Mesh=LoadObject<USkeletalMesh>(nullptr,TEXT("/Game/Cricket26/Characters/Bodies/SK_C26_FullBody_Candidate.SK_C26_FullBody_Candidate"));
+    if(!TestNotNull(TEXT("Canonical body"),Mesh)||!TestNotNull(TEXT("Locomotion clip"),Clip))return false;
+    UWorld* World=UWorld::CreateWorld(EWorldType::Game,false);AActor* Actor=World->SpawnActor<AActor>();
+    auto* Body=NewObject<USkeletalMeshComponent>(Actor);Actor->SetRootComponent(Body);
+    Body->SetSkeletalMesh(Mesh);Body->SetAnimInstanceClass(UC26CricketerAnimInstance::StaticClass());Body->RegisterComponent();
+    auto* Anim=Cast<UC26CricketerAnimInstance>(Body->GetAnimInstance());
+    if(!TestNotNull(TEXT("AnimInstance active"),Anim)){Actor->Destroy();World->DestroyWorld(false);return false;}
+
+    const int32 Steps=90;const float Length=Clip->GetPlayLength();const float Dt=Length/Steps;
+    auto Sample=[&](int32 Step,const FVector& ActorPos,bool bLock,const FVector& LockWorld,float Alpha)
+    {
+        Actor->SetActorLocation(ActorPos);
+        Anim->PreviousSequence=Anim->CurrentSequence=Clip;Anim->BlendAlpha=1;Anim->CurrentTime=Length*Step/Steps;
+        Anim->FootIKWeight=bLock?1.f:0.f;
+        Anim->LeftFootLockAlpha=bLock?Alpha:0.f;Anim->RightFootLockAlpha=0.f;Anim->PelvisOffsetZ=0.f;
+        if(bLock)Anim->LeftFootTargetCS=Body->GetComponentTransform().InverseTransformPosition(LockWorld);
+        Body->TickAnimation(Dt,false);Body->RefreshBoneTransforms();
+    };
+
+    // Pass 1: recover the clip's authored stride speed from the stance-phase ankle velocity,
+    // then measure unassisted skate at that speed.
+    float SoleZ=BIG_NUMBER;TArray<FVector> AnkleCS;
+    for(int32 Step=0;Step<=Steps;++Step)
+    {
+        Sample(Step,FVector::ZeroVector,false,FVector::ZeroVector,0.f);
+        const FVector A=Body->GetBoneLocation(TEXT("foot_l"),EBoneSpaces::ComponentSpace);
+        AnkleCS.Add(A);SoleZ=FMath::Min(SoleZ,float(A.Z));
+    }
+    const float StanceCeiling=SoleZ+3.f;
+    FVector Carry=FVector::ZeroVector;int32 StanceFrames=0;
+    for(int32 Step=1;Step<AnkleCS.Num();++Step)
+        if(AnkleCS[Step].Z<StanceCeiling&&AnkleCS[Step-1].Z<StanceCeiling)
+        {Carry+=AnkleCS[Step]-AnkleCS[Step-1];++StanceFrames;}
+    bool Good=TestTrue(TEXT("Clip has a measurable stance phase"),StanceFrames>4);
+    if(!Good){Actor->Destroy();World->DestroyWorld(false);return false;}
+    // The body travels opposite to the way the planted ankle is dragged in component space.
+    const FVector PerFrame=-Carry/StanceFrames;
+    AddInfo(FString::Printf(TEXT("Authored stride: %.0f cm/s over %d stance frames"),PerFrame.Size()/Dt,StanceFrames));
+
+    auto MeasureSkate=[&](bool bLock)
+    {
+        float Skate=0.f;int32 Frames=0;bool bWasStance=false;
+        FVector Mark=FVector::ZeroVector,LastAnkle=FVector::ZeroVector;float Alpha=0.f;
+        for(int32 Step=0;Step<=Steps;++Step)
+        {
+            const FVector ActorPos=PerFrame*Step;
+            // The lock mark and its weight are driven exactly as the presentation component
+            // drives them: take a mark on touchdown, ramp the weight, release on lift-off.
+            const bool bStance=AnkleCS[Step].Z<StanceCeiling;
+            if(bStance&&!bWasStance){Mark=Body->GetComponentTransform().TransformPosition(AnkleCS[Step]);Alpha=0.f;}
+            if(bStance)Alpha=FMath::FInterpTo(Alpha,1.f,Dt,18.f);else Alpha=FMath::FInterpTo(Alpha,0.f,Dt,24.f);
+            Sample(Step,ActorPos,bLock,Mark,Alpha);
+            const FVector Ankle=Body->GetBoneLocation(TEXT("foot_l"));
+            if(bStance&&bWasStance)
+            {
+                // Only horizontal travel counts; a heel rolling up off the ground is correct.
+                Skate+=FVector::Dist2D(Ankle,LastAnkle);++Frames;
+            }
+            LastAnkle=Ankle;bWasStance=bStance;
+        }
+        return TPair<float,int32>(Skate,Frames);
+    };
+    const auto Before=MeasureSkate(false);
+    const auto After=MeasureSkate(true);
+    AddInfo(FString::Printf(TEXT("Planted-foot travel over one stride: %.2fcm unassisted -> %.2fcm locked (%d stance frames)"),
+        Before.Key,After.Key,Before.Value));
+    Good&=TestTrue(TEXT("Foot locking reduces planted-foot travel"),After.Key<Before.Key);
+    Good&=TestTrue(TEXT("Locked planted foot is close to stationary"),After.Key<FMath::Max(2.f,Before.Key*.5f));
+    Actor->Destroy();World->DestroyWorld(false);return Good;
+}
 #endif

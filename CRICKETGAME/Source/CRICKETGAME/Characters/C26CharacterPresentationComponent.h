@@ -25,6 +25,13 @@ struct FC26CharacterPoseSample
     float Time=0,PreviousTime=0,Alpha=1,Distance=0,Clock=0,GroundSpeed=0;
 };
 
+struct FC26FootLockState
+{
+    bool bLocked = false;
+    FVector LockedWorldPos = FVector::ZeroVector;
+    float LockAlpha = 0.f;
+};
+
 UCLASS(ClassGroup=(Cricket26),meta=(BlueprintSpawnableComponent))
 class CRICKETGAME_API UC26CharacterPresentationComponent : public UActorComponent
 {
@@ -65,6 +72,27 @@ private:
     FVector LastLeftFoot=FVector::ZeroVector,LastRightFoot=FVector::ZeroVector;
     float FrozenSeconds=0;
     float WarpPrevTime=0.f;
+
+    /** Foot stabilization: a planted foot is pinned to the world point it was planted at,
+        so the animated stride cannot drag it across the pitch. */
+    FC26FootLockState LeftFootLock,RightFootLock;
+    float PelvisCompensationZ=0.f;
+    /** Cached ground plane under the athlete; re-traced only when it can have changed. */
+    FVector GroundProbePos=FVector::ZeroVector;
+    float GroundProbeZ=0.f,GroundProbeAge=1.f;
+    /** Standing ankle height measured from this mesh's own reference pose, not assumed. */
+    float RefAnkleHeight=-1.f;
+    /** Mesh-only yaw lag absorbing authoritative-rotation snaps. Gameplay rotation is untouched. */
+    float MeshYawOffset=0.f,LastAuthoritativeYaw=0.f;
+    bool bInitializedYaw=false;
+    /** Continuous stride phase in seconds, advanced by distance travelled, so a clip change
+        (Walk->Run) resumes the cycle instead of jumping to a new absolute time. */
+    float LocomotionPhase=0.f;
+
+    void UpdateFootStabilization(const AC26Athlete* Athlete,float Dt);
+    void UpdateOrientationSmoothing(const AC26Athlete* Athlete,float Dt);
+    static bool StateAllowsFootLock(FName State);
+
     void UpdateWarp(const AC26Athlete* Athlete,const FC26CricketClip* Clip);
     void LearnWarp(const AC26Athlete* Athlete);
     UPROPERTY(Transient) TObjectPtr<ACameraActor> ReviewCamera;

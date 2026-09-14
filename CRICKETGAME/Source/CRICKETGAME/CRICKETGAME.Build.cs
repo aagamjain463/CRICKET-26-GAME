@@ -26,6 +26,7 @@ public class CRICKETGAME : ModuleRules
 			"Json",
 			"JsonUtilities",
             "AnimGraphRuntime",
+            "AnimationCore",
             "RenderCore"
 		});
 

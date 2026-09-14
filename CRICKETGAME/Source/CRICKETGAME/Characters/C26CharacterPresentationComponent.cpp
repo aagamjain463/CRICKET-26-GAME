@@ -292,6 +292,26 @@ FName UC26CharacterPresentationComponent::ReadyKey() const
     default:return TEXT("FielderReady");
     }
 }
+namespace C26Locomotion
+{
+    /** Entering locomotion costs more speed than leaving it keeps; the gap is the hysteresis band. */
+    static constexpr float StartSpeed=22.f,StopSpeed=10.f;
+    /** Hip-to-ankle reach; a lock is released before the solver has to straighten past this. */
+    static constexpr float LegReach=86.f;
+    /** Authored ankle clearance that counts as the stride having genuinely lifted the foot. */
+    static constexpr float LiftHeight=8.f;
+}
+bool UC26CharacterPresentationComponent::StateAllowsFootLock(FName State)
+{
+    // Only the shared locomotion and stance clips. Batting, bowling and fielding actions carry
+    // authored footwork owned by other work; pinning a foot through a front-foot stride would
+    // drag it. Those clips fall back to the animated pose untouched.
+    static const TSet<FName> Allowed={TEXT("Walk"),TEXT("Run"),TEXT("Start"),TEXT("Stop"),
+        TEXT("TurnLeft"),TEXT("TurnRight"),TEXT("BatterRun_L"),TEXT("BatterRun_R"),
+        TEXT("KeeperShuffle"),TEXT("UmpireWalk"),TEXT("FielderReady"),TEXT("KeeperReady"),
+        TEXT("UmpireReady"),TEXT("BowlerReady"),TEXT("NonStrikerReady")};
+    return Allowed.Contains(State);
+}
 FName UC26CharacterPresentationComponent::SelectState(const AC26Athlete* Athlete,float Dt)
 {
     const bool Batter=VisualRole==EC26VisualRole::Batter||VisualRole==EC26VisualRole::NonStriker;
@@ -315,7 +335,9 @@ FName UC26CharacterPresentationComponent::SelectState(const AC26Athlete* Athlete
     case EC26Action::SignalWide:return TEXT("SignalWide");
     default:break;
     }
-    const bool Moving=Locomotion.GroundSpeed>12.f;
+    // Hysteresis: a single threshold made an athlete hovering near it flap between idle and
+    // locomotion, restarting Start/Stop every few frames, which is the loudest popping source.
+    const bool Moving=bWasMoving?Locomotion.GroundSpeed>C26Locomotion::StopSpeed:Locomotion.GroundSpeed>C26Locomotion::StartSpeed;
     if(Dt>0.f)
     {
         if(Moving!=bWasMoving){Transition=Moving?TEXT("Start"):TEXT("Stop");TransitionAge=0;}
@@ -326,7 +348,12 @@ FName UC26CharacterPresentationComponent::SelectState(const AC26Athlete* Athlete
     if(!Transition.IsNone())
     {
         const auto* Clip=Profile->FindClip(Transition);
-        if(Clip&&TransitionAge<Clip->Sequence->GetPlayLength())return Transition;
+        // Leave a transition as soon as the body has actually finished doing it. Holding a Start
+        // clip while already at full pace, or a Stop clip after the athlete is stationary, is a
+        // stride the ground no longer justifies: the planted foot skates for the remainder.
+        const bool Spent=Transition==TEXT("Start")?(Locomotion.GroundSpeed>220.f&&TransitionAge>.22f)
+            :Transition==TEXT("Stop")?(Locomotion.GroundSpeed<5.f&&TransitionAge>.25f):false;
+        if(Clip&&!Spent&&TransitionAge<Clip->Sequence->GetPlayLength())return Transition;
         Transition=NAME_None;
     }
     if(Moving)
@@ -342,7 +369,159 @@ void UC26CharacterPresentationComponent::ResetMotion()
 {
     Locomotion.Reset(GetOwner()->GetActorTransform());Clock=BlendClock=0;Transition=NAME_None;bWasMoving=false;
     CurrentClip=nullptr;CurrentState=NAME_None;FrozenSeconds=0;
-    if(Body)Body->SetRelativeLocation(FVector::ZeroVector);
+    LeftFootLock=RightFootLock=FC26FootLockState();PelvisCompensationZ=0.f;
+    MeshYawOffset=0.f;bInitializedYaw=false;LocomotionPhase=0.f;GroundProbeAge=1.f;
+    if(Body)
+    {
+        Body->SetRelativeLocation(FVector::ZeroVector);
+        // A teleport must not leave the mesh wearing the previous frame's yaw lag.
+        if(Profile)Body->SetRelativeRotation(Profile->MeshToGameplayRotation);
+    }
+}
+void UC26CharacterPresentationComponent::UpdateOrientationSmoothing(const AC26Athlete* Athlete,float Dt)
+{
+    // PART C. The simulation re-aims fielders and the striker in a single frame, so the mesh
+    // used to rotate instantaneously under a pose whose feet were planted. This carries a
+    // mesh-only yaw offset that absorbs the snap and unwinds over ~100ms. The actor's rotation,
+    // and therefore every gameplay query that reads it, is never touched.
+    if(!Body||!Profile)return;
+    const float Yaw=Athlete->GetActorRotation().Yaw;
+    if(!bInitializedYaw){LastAuthoritativeYaw=Yaw;bInitializedYaw=true;MeshYawOffset=0.f;return;}
+    const float Delta=FMath::FindDeltaAngleDegrees(LastAuthoritativeYaw,Yaw);
+    LastAuthoritativeYaw=Yaw;
+    // A turn the athlete could plausibly have run through is left alone; only discontinuities
+    // (a re-aim of more than ~15 degrees inside one frame) are absorbed.
+    if(Dt>0.f&&FMath::Abs(Delta)>15.f)MeshYawOffset=FMath::Clamp(MeshYawOffset-Delta,-135.f,135.f);
+    MeshYawOffset=FMath::Abs(MeshYawOffset)>.05f?FMath::FInterpTo(MeshYawOffset,0.f,Dt,14.f):0.f;
+    const FRotator Base=Profile->MeshToGameplayRotation;
+    Body->SetRelativeRotation(FRotator(Base.Pitch,Base.Yaw+MeshYawOffset,Base.Roll));
+}
+void UC26CharacterPresentationComponent::UpdateFootStabilization(const AC26Athlete* Athlete,float Dt)
+{
+    // PART A. Planted-foot locking. Each frame the previous pose's ankle is compared against the
+    // ground; an ankle that is at ground height and is meant to be carrying weight is pinned to
+    // the world point where it landed, and the leg is solved back to that point until either the
+    // stride lifts it or the hip has travelled far enough that holding on would straighten the
+    // knee. The lock weight is a filtered ramp, so a foot is never teleported on or off a mark.
+    auto* Anim=Cast<UC26CricketerAnimInstance>(Body?Body->GetAnimInstance():nullptr);
+    if(!Anim)return;
+    // Performance: two-bone IK on a pair of legs is cheap, but it is not free across a full
+    // fielding side. Athletes that are hidden, distant, or running at reduced quality skip it
+    // outright; at that range a sliding foot is well under a pixel, so dropping it is invisible.
+    if(!Profile||!Body->IsVisible()||Body->GetPredictedLODLevel()>1||Quality==EC26CharacterQuality::Low)
+    {
+        Anim->FootIKWeight=Anim->LeftFootLockAlpha=Anim->RightFootLockAlpha=Anim->PelvisOffsetZ=0.f;
+        LeftFootLock=RightFootLock=FC26FootLockState();PelvisCompensationZ=0.f;
+        return;
+    }
+    // Entering an action the shared foundation does not own (a shot, a delivery, a dive) releases
+    // any held mark, but releases it by fading the weight out. Cutting the weight to zero on the
+    // frame the state changes would snap the ankle back to the authored pose, which is precisely
+    // the popping this work exists to remove.
+    const bool bAllowNewMarks=StateAllowsFootLock(CurrentState);
+
+    // The height a planted ankle sits at is a property of the body, so it is measured from the
+    // reference pose once rather than assumed. Guessing it high floats the foot above the pitch;
+    // guessing it low presses it through.
+    if(RefAnkleHeight<0.f)
+    {
+        RefAnkleHeight=0.f;
+        if(const USkeletalMesh* Asset=Body->GetSkeletalMeshAsset())
+        {
+            const FReferenceSkeleton& Ref=Asset->GetRefSkeleton();
+            auto RefAnkleZ=[&Ref](FName Bone)
+            {
+                const int32 Index=Ref.FindBoneIndex(Bone);
+                if(Index==INDEX_NONE)return 0.f;
+                FTransform Accumulated=FTransform::Identity;
+                for(int32 I=Index;I!=INDEX_NONE;I=Ref.GetParentIndex(I))Accumulated*=Ref.GetRefBonePose()[I];
+                return float(Accumulated.GetLocation().Z);
+            };
+            RefAnkleHeight=FMath::Min(RefAnkleZ(Profile->LeftFootBone),RefAnkleZ(Profile->RightFootBone));
+        }
+        UE_LOG(LogTemp,Display,TEXT("C26_CHARACTER_ANKLE_HEIGHT mesh=%s height=%.2fcm"),*GetNameSafe(Body->GetSkeletalMeshAsset()),RefAnkleHeight);
+    }
+
+    const FVector ActorLoc=Athlete->GetActorLocation();
+    // The outfield is effectively a plane, so the trace is cached and refreshed only when the
+    // athlete has actually moved or the cache has aged out.
+    GroundProbeAge+=FMath::Max(0.f,Dt);
+    if(GroundProbeAge>.25f||FVector::DistSquared2D(GroundProbePos,ActorLoc)>625.f)
+    {
+        GroundProbeAge=0.f;GroundProbePos=ActorLoc;GroundProbeZ=ActorLoc.Z;
+        if(UWorld* World=Athlete->GetWorld())
+        {
+            FHitResult Hit;
+            FCollisionQueryParams Params(SCENE_QUERY_STAT(C26FootGround),false,Athlete);
+            if(World->LineTraceSingleByChannel(Hit,ActorLoc+FVector(0,0,60.f),ActorLoc-FVector(0,0,120.f),ECC_WorldStatic,Params))
+                GroundProbeZ=Hit.ImpactPoint.Z;
+        }
+    }
+    const float PlantedAnkleZ=GroundProbeZ+RefAnkleHeight;
+
+    const FTransform ToWorld=Body->GetComponentTransform();
+    // Landing tolerance widens as the athlete slows: a decelerating or settling stride plants
+    // heavily and the authored ankle sits further off the plane than it does at a steady jog.
+    const float PlantTolerance=Locomotion.GroundSpeed<60.f?6.f:4.f;
+
+    // Judge every plant and lift from the authored pose, never from the stabilized skeleton.
+    // Feeding the solver its own output would make a held foot look permanently grounded, so it
+    // would never be released and the leg would drag until the hip tore it off the mark.
+    const bool bCleanFeet=Anim->bAnimatedFeetValid;
+    auto Process=[&](FC26FootLockState& Lock,FName FootBone,FName ThighBone,const FVector& AnimatedCS,float& OutAlpha,FVector& OutTarget)
+    {
+        const FVector Foot=bCleanFeet?ToWorld.TransformPosition(AnimatedCS):Body->GetSocketLocation(FootBone);
+        const FVector Hip=Body->GetSocketLocation(ThighBone);
+        const float AboveGround=Foot.Z-PlantedAnkleZ;
+
+        // Only take a fresh mark once the previous one has faded out, otherwise the solver would
+        // jump the foot from one world point to another inside a single frame. Marking at ground
+        // height rather than at the authored height is what conforms the foot to the pitch.
+        if(bAllowNewMarks&&!Lock.bLocked&&Lock.LockAlpha<.25f&&FMath::Abs(AboveGround)<PlantTolerance)
+        {
+            Lock.bLocked=true;
+            Lock.LockedWorldPos=FVector(Foot.X,Foot.Y,PlantedAnkleZ);
+        }
+        if(Lock.bLocked)
+        {
+            // Release before the knee has to lock out, and release as soon as the authored stride
+            // genuinely lifts the foot. Turning on the spot and shuffling are near-zero ground
+            // speed but do pick the feet up, so lift-off is checked at every speed. Both releases
+            // fade the weight out rather than switching it.
+            const float Reach=FVector::Dist(Hip,Lock.LockedWorldPos);
+            if(!bAllowNewMarks)Lock.bLocked=false;
+            else if(Reach>C26Locomotion::LegReach*.94f)Lock.bLocked=false;
+            else if(AboveGround>C26Locomotion::LiftHeight)Lock.bLocked=false;
+        }
+        Lock.LockAlpha=FMath::FInterpTo(Lock.LockAlpha,Lock.bLocked?1.f:0.f,Dt,Lock.bLocked?18.f:24.f);
+        if(Lock.LockAlpha<=.001f){Lock.LockAlpha=0.f;OutAlpha=0.f;OutTarget=ToWorld.InverseTransformPosition(Foot);return;}
+        // The solver is given the mark itself; LockAlpha is the weight the solved leg is blended
+        // in at, so partial weights read as the leg easing onto and off the mark.
+        OutAlpha=Lock.LockAlpha;
+        OutTarget=ToWorld.InverseTransformPosition(Lock.LockedWorldPos);
+    };
+    const FVector LeftAnimated=bCleanFeet?ToWorld.TransformPosition(Anim->AnimatedLeftFootCS):Body->GetSocketLocation(Profile->LeftFootBone);
+    const FVector RightAnimated=bCleanFeet?ToWorld.TransformPosition(Anim->AnimatedRightFootCS):Body->GetSocketLocation(Profile->RightFootBone);
+    Process(LeftFootLock,Profile->LeftFootBone,TEXT("thigh_l"),Anim->AnimatedLeftFootCS,Anim->LeftFootLockAlpha,Anim->LeftFootTargetCS);
+    Process(RightFootLock,Profile->RightFootBone,TEXT("thigh_r"),Anim->AnimatedRightFootCS,Anim->RightFootLockAlpha,Anim->RightFootTargetCS);
+    Anim->FootIKWeight=1.f;
+
+    // Subtle pelvis compensation: when a held mark sits below the animated ankle the leg would
+    // have to reach for it, so the hips drop by the deeper of the two gaps and the knees keep
+    // their flex. Clamped to a few centimetres so it never reads as a crouch.
+    //
+    // Only the "mark below the ankle" case is compensated. That is the one direction that can
+    // pull the leg straight, because the solver has to travel further down than the authored
+    // pose did. A mark ABOVE the ankle needs nothing: the solver reaches it by bending, so
+    // sinking the pelvis there would only add a crouch the stride never asked for.
+    float Desired=0.f;
+    const float LeftGap=-FMath::Max(0.f,float(LeftAnimated.Z)-PlantedAnkleZ);
+    const float RightGap=-FMath::Max(0.f,float(RightAnimated.Z)-PlantedAnkleZ);
+    if(LeftFootLock.LockAlpha>.1f&&RightFootLock.LockAlpha>.1f)Desired=FMath::Min(LeftGap,RightGap);
+    else if(LeftFootLock.LockAlpha>.1f)Desired=LeftGap*.5f;
+    else if(RightFootLock.LockAlpha>.1f)Desired=RightGap*.5f;
+    PelvisCompensationZ=FMath::FInterpTo(PelvisCompensationZ,FMath::Clamp(Desired,-6.f,0.f),Dt,12.f);
+    Anim->PelvisOffsetZ=PelvisCompensationZ;
 }
 void UC26CharacterPresentationComponent::UpdateFromMatch(AC26Athlete* Athlete,float Dt)
 {
@@ -382,13 +561,29 @@ void UC26CharacterPresentationComponent::UpdateFromMatch(AC26Athlete* Athlete,fl
         UpdateWarp(Athlete,Clip);
     }
     BlendClock+=FMath::Max(0.f,Dt);
+    // The outgoing pose kept playing before the blend started; freezing it at the switch frame
+    // reads as the body stalling for the blend duration. Keep advancing it until it is inaudible.
+    if(Anim->PreviousSequence&&BlendClock<Clip->BlendSeconds)
+    {
+        const float PrevLength=Anim->PreviousSequence->GetPlayLength();
+        if(PrevLength>.01f)Anim->PreviousTime=FMath::Fmod(Anim->PreviousTime+FMath::Max(0.f,Dt),PrevLength);
+    }
     float Time=Athlete->ActionTime;
     if(State==Transition)Time=TransitionAge;
     else if(Clip->Loop)
     {
         const bool Move=State==TEXT("Run")||State==TEXT("Walk")||State==TEXT("BatterRun_R")||State==TEXT("BatterRun_L")||State==TEXT("KeeperShuffle")||State==TEXT("UmpireWalk");
-        Time=Move?Locomotion.Distance/FMath::Max(1.f,Clip->GroundSpeed):Clock;
-        Time=FMath::Fmod(Time,Clip->Sequence->GetPlayLength());
+        const float Length=Clip->Sequence->GetPlayLength();
+        if(Move)
+        {
+            // Still stride-matched to ground distance, but advanced incrementally. Reading the
+            // phase straight off cumulative Distance made Walk->Run jump to an unrelated frame
+            // (the two clips cover different ground per cycle), which popped both feet at once.
+            LocomotionPhase+=Locomotion.GroundSpeed*FMath::Max(0.f,Dt)/FMath::Max(1.f,Clip->GroundSpeed);
+            if(Length>.01f)LocomotionPhase=FMath::Fmod(LocomotionPhase,Length);
+            Time=LocomotionPhase;
+        }
+        else Time=FMath::Fmod(Clock,Length);
     }
     else if(!Clip->Event.IsNone())
     {
@@ -404,6 +599,8 @@ void UC26CharacterPresentationComponent::UpdateFromMatch(AC26Athlete* Athlete,fl
     if(Dt==0.f&&!Clip->Event.IsNone()&&FMath::IsNearlyEqual(Time,Clip->EventTime(),.001f))Anim->BlendAlpha=1.f;
     Anim->GroundSpeed=Locomotion.GroundSpeed;Anim->MovementDirection=Locomotion.Direction;
     Anim->Acceleration=Locomotion.Acceleration;Anim->TurnRate=Locomotion.TurnRate;Anim->State=State;
+    UpdateOrientationSmoothing(Athlete,Dt);
+    UpdateFootStabilization(Athlete,Dt);
     Body->TickAnimation(FMath::Max(0.f,Dt),false);Body->RefreshBoneTransforms();
     LearnWarp(Athlete);
     Debug(Athlete,Dt);
@@ -478,9 +675,13 @@ void UC26CharacterPresentationComponent::Debug(const AC26Athlete* Athlete,float 
     }
     if(C26CharacterDebug.GetValueOnGameThread())
     {
-        const FString Text=FString::Printf(TEXT("%s Role:%d %s\n%s LOD:%d Speed:%.0f Dir:%.0f\nAnim:%s Gear:%d RootMotion:off RuntimeIK:off"),
+        // RuntimeIK is no longer off, so report the live stabilizer weights instead of asserting
+        // a constant: an in-match capture can then prove the solver engaged rather than trust it.
+        const auto* Anim=Cast<UC26CricketerAnimInstance>(Body->GetAnimInstance());
+        const FString Text=FString::Printf(TEXT("%s Role:%d %s\n%s LOD:%d Speed:%.0f Dir:%.0f\nAnim:%s Gear:%d RootMotion:off FootIK:%.2f Lock:L%.2f R%.2f Pelvis:%.1f"),
             *Appearance.PlayerID.ToString(),int32(VisualRole),*CurrentState.ToString(),*GetNameSafe(Body->GetSkeletalMeshAsset()),Body->GetPredictedLODLevel(),
-            Locomotion.GroundSpeed,Locomotion.Direction,*GetNameSafe(Body->GetAnimClass()),Equipment.Num());
+            Locomotion.GroundSpeed,Locomotion.Direction,*GetNameSafe(Body->GetAnimClass()),Equipment.Num(),
+            Anim?Anim->FootIKWeight:0.f,Anim?Anim->LeftFootLockAlpha:0.f,Anim?Anim->RightFootLockAlpha:0.f,Anim?Anim->PelvisOffsetZ:0.f);
         DrawDebugString(GetWorld(),Athlete->GetActorLocation()+FVector(0,0,210),Text,nullptr,FColor::White,0.f,true);
         DrawDebugSphere(GetWorld(),BallHandPosition(),3.f,8,FColor::Cyan,false,0.f);
         for(FName Foot:{Profile->LeftFootBone,Profile->RightFootBone})DrawDebugSphere(GetWorld(),Body->GetBoneLocation(Foot),4.f,8,FColor::Green,false,0.f);
