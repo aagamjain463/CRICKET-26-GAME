@@ -27,6 +27,31 @@ FINGERS = ('thumb', 'index', 'middle', 'ring', 'pinky')
 SPINE = ('spine_01', 'spine_02', 'spine_03', 'spine_04', 'spine_05')
 
 
+def make_from_zx(z, x):
+    z = z.normalized()
+    x = (x - z * x.dot(z)).normalized()
+    y = z.cross(x)
+    return Matrix((x, y, z)).transposed().to_4x4()
+
+
+# Canonical bat socket relative transforms computed at authentic stance.
+# Used to orient the primary batting hand so the attached bat mesh aligns exactly
+# with the authored bat position and blade plane across all frames.
+BAT_OFFSET_L = Matrix([
+    (-0.222148, -0.578748, -0.784666, -3.531000),
+    (-0.771659, -0.387561, 0.504320, 2.269439),
+    (-0.595980, 0.717529, -0.360501, -1.622257),
+    (0.000000, 0.000000, 0.000000, 1.000000),
+])
+
+BAT_OFFSET_R = Matrix([
+    (-0.222148, 0.578748, 0.784666, 3.531000),
+    (0.771659, -0.387561, 0.504320, 2.269439),
+    (0.595980, 0.717529, -0.360501, -1.622257),
+    (0.000000, 0.000000, 0.000000, 1.000000),
+])
+
+
 def update():
     bpy.context.view_layer.update()
 
@@ -221,6 +246,8 @@ def to_rig(spec):
             out[key] = tuple(value[:3]) + ((value[3], -value[4], value[5]) if len(value) > 3 else ())
         elif key in _ROT_KEYS or key.startswith(('clav_', 'wrist_', 'ankle_')):
             out[key] = tuple(value)
+        elif key in ('shaft', 'face'):
+            out[key] = (value[0], -value[1], value[2])
         elif isinstance(value, tuple) and value and value[0] in ('R', 'OFF'):
             out[key] = value          # already expressed relative to the body
         else:
@@ -233,7 +260,8 @@ def apply(rig, spec):
 
     Keys: pelvis (rx,ry,rz,dx,dy,dz) | spine | chest | neck | head | clav_l/r |
     hand_l/hand_r (IK target) | elbow_l/elbow_r (pole) | wrist_l/wrist_r (rx,ry,rz after IK) |
-    foot_l/foot_r (IK target) | knee_l/knee_r (pole) | ankle_l/ankle_r | grip_l/grip_r
+    foot_l/foot_r (IK target) | knee_l/knee_r (pole) | ankle_l/ankle_r | grip_l/grip_r |
+    shaft (bat handle vector) | face (bat blade hitting face normal)
     """
     spec = to_rig(spec)
     clear(rig)
@@ -287,6 +315,19 @@ def apply(rig, spec):
         pelvis.location += M.inverted() @ Vector((0, 0, -deficit))
         update()
 
+    # If a batting shaft is specified, calculate the dependent bottom-hand target along the handle
+    if 'shaft' in spec:
+        sh = Vector(spec['shaft']).normalized()
+        grip_dist = 8.5
+        if 'hand_l' in spec and 'hand_r' not in spec:
+            hl = _resolve(rig, spec, 'hand_l', 'upperarm_l', arm, solved)
+            if hl is not None:
+                solved['hand_r'] = hl - sh * grip_dist
+        elif 'hand_r' in spec and 'hand_l' not in spec:
+            hr = _resolve(rig, spec, 'hand_r', 'upperarm_r', arm, solved)
+            if hr is not None:
+                solved['hand_l'] = hr - sh * grip_dist
+
     # Mirroring swaps the OFF dependency: the left wrist then depends on the
     # right. A fixed left-then-right pass silently omitted the left arm entirely.
     for _ in range(2):
@@ -333,6 +374,19 @@ def apply(rig, spec):
         g = spec.get(f'grip_{side}')
         if g:
             grip(rig, side, g)
+
+    # Orient the bat-holding hand so the bat precisely follows the authored shaft and face vectors
+    if 'shaft' in spec and 'face' in spec:
+        sh = Vector(spec['shaft']).normalized()
+        fc = Vector(spec['face']).normalized()
+        bat_side = 'r' if ('hand_r' in spec and 'hand_l' not in spec) else 'l'
+        top_pos = solved.get(f'hand_{bat_side}')
+        if top_pos is not None:
+            bat_m = Matrix.Translation(Vector(top_pos) + sh * 4.5) @ make_from_zx(sh, fc)
+            hand_bone = rig.pose.bones[f'hand_{bat_side}']
+            off = BAT_OFFSET_R if bat_side == 'r' else BAT_OFFSET_L
+            hand_bone.matrix = bat_m @ off.inverted()
+            update()
 
     apply.last_targets = solved
     for side in ('l', 'r'):
@@ -384,6 +438,8 @@ def mirror(spec):
             out[k] = (value[0], -value[1], -value[2]) + ((-value[3], value[4], value[5]) if len(value) > 3 else ())
         elif key in ('spine', 'chest', 'neck', 'head') or key.startswith(('clav_', 'wrist_', 'ankle_')):
             out[k] = (value[0], -value[1], -value[2])
+        elif key in ('shaft', 'face'):
+            out[k] = (-value[0], value[1], value[2])
         else:  # IK targets and poles are positions
             out[k] = (-value[0], value[1], value[2])
     return out

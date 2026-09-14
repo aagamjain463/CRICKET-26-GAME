@@ -304,7 +304,7 @@
   "event_time": null,
   "loop": true,
   "ground_speed": 300.0,
-  "length": 0.6,
+  "length": 0.5333,
   "fps": 30
  },
  {
