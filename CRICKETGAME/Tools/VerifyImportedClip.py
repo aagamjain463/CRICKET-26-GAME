@@ -158,6 +158,30 @@ def main():
         check('%s: head does not drop through the stroke' % name,
               at(contact, 'Head')[2] > hpC[2] + 40.0,
               'head %.1f cm above hips' % (at(contact, 'Head')[2] - hpC[2]))
+
+        # Chest faces the bowler. The reference direction is the way the body
+        # TRAVELS through the drive, not the line between the feet: a batsman's
+        # feet are largely side by side across the crease, so back-foot-to-front-foot
+        # is nowhere near "down the pitch" and using it makes this check lie. The
+        # travel direction cannot be fooled -- he drives at the bowler.
+        #
+        # This is also the guard against a whole-body yaw bug, which this pipeline
+        # has had before (see repair_facing in c26_anim_author.py): a 180 degree
+        # twist sends the chest normal anti-parallel, ~143 degrees, and fails.
+        u_dir = n2(h(at(0, 'Hips'), at(contact, 'Hips')))
+        s = n2(h(at(0, 'RightShoulder'), at(0, 'LeftShoulder')))
+        cand = [(-s[1], s[0]), (s[1], -s[0])]
+        normal = cand[0] if dot(cand[0], u_dir) > dot(cand[1], u_dir) else cand[1]
+        off = math.degrees(math.acos(max(-1.0, min(1.0, dot(normal, u_dir)))))
+        check('%s: chest faces the bowler at the stance' % name, off < 60.0,
+              'chest %.1f deg off square' % off)
+        # A shoulder line that ran along the direction of travel would mean the
+        # batsman is standing front-on (or twisted); either way the stance above
+        # would have caught it, but this names the failure precisely.
+        check('%s: the stance is side-on, not square to the bowler' % name,
+              abs(dot(s, u_dir)) < 0.75,
+              'shoulder line %.1f deg off the line of travel'
+              % math.degrees(math.acos(max(-1.0, min(1.0, abs(dot(s, u_dir)))))))
         say('')
 
     failed = results.count(False)
