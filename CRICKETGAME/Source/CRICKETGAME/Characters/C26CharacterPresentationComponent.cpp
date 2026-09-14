@@ -315,6 +315,17 @@ float C26Presentation::StepMeshYawOffset(float Offset,float AuthoritativeYawDelt
         Offset=FMath::Clamp(Offset-AuthoritativeYawDelta,-MaxMeshYawLag,MaxMeshYawLag);
     return FMath::Abs(Offset)>.05f?FMath::FInterpTo(Offset,0.f,Dt,14.f):0.f;
 }
+float C26Presentation::AdvanceOutgoingPose(float PreviousTime,float PreviousLength,float Dt)
+{
+    // Wrapped, so a clip that reaches its end mid-blend restarts rather than clamping at the last
+    // frame -- clamping is the same freeze this exists to remove, just one clip-length later.
+    if(PreviousLength<=.01f)return PreviousTime;
+    return FMath::Fmod(PreviousTime+FMath::Max(0.f,Dt),PreviousLength);
+}
+float C26Presentation::BlendWeight(float BlendClock,float BlendSeconds)
+{
+    return FMath::SmoothStep(0.f,FMath::Max(MinBlendSeconds,BlendSeconds),BlendClock);
+}
 bool UC26CharacterPresentationComponent::StateAllowsFootLock(FName State)
 {
     // Only the shared locomotion and stance clips. Batting, bowling and fielding actions carry
@@ -575,10 +586,8 @@ void UC26CharacterPresentationComponent::UpdateFromMatch(AC26Athlete* Athlete,fl
     // The outgoing pose kept playing before the blend started; freezing it at the switch frame
     // reads as the body stalling for the blend duration. Keep advancing it until it is inaudible.
     if(Anim->PreviousSequence&&BlendClock<Clip->BlendSeconds)
-    {
-        const float PrevLength=Anim->PreviousSequence->GetPlayLength();
-        if(PrevLength>.01f)Anim->PreviousTime=FMath::Fmod(Anim->PreviousTime+FMath::Max(0.f,Dt),PrevLength);
-    }
+        Anim->PreviousTime=C26Presentation::AdvanceOutgoingPose(Anim->PreviousTime,
+            Anim->PreviousSequence->GetPlayLength(),Dt);
     float Time=Athlete->ActionTime;
     if(State==Transition)Time=TransitionAge;
     else if(Clip->Loop)
@@ -605,7 +614,7 @@ void UC26CharacterPresentationComponent::UpdateFromMatch(AC26Athlete* Athlete,fl
     }
     else Time=FMath::Min(Time,Clip->Sequence->GetPlayLength());
     Anim->CurrentSequence=Clip->Sequence;Anim->CurrentTime=Time;
-    Anim->BlendAlpha=FMath::SmoothStep(0.f,FMath::Max(.02f,Clip->BlendSeconds),BlendClock);
+    Anim->BlendAlpha=C26Presentation::BlendWeight(BlendClock,Clip->BlendSeconds);
     // An exact authoritative contact sample must render that event pose this frame.
     if(Dt==0.f&&!Clip->Event.IsNone()&&FMath::IsNearlyEqual(Time,Clip->EventTime(),.001f))Anim->BlendAlpha=1.f;
     Anim->GroundSpeed=Locomotion.GroundSpeed;Anim->MovementDirection=Locomotion.Direction;

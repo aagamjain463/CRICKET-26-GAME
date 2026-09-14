@@ -47,6 +47,8 @@ namespace C26Presentation
     inline constexpr float OrientationSnapDegrees=15.f;
     /** Bound on the mesh yaw lag, so even a 180 degree re-aim cannot spin the body. */
     inline constexpr float MaxMeshYawLag=135.f;
+    /** Shortest blend the presentation will run; below this the switch is a visible pop. */
+    inline constexpr float MinBlendSeconds=.02f;
 
     /** True when the athlete should be in locomotion. The band between StopSpeed and StartSpeed
         holds whatever state the athlete is already in, so a speed hovering at the boundary cannot
@@ -58,6 +60,13 @@ namespace C26Presentation
     /** One frame of mesh-only yaw lag: absorbs an authoritative re-aim discontinuity, then unwinds
         it. Returns the new lag in degrees; the actor rotation is never involved. */
     CRICKETGAME_API float StepMeshYawOffset(float Offset,float AuthoritativeYawDelta,float Dt);
+    /** Advances the outgoing pose while a blend is running. Freezing it at the switch frame reads
+        as the body stalling for the whole blend, which is what an action->recovery hand-back
+        looked like; the outgoing clip keeps playing until it is inaudible. */
+    CRICKETGAME_API float AdvanceOutgoingPose(float PreviousTime,float PreviousLength,float Dt);
+    /** Weight of the incoming clip after BlendClock seconds of a BlendSeconds blend. Smoothstep,
+        so the pose leaves and arrives with zero velocity instead of snapping at both ends. */
+    CRICKETGAME_API float BlendWeight(float BlendClock,float BlendSeconds);
 }
 
 UCLASS(ClassGroup=(Cricket26),meta=(BlueprintSpawnableComponent))

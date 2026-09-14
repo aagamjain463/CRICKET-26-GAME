@@ -176,9 +176,10 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FC26FootSkateTest,"Cricket26.Characters.FootSka
 bool FC26FootSkateTest::RunTest(const FString& Parameters)
 {
     // Measures the thing the work claims to fix: how far a foot that is carrying weight travels
-    // across the ground while it is planted. The in-place run clip is played back while the actor
-    // is translated at the clip's own authored stride speed, so any residual world-space ankle
-    // motion during stance is skate.
+    // across the ground while it is planted, and how large its worst single-frame step is. The
+    // in-place run clip is played back while the actor is translated at the clip's own authored
+    // stride speed, so any residual world-space ankle motion during stance is skate. BOTH feet are
+    // measured: a lock that fixed one leg and snapped the other would pass a single-foot test.
     auto* Clip=LoadObject<UAnimSequence>(nullptr,TEXT("/Game/Cricket26/Characters/Animations/Locomotion/C26_A_Run.C26_A_Run"));
     auto* Mesh=LoadObject<USkeletalMesh>(nullptr,TEXT("/Game/Cricket26/Characters/Bodies/SK_C26_FullBody_Candidate.SK_C26_FullBody_Candidate"));
     if(!TestNotNull(TEXT("Canonical body"),Mesh)||!TestNotNull(TEXT("Locomotion clip"),Clip))return false;
@@ -189,65 +190,114 @@ bool FC26FootSkateTest::RunTest(const FString& Parameters)
     if(!TestNotNull(TEXT("AnimInstance active"),Anim)){Actor->Destroy();World->DestroyWorld(false);return false;}
 
     const int32 Steps=90;const float Length=Clip->GetPlayLength();const float Dt=Length/Steps;
-    auto Sample=[&](int32 Step,const FVector& ActorPos,bool bLock,const FVector& LockWorld,float Alpha)
+    const TCHAR* Bones[]={TEXT("foot_l"),TEXT("foot_r")};
+    auto Sample=[&](int32 Step,int32 Foot,bool bLock,const FVector& LockWorld,float Alpha)
     {
-        Actor->SetActorLocation(ActorPos);
         Anim->PreviousSequence=Anim->CurrentSequence=Clip;Anim->BlendAlpha=1;Anim->CurrentTime=Length*Step/Steps;
-        Anim->FootIKWeight=bLock?1.f:0.f;
-        Anim->LeftFootLockAlpha=bLock?Alpha:0.f;Anim->RightFootLockAlpha=0.f;Anim->PelvisOffsetZ=0.f;
-        if(bLock)Anim->LeftFootTargetCS=Body->GetComponentTransform().InverseTransformPosition(LockWorld);
+        Anim->FootIKWeight=bLock?1.f:0.f;Anim->PelvisOffsetZ=0.f;
+        Anim->LeftFootLockAlpha=Foot==0&&bLock?Alpha:0.f;
+        Anim->RightFootLockAlpha=Foot==1&&bLock?Alpha:0.f;
+        if(bLock)
+        {
+            const FVector TargetCS=Body->GetComponentTransform().InverseTransformPosition(LockWorld);
+            if(Foot==0)Anim->LeftFootTargetCS=TargetCS;else Anim->RightFootTargetCS=TargetCS;
+        }
         Body->TickAnimation(Dt,false);Body->RefreshBoneTransforms();
     };
 
-    // Pass 1: recover the clip's authored stride speed from the stance-phase ankle velocity,
-    // then measure unassisted skate at that speed.
-    float SoleZ=BIG_NUMBER;TArray<FVector> AnkleCS;
-    for(int32 Step=0;Step<=Steps;++Step)
+    // Pass 1: recover each foot's authored stance window and stride speed from its own
+    // component-space ankle motion while the clip plays in place.
+    struct FFootTrace{TArray<FVector> CS;float Ceiling=0.f;FVector PerFrame=FVector::ZeroVector;float Dragged=0.f;int32 StanceFrames=0;};
+    FFootTrace Trace[2];
+    Actor->SetActorLocation(FVector::ZeroVector);
+    for(int32 Foot=0;Foot<2;++Foot)
     {
-        Sample(Step,FVector::ZeroVector,false,FVector::ZeroVector,0.f);
-        const FVector A=Body->GetBoneLocation(TEXT("foot_l"),EBoneSpaces::ComponentSpace);
-        AnkleCS.Add(A);SoleZ=FMath::Min(SoleZ,float(A.Z));
-    }
-    const float StanceCeiling=SoleZ+3.f;
-    FVector Carry=FVector::ZeroVector;int32 StanceFrames=0;
-    for(int32 Step=1;Step<AnkleCS.Num();++Step)
-        if(AnkleCS[Step].Z<StanceCeiling&&AnkleCS[Step-1].Z<StanceCeiling)
-        {Carry+=AnkleCS[Step]-AnkleCS[Step-1];++StanceFrames;}
-    bool Good=TestTrue(TEXT("Clip has a measurable stance phase"),StanceFrames>4);
-    if(!Good){Actor->Destroy();World->DestroyWorld(false);return false;}
-    // The body travels opposite to the way the planted ankle is dragged in component space.
-    const FVector PerFrame=-Carry/StanceFrames;
-    AddInfo(FString::Printf(TEXT("Authored stride: %.0f cm/s over %d stance frames"),PerFrame.Size()/Dt,StanceFrames));
-
-    auto MeasureSkate=[&](bool bLock)
-    {
-        float Skate=0.f;int32 Frames=0;bool bWasStance=false;
-        FVector Mark=FVector::ZeroVector,LastAnkle=FVector::ZeroVector;float Alpha=0.f;
+        float SoleZ=BIG_NUMBER;
         for(int32 Step=0;Step<=Steps;++Step)
         {
-            const FVector ActorPos=PerFrame*Step;
-            // The lock mark and its weight are driven exactly as the presentation component
-            // drives them: take a mark on touchdown, ramp the weight, release on lift-off.
-            const bool bStance=AnkleCS[Step].Z<StanceCeiling;
-            if(bStance&&!bWasStance){Mark=Body->GetComponentTransform().TransformPosition(AnkleCS[Step]);Alpha=0.f;}
+            Sample(Step,Foot,false,FVector::ZeroVector,0.f);
+            const FVector A=Body->GetBoneLocation(Bones[Foot],EBoneSpaces::ComponentSpace);
+            Trace[Foot].CS.Add(A);SoleZ=FMath::Min(SoleZ,float(A.Z));
+        }
+        Trace[Foot].Ceiling=SoleZ+3.f;
+        FVector Carry=FVector::ZeroVector;
+        for(int32 Step=1;Step<Trace[Foot].CS.Num();++Step)
+            if(Trace[Foot].CS[Step].Z<Trace[Foot].Ceiling&&Trace[Foot].CS[Step-1].Z<Trace[Foot].Ceiling)
+            {Carry+=Trace[Foot].CS[Step]-Trace[Foot].CS[Step-1];++Trace[Foot].StanceFrames;}
+        Trace[Foot].Dragged=Carry.Size();
+        Trace[Foot].PerFrame=-Carry/FMath::Max(1,Trace[Foot].StanceFrames);
+    }
+    bool Good=TestTrue(TEXT("Both feet have a measurable stance phase"),
+        Trace[0].StanceFrames>4&&Trace[1].StanceFrames>4);
+    // Report the raw measurement before judging it, so a failure here is diagnosable from the log
+    // alone instead of requiring another instrumented build.
+    const float SpeedL=Trace[0].PerFrame.Size()/Dt,SpeedR=Trace[1].PerFrame.Size()/Dt;
+    for(int32 Foot=0;Foot<2;++Foot)
+        AddInfo(FString::Printf(TEXT("Authored %s stance: %d frames, lowest ankle Z %.2fcm, dragged %.2fcm -> %.0f cm/s"),
+            Foot==0?TEXT("left"):TEXT("right"),Trace[Foot].StanceFrames,
+            double(Trace[Foot].Ceiling-3.f),double(Trace[Foot].Dragged),double(Foot==0?SpeedL:SpeedR)));
+    // The invariant that makes this clip a usable run cycle is how far the ground moves under each
+    // foot per stance, NOT the rate: a foot that is only briefly in contact is dragged the same
+    // distance in fewer frames and so reports a higher cm/s. Asserting the rate would fail on a
+    // perfectly good clip whose two contacts differ in sharpness, so the distance is asserted
+    // tightly and the rate only for gross sanity.
+    const float Short=FMath::Min(Trace[0].Dragged,Trace[1].Dragged);
+    const float Long=FMath::Max(Trace[0].Dragged,Trace[1].Dragged);
+    Good&=TestTrue(FString::Printf(TEXT("Both feet cover the same ground per stance (%.2f vs %.2fcm)"),
+        double(Trace[0].Dragged),double(Trace[1].Dragged)),Short>.8f*Long);
+    const float Slower=FMath::Min(SpeedL,SpeedR),Faster=FMath::Max(SpeedL,SpeedR);
+    Good&=TestTrue(FString::Printf(TEXT("Both feet are dragged at a plausible stride rate (%.0f vs %.0f cm/s)"),SpeedL,SpeedR),
+        Slower>150.f&&Faster<900.f&&Slower>.33f*Faster);
+    if(!Good){Actor->Destroy();World->DestroyWorld(false);return false;}
+    // Each foot is played back at its OWN authored stance speed. The body only travels at one
+    // speed, so the two feet are measured independently and each is judged against the drag it
+    // actually has; using a shared average would silently handicap the faster foot's test.
+
+    struct FSkate{float Travel=0.f,MaxStep=0.f;int32 Frames=0;};
+    auto Measure=[&](int32 Foot,bool bLock)
+    {
+        // The body travels opposite to the way the planted ankle is dragged in component space,
+        // at the rate that foot's own stance phase says the ground is passing under it.
+        const FVector ActorSpeed=Trace[Foot].PerFrame;
+        FSkate Out;bool bWasStance=false;FVector Mark=FVector::ZeroVector,Last=FVector::ZeroVector;float Alpha=0.f;
+        for(int32 Step=0;Step<=Steps;++Step)
+        {
+            // Position the body BEFORE taking the mark, so the mark really is the world point the
+            // ankle lands on in the frame it lands.
+            Actor->SetActorLocation(ActorSpeed*Step);
+            // The lock mark and its weight are driven exactly as the presentation component drives
+            // them: take a mark on touchdown, ramp the weight, release on lift-off.
+            const bool bStance=Trace[Foot].CS[Step].Z<Trace[Foot].Ceiling;
+            if(bStance&&!bWasStance){Mark=Body->GetComponentTransform().TransformPosition(Trace[Foot].CS[Step]);Alpha=0.f;}
             if(bStance)Alpha=FMath::FInterpTo(Alpha,1.f,Dt,18.f);else Alpha=FMath::FInterpTo(Alpha,0.f,Dt,24.f);
-            Sample(Step,ActorPos,bLock,Mark,Alpha);
-            const FVector Ankle=Body->GetBoneLocation(TEXT("foot_l"));
+            Sample(Step,Foot,bLock,Mark,Alpha);
+            const FVector Ankle=Body->GetBoneLocation(Bones[Foot]);
             if(bStance&&bWasStance)
             {
                 // Only horizontal travel counts; a heel rolling up off the ground is correct.
-                Skate+=FVector::Dist2D(Ankle,LastAnkle);++Frames;
+                const float Step2D=FVector::Dist2D(Ankle,Last);
+                Out.Travel+=Step2D;Out.MaxStep=FMath::Max(Out.MaxStep,Step2D);++Out.Frames;
             }
-            LastAnkle=Ankle;bWasStance=bStance;
+            Last=Ankle;bWasStance=bStance;
         }
-        return TPair<float,int32>(Skate,Frames);
+        return Out;
     };
-    const auto Before=MeasureSkate(false);
-    const auto After=MeasureSkate(true);
-    AddInfo(FString::Printf(TEXT("Planted-foot travel over one stride: %.2fcm unassisted -> %.2fcm locked (%d stance frames)"),
-        Before.Key,After.Key,Before.Value));
-    Good&=TestTrue(TEXT("Foot locking reduces planted-foot travel"),After.Key<Before.Key);
-    Good&=TestTrue(TEXT("Locked planted foot is close to stationary"),After.Key<FMath::Max(2.f,Before.Key*.5f));
+    for(int32 Foot=0;Foot<2;++Foot)
+    {
+        const FSkate Before=Measure(Foot,false);
+        const FSkate After=Measure(Foot,true);
+        const FString Name=Foot==0?TEXT("left"):TEXT("right");
+        AddInfo(FString::Printf(TEXT("Planted %s foot per stride: %.2fcm -> %.2fcm locked; worst single frame %.2fcm -> %.2fcm (%d stance frames)"),
+            *Name,Before.Travel,After.Travel,Before.MaxStep,After.MaxStep,Before.Frames));
+        Good&=TestTrue(FString::Printf(TEXT("Foot locking reduces planted-%s-foot travel"),*Name),
+            After.Travel<Before.Travel);
+        Good&=TestTrue(FString::Printf(TEXT("Locked %s planted foot is close to stationary"),*Name),
+            After.Travel<FMath::Max(2.f,Before.Travel*.5f));
+        // The success criterion is "no new foot snapping": locking may not introduce a larger
+        // single-frame step than the authored stride already has.
+        Good&=TestTrue(FString::Printf(TEXT("Locking adds no new %s foot snapping"),*Name),
+            After.MaxStep<=Before.MaxStep+.5f);
+    }
     Actor->Destroy();World->DestroyWorld(false);return Good;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FC26LocomotionTransitionTest,"Cricket26.Characters.LocomotionTransitions",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
@@ -324,6 +374,73 @@ bool FC26LocomotionTransitionTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("The unwind is quick enough to read as a turn, not a drift"),Frames<60);
     AddInfo(FString::Printf(TEXT("Transitions: %d speeds inside the band; a 90deg re-aim absorbs to %.1fdeg (%.0f%%) in one frame and unwinds to <0.5deg in %d frames (%.0fms)"),
         Band,Snapped,SnapTaken*100.f,Frames,Frames*16.f));
+    return true;
+}
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FC26ActionRecoveryTest,"Cricket26.Characters.ActionRecovery",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
+bool FC26ActionRecoveryTest::RunTest(const FString& Parameters)
+{
+    // PART B, the third case the brief names: an action hands back to a ready stance. The failure
+    // mode is not a blend that is too long, it is a FROZEN outgoing pose - the action stops dead
+    // at the switch frame and the body visibly stalls for the whole blend. Both clips are real
+    // assets from this worktree, so the play lengths and the wrap are the authored ones.
+    auto* Action=LoadObject<UAnimSequence>(nullptr,TEXT("/Game/Cricket26/Characters/Animations/Cricket/A_C26_FastBowl_R.A_C26_FastBowl_R"));
+    auto* Ready=LoadObject<UAnimSequence>(nullptr,TEXT("/Game/Cricket26/Characters/Animations/Cricket/A_C26_FielderReady.A_C26_FielderReady"));
+    if(!TestNotNull(TEXT("Bowling action clip"),Action)||!TestNotNull(TEXT("Ready stance clip"),Ready))return false;
+    const float ActionLength=Action->GetPlayLength();
+    TestTrue(TEXT("The action clip has a usable length"),ActionLength>.05f);
+
+    // Replay the hand-back the way the component drives it: the outgoing pose advanced every frame
+    // while the blend runs. Starting two frames from the end of the action forces the clip to run
+    // out mid-blend, which is the normal case for a delivery handing back to ready and the case a
+    // naive "clamp at the last frame" implementation would freeze on.
+    const float BlendSeconds=.12f,Dt=1.f/60.f;
+    float PreviousTime=FMath::Max(0.f,ActionLength-Dt*2.f),BlendClock=0.f,PeakStep=0.f;
+    int32 Frames=0,Advanced=0,Frozen=0,Wraps=0;
+    while(BlendClock<BlendSeconds&&Frames<600)
+    {
+        const bool bWrapped=PreviousTime+Dt>=ActionLength;
+        const float Next=C26Presentation::AdvanceOutgoingPose(PreviousTime,ActionLength,Dt);
+        const float Step=FMath::Abs(Next-PreviousTime);
+        if(bWrapped)++Wraps;else PeakStep=FMath::Max(PeakStep,Step);
+        if(Step>.001f)++Advanced;else ++Frozen;
+        TestTrue(TEXT("The outgoing pose stays inside the clip"),Next>=0.f&&Next<ActionLength);
+        PreviousTime=Next;BlendClock+=Dt;++Frames;
+    }
+    // This is the regression guard for the defect: freezing PreviousTime made every frame of the
+    // blend a repeat of the switch pose, which is the stall the brief calls a frozen pause.
+    TestEqual(TEXT("The outgoing pose never repeats a frame during the blend"),Frozen,0);
+    TestEqual(TEXT("Every frame of the blend advances the outgoing pose"),Advanced,Frames);
+    TestTrue(TEXT("The blend outlasts the action clip, so the wrap case is genuinely covered"),Wraps>=1);
+    TestTrue(TEXT("The blend completes inside its authored duration"),
+        BlendClock>=BlendSeconds&&Frames<=FMath::CeilToInt(BlendSeconds/Dt)+1);
+    TestTrue(TEXT("The outgoing pose advances by exactly one frame of real time"),PeakStep<=Dt+.001f);
+    AddInfo(FString::Printf(TEXT("Action hand-back: %s (%.2fs, from %d frames before the end) -> ready over %.2fs; outgoing pose advanced on %d/%d frames, %d wrap, peak step %.3fs"),
+        *Action->GetName(),double(ActionLength),2,double(BlendSeconds),Advanced,Frames,Wraps,double(PeakStep)));
+
+    // The incoming clip must not be visible before the blend, must be fully in at the end, and
+    // must leave and arrive with ~zero velocity. A linear ramp pops at both ends.
+    TestTrue(TEXT("The incoming clip is not visible at the switch frame"),C26Presentation::BlendWeight(0.f,BlendSeconds)<.01f);
+    TestTrue(TEXT("The incoming clip is fully in exactly at the end of the blend"),
+        C26Presentation::BlendWeight(BlendSeconds,BlendSeconds)>=.999f);
+    float Previous=C26Presentation::BlendWeight(0.f,BlendSeconds),FirstTenth=0.f,MidTenth=0.f;
+    for(int32 Step=1;Step<=10;++Step)
+    {
+        const float Weight=C26Presentation::BlendWeight(BlendSeconds*Step/10.f,BlendSeconds);
+        const float Delta=Weight-Previous;
+        TestTrue(TEXT("Blend weight never runs backwards"),Delta>=-.0001f);
+        TestTrue(TEXT("Blend weight stays inside 0..1"),Weight>=-.0001f&&Weight<=1.0001f);
+        if(Step==1)FirstTenth=Delta;
+        if(Step==6)MidTenth=Delta;
+        Previous=Weight;
+    }
+    // Smoothstep: the first tenth of the blend covers far less ground than the middle, which is
+    // exactly what makes the switch inaudible instead of a step.
+    TestTrue(TEXT("The blend eases in rather than stepping"),FirstTenth<MidTenth*.6f);
+    AddInfo(FString::Printf(TEXT("Blend weight: first tenth moves %.3f, middle tenth %.3f (ease-in ratio %.2f)"),
+        double(FirstTenth),double(MidTenth),double(MidTenth>0.f?FirstTenth/MidTenth:0.f)));
+    // A degenerate blend length must not divide by zero or hand back a NaN weight.
+    TestTrue(TEXT("A zero-length blend still resolves to a usable weight"),
+        FMath::IsFinite(C26Presentation::BlendWeight(0.f,0.f))&&FMath::IsFinite(C26Presentation::BlendWeight(.5f,0.f)));
     return true;
 }
 #endif
