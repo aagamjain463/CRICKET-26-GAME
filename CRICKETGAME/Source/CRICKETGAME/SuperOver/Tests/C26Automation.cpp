@@ -561,6 +561,230 @@ bool FC26CatchTimingPhysicsTest::RunTest(const FString& Parameters)
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FC26PremiumFieldingSequenceTest, "Cricket26.Fielding.PremiumSequence", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FC26PremiumFieldingSequenceTest::RunTest(const FString& Parameters)
+{
+    const float AnkleZ = 12.f;
+    const float ShoulderZ = 145.f;
+    const float PalmReach = 85.f;
+    // The ball as the match actually hands it to the gather: resting on the turf, which in this
+    // solve's mesh-local space is BELOW the rig origin. The match sets the rig origin 5 cm above
+    // the turf plane and the ball's centre sits one radius above the plane, so a ball on the grass
+    // is at -1.4 cm -- not the 16 cm this used to be. A target at shin height hid the fact that the
+    // solver's floor was holding the hands a hand's length above the grass: every assertion here
+    // passed while the in-match gate was measuring a 65 cm gap. These are the same numbers the gate
+    // reports (gather_minus_root Z = -1.40), so the solver test and the match agree on the datum.
+    const float TurfZ = -5.f;
+    const FVector BallGroundTarget = C26Motion::Rig(32.f, 0.f, TurfZ + C26Field::BallDiameter * .5f);
+
+    // 1. Approach deceleration & whole-body ground lowering (ActionTime: 0.00s -> 0.20s)
+    const C26Motion::FFielderPose ApproachPose = C26Motion::SolveFielderPickup(0.00f, BallGroundTarget, AnkleZ, ShoulderZ, PalmReach);
+    const C26Motion::FFielderPose ContactPose = C26Motion::SolveFielderPickup(0.20f, BallGroundTarget, AnkleZ, ShoulderZ, PalmReach);
+
+    TestTrue(TEXT("Approach pose starts in athletic running deceleration"), ApproachPose.Crouch >= -10.f && ApproachPose.LeanForward <= 16.f);
+    TestTrue(TEXT("Contact pose achieves whole-body lowering"), ContactPose.Crouch <= -45.f && ContactPose.LeanForward >= 35.f);
+    TestTrue(TEXT("Contact pose knee flexion rolls back toe"), ContactPose.PitchR >= 20.f);
+    // The assertion that was missing. The palms have to actually arrive at the ball: the midpoint of
+    // the two wrist targets is what the match feeds into ReceivingPosition, and this fails by ~17 cm
+    // against any floor that treats the ankle's height as the ground. The hands may close around the
+    // ball, but they may not sink through the grass it is resting on.
+    const FVector Palms = (ContactPose.LeftHand + ContactPose.RightHand) * .5f;
+    TestTrue(TEXT("Contact pose palms arrive at the ball on the turf"), FVector::Dist(Palms, BallGroundTarget) < 5.f);
+    TestTrue(TEXT("Contact pose hands stay above the turf plane"), ContactPose.RightHand.Z >= TurfZ);
+
+    // 2. Rise and throw load continuity (ActionTime: 0.20s -> 0.53s)
+    const C26Motion::FFielderPose PickupEnd = C26Motion::SolveFielderPickup(0.53f, BallGroundTarget, AnkleZ, ShoulderZ, PalmReach);
+    TestTrue(TEXT("Pickup rise ascends center of mass"), PickupEnd.Crouch >= -15.f);
+    TestTrue(TEXT("Pickup rise coils torso side-on for throw"), PickupEnd.TurnRight <= -30.f);
+    TestTrue(TEXT("Throwing arm loads at ear/shoulder height"), PickupEnd.RightHand.Z >= 135.f);
+    TestTrue(TEXT("Non-throwing arm reaches forward to sight target"), PickupEnd.LeftHand.Z >= 120.f);
+
+    // 3. Seamless C2 mathematical continuity at the Pickup -> Throw boundary (0.53s Pickup vs 0.00s Throw)
+    const C26Motion::FFielderPose ThrowStart = C26Motion::SolveFielderThrow(0.00f, AnkleZ, ShoulderZ);
+    TestTrue(TEXT("Zero foot position pop across action boundary"), FVector::Dist(PickupEnd.LeftFoot, ThrowStart.LeftFoot) < 0.01f && FVector::Dist(PickupEnd.RightFoot, ThrowStart.RightFoot) < 0.01f);
+    TestTrue(TEXT("Zero hand position pop across action boundary"), FVector::Dist(PickupEnd.LeftHand, ThrowStart.LeftHand) < 0.01f && FVector::Dist(PickupEnd.RightHand, ThrowStart.RightHand) < 0.01f);
+    TestTrue(TEXT("Zero center-of-mass crouch pop"), FMath::Abs(PickupEnd.Crouch - ThrowStart.Crouch) < 0.01f);
+    TestTrue(TEXT("Zero pelvis yaw pop"), FMath::Abs(PickupEnd.TurnRight - ThrowStart.TurnRight) < 0.01f);
+    TestTrue(TEXT("Zero thoracic counter-rotation pop"), FMath::Abs(PickupEnd.ChestCounter - ThrowStart.ChestCounter) < 0.01f);
+    TestTrue(TEXT("Zero forward trunk lean pop"), FMath::Abs(PickupEnd.LeanForward - ThrowStart.LeanForward) < 0.01f);
+
+    // 4. Kinetic chain throw progression & high overarm release (ActionTime: 0.00s -> 0.20s in Throw)
+    const C26Motion::FFielderPose ReleasePose = C26Motion::SolveFielderThrow(0.20f, AnkleZ, ShoulderZ);
+    TestTrue(TEXT("Front foot firmly planted on turf during release"), FMath::Abs(ReleasePose.LeftFoot.Z - AnkleZ) < 0.01f);
+    TestTrue(TEXT("Pelvis uncoils open towards target"), ReleasePose.TurnRight >= 12.f);
+    TestTrue(TEXT("Thoracic counter-twist whips forward"), ReleasePose.ChestCounter <= -15.f);
+    TestTrue(TEXT("High vertical overarm release point above 210cm"), ReleasePose.RightHand.Z >= 210.f);
+    TestTrue(TEXT("Fingers open on release"), ReleasePose.FingerCurl <= 0.22f);
+
+    // 5. Follow-through, step-through momentum dissipation & balanced recovery (ActionTime: 0.20s -> 0.50s in Throw)
+    const C26Motion::FFielderPose MidFollow = C26Motion::SolveFielderThrow(0.35f, AnkleZ, ShoulderZ);
+    // 0.15 s after release the throwing hand is on its way down and across, not yet parked at the
+    // hip: the wrap is checked as a descent past the shoulder toward the opposite side, which is
+    // what the arm is actually doing at this instant, rather than at an arrival it reaches later.
+    TestTrue(TEXT("Follow-through arm descends past the shoulder after release"), MidFollow.RightHand.Z < ReleasePose.RightHand.Z - 100.f);
+    TestTrue(TEXT("Follow-through arm crosses toward the opposite hip"), MidFollow.RightHand.Y < ReleasePose.RightHand.Y);
+    TestTrue(TEXT("Torso flexes forward to dissipate momentum"), MidFollow.LeanForward >= 20.f);
+
+    const C26Motion::FFielderPose FinalRecovery = C26Motion::SolveFielderThrow(0.50f, AnkleZ, ShoulderZ);
+    TestTrue(TEXT("Trailing right leg steps through and grounds flat on turf"), FMath::Abs(FinalRecovery.RightFoot.Z - AnkleZ) < 0.01f);
+    TestTrue(TEXT("Athlete recovers into balanced upright stance"), FinalRecovery.Crouch >= -8.f && FinalRecovery.LeanForward <= 12.f);
+    TestTrue(TEXT("Torso squares back to ready"), FMath::Abs(FinalRecovery.TurnRight) < 0.01f);
+
+    // 6. Complete trajectory sanity check (no NaNs or infinite values across all timesteps)
+    for (float T = 0.f; T <= 0.53f; T += 0.02f)
+    {
+        const C26Motion::FFielderPose P = C26Motion::SolveFielderPickup(T, BallGroundTarget, AnkleZ, ShoulderZ, PalmReach);
+        TestFalse(TEXT("Pickup pose has no NaNs"), P.LeftFoot.ContainsNaN() || P.RightFoot.ContainsNaN() || P.LeftHand.ContainsNaN() || P.RightHand.ContainsNaN());
+    }
+    for (float T = 0.f; T <= 0.50f; T += 0.02f)
+    {
+        const C26Motion::FFielderPose T_Pose = C26Motion::SolveFielderThrow(T, AnkleZ, ShoulderZ);
+        TestFalse(TEXT("Throw pose has no NaNs"), T_Pose.LeftFoot.ContainsNaN() || T_Pose.RightFoot.ContainsNaN() || T_Pose.LeftHand.ContainsNaN() || T_Pose.RightHand.ContainsNaN());
+    }
+
+    // 7. Frame-to-frame continuity across the WHOLE sequence, sampled at 120 Hz. A pose solver can
+    // satisfy every endpoint check above and still pop in the middle of a phase, which is exactly
+    // what "looks like separate clips glued together" is. Measuring per-frame travel is how that
+    // is caught without eyes on a capture: a real limb moves a bounded distance in 1/120 s.
+    const float Step = 1.f / 120.f;
+    auto SampleSequence = [&](float T)
+    {
+        return T < 0.53f ? C26Motion::SolveFielderPickup(T, BallGroundTarget, AnkleZ, ShoulderZ, PalmReach)
+                         : C26Motion::SolveFielderThrow(T - 0.53f, AnkleZ, ShoulderZ);
+    };
+    float WorstHand = 0.f, WorstFoot = 0.f, WorstCrouch = 0.f, WorstYaw = 0.f;
+    C26Motion::FFielderPose Prev = SampleSequence(0.f);
+    for (float T = Step; T <= 1.03f; T += Step)
+    {
+        const C26Motion::FFielderPose Cur = SampleSequence(T);
+        WorstHand = FMath::Max(WorstHand, FMath::Max(FVector::Dist(Prev.RightHand, Cur.RightHand), FVector::Dist(Prev.LeftHand, Cur.LeftHand)));
+        WorstFoot = FMath::Max(WorstFoot, FMath::Max(FVector::Dist(Prev.LeftFoot, Cur.LeftFoot), FVector::Dist(Prev.RightFoot, Cur.RightFoot)));
+        WorstCrouch = FMath::Max(WorstCrouch, FMath::Abs(Cur.Crouch - Prev.Crouch));
+        WorstYaw = FMath::Max(WorstYaw, FMath::Abs(Cur.TurnRight - Prev.TurnRight));
+        Prev = Cur;
+    }
+    AddInfo(FString::Printf(TEXT("C26_FIELD_CONTINUITY hand=%.2fcm foot=%.2fcm crouch=%.2fcm yaw=%.2fdeg per 1/120s"), WorstHand, WorstFoot, WorstCrouch, WorstYaw));
+    // Bounds are the fastest a real athlete moves that part, converted to travel per 1/120 s.
+    // A throwing hand peaks around 1500 cm/s, so 8 cm a frame is already generous and anything
+    // past it is a teleport. A pelvis in a hard throw reaches roughly 500 deg/s, and a fielder
+    // dropping onto a ball can take his hips down at a few metres per second; the feet are the
+    // one thing with no excuse at all, because a planted foot is planted.
+    TestTrue(TEXT("No hand pop anywhere in the sequence"), WorstHand < 8.f);
+    TestTrue(TEXT("No foot pop anywhere in the sequence"), WorstFoot < 4.f);
+    TestTrue(TEXT("No center-of-mass pop anywhere in the sequence"), WorstCrouch < 3.5f);
+    TestTrue(TEXT("No pelvis yaw pop anywhere in the sequence"), WorstYaw < 4.2f);
+
+    // 8. The braking step that carries a chase into the gather. Everything above is a standing
+    // solve; this layer is what stops a 700 cm/s arrival from becoming a planted stance in one
+    // frame. It is also the one part of the sequence the match drives with Dt == 0 -- the pose
+    // clock is assigned directly and Animate(0) is called -- so it has to be a pure function of
+    // ActionTime that advances with no per-frame integration at all.
+    const float ChaseSpeed = 700.f;
+    const float ChaseGait = 1.10f;
+    const float RunClipLength = 0.833f;
+
+    const C26Motion::FApproachBrake Brake0 = C26Motion::SolveApproachBrake(0.f, ChaseSpeed, ChaseGait, AnkleZ, RunClipLength);
+    const C26Motion::FApproachBrake Brake1 = C26Motion::SolveApproachBrake(Step, ChaseSpeed, ChaseGait, AnkleZ, RunClipLength);
+    const C26Motion::FApproachBrake Brake2 = C26Motion::SolveApproachBrake(2.f * Step, ChaseSpeed, ChaseGait, AnkleZ, RunClipLength);
+    const C26Motion::FApproachBrake BrakeEnd = C26Motion::SolveApproachBrake(0.20f, ChaseSpeed, ChaseGait, AnkleZ, RunClipLength);
+
+    // The braking stride must begin exactly on the stride the chase ended on, or the hand-off out
+    // of the running action is itself the snap this layer exists to remove.
+    const C26Motion::FStride RefL = C26Motion::Stride(ChaseGait, ChaseSpeed, -9.f, AnkleZ, false);
+    const C26Motion::FStride RefR = C26Motion::Stride(ChaseGait, ChaseSpeed, 9.f, AnkleZ, false);
+    TestTrue(TEXT("Braking stride starts on the stride the chase ended on (left foot)"),
+        FVector::Dist(Brake0.LeftFoot, C26Motion::Rig(RefL.Foot.X, RefL.Foot.Y, RefL.Foot.Z)) < 0.01f);
+    TestTrue(TEXT("Braking stride starts on the stride the chase ended on (right foot)"),
+        FVector::Dist(Brake0.RightFoot, C26Motion::Rig(RefR.Foot.X, RefR.Foot.Y, RefR.Foot.Z)) < 0.01f);
+    TestTrue(TEXT("Braking stride starts with the legs still fully under its own control"), Brake0.Plant < 0.01f);
+
+    // The step is real, and it happens without a single frame of Dt: the whole point of solving the
+    // gait in closed form is that the match path, which calls Animate(0), still turns the legs over.
+    const float LeftTravel = FVector::Dist(Brake0.LeftFoot, Brake1.LeftFoot);
+    const float RightTravel = FVector::Dist(Brake0.RightFoot, Brake1.RightFoot);
+    TestTrue(TEXT("Braking stride advances the gait with no Dt at all"), FMath::Max(LeftTravel, RightTravel) > 0.4f);
+
+    // A running foot travels with the body: a support foot at 700 cm/s covers 5.8 cm in 1/120 s and
+    // that is the ground going past, not a skate. So the bound is scaled by the speed the legs are
+    // carrying rather than fixed -- a flat few-centimetre bound is a standing-pose bound and would
+    // fail every real run in the project.
+    const float MaxFootTravel = (2.2f * ChaseSpeed + 150.f) * Step;
+    TestTrue(TEXT("Braking foot travel stays inside a real foot's reach"),
+        FMath::Max(LeftTravel, RightTravel) < MaxFootTravel);
+
+    // The skating check proper: at least one foot is always in support in a stride, so the smaller
+    // of the two travels is a planted foot's, and a planted foot may only move as fast as the
+    // ground goes past it. This is the assertion that would catch the blend dragging a foot.
+    const float PlantedTravel = FMath::Min(LeftTravel, RightTravel);
+    TestTrue(TEXT("Braking support foot is planted, not skating"), PlantedTravel <= ChaseSpeed * Step + 0.6f);
+
+    // The step is a deceleration, not another sprint. Each foot's own travel depends on where in the
+    // cycle it happens to be -- a swing leg snaps through faster than the body -- so the invariant
+    // that actually holds, and the one the layer is built on, is that the carried speed decays.
+    TestTrue(TEXT("Braking speed decays monotonically"), Brake1.ResidualSpeed < Brake0.ResidualSpeed && Brake2.ResidualSpeed < Brake1.ResidualSpeed);
+    TestTrue(TEXT("Braking speed is largely spent by the contact instant"), BrakeEnd.ResidualSpeed < ChaseSpeed * 0.2f);
+
+    // Turf safety across the whole braking step: a foot that sinks through the surface is worse
+    // than the stop this layer replaces.
+    for (float T = 0.f; T <= 0.20f; T += Step)
+    {
+        const C26Motion::FApproachBrake B = C26Motion::SolveApproachBrake(T, ChaseSpeed, ChaseGait, AnkleZ, RunClipLength);
+        TestTrue(TEXT("Braking foot never penetrates the turf"), B.LeftFoot.Z >= AnkleZ - 0.01f && B.RightFoot.Z >= AnkleZ - 0.01f);
+    }
+
+    // By the contact instant the gather owns the legs outright and the layer has stopped
+    // contributing, so the authored pickup is exactly what is on screen when the hands arrive.
+    TestTrue(TEXT("Gather owns the legs by the contact instant"), BrakeEnd.Plant > 0.99f);
+    TestTrue(TEXT("Braking trunk lean is spent by the contact instant"), FMath::IsNearlyZero(BrakeEnd.LeanForward));
+    TestTrue(TEXT("Braking pelvis drop is spent by the contact instant"), FMath::IsNearlyZero(BrakeEnd.Crouch));
+
+    // A fielder who walks in to the ball gets the authored gather untouched. The default Plant of 1
+    // is what makes the layer a no-op rather than a pose at the origin -- Plant 0 here would
+    // teleport both feet to (0,0,0) and would be a far worse bug than the one being fixed.
+    const C26Motion::FApproachBrake WalkIn = C26Motion::SolveApproachBrake(0.f, 30.f, 0.f, AnkleZ, RunClipLength);
+    TestTrue(TEXT("A walk-in to the ball adds no braking layer at all"),
+        WalkIn.Plant > 0.99f && FMath::IsNearlyZero(WalkIn.LeanForward) && FMath::IsNearlyZero(WalkIn.Crouch));
+
+    // 9. The same 120 Hz continuity sweep, but through the LAYER STACK the athlete actually runs:
+    // the pickup solve with the braking stride blended over it. Sweeping the solvers alone cannot
+    // catch a pop introduced by the blend itself, which is the only new way this could snap.
+    auto SampleLayered = [&](float T)
+    {
+        C26Motion::FFielderPose P = T < 0.53f
+            ? C26Motion::SolveFielderPickup(T, BallGroundTarget, AnkleZ, ShoulderZ, PalmReach)
+            : C26Motion::SolveFielderThrow(T - 0.53f, AnkleZ, ShoulderZ);
+        if (T < 0.53f)
+        {
+            const C26Motion::FApproachBrake B = C26Motion::SolveApproachBrake(T, ChaseSpeed, ChaseGait, AnkleZ, RunClipLength);
+            P.LeftFoot = FMath::Lerp(B.LeftFoot, P.LeftFoot, B.Plant);
+            P.RightFoot = FMath::Lerp(B.RightFoot, P.RightFoot, B.Plant);
+            P.PitchL = FMath::Lerp(B.PitchL, P.PitchL, B.Plant);
+            P.PitchR = FMath::Lerp(B.PitchR, P.PitchR, B.Plant);
+            P.LeanForward += B.LeanForward;
+            P.Crouch += B.Crouch;
+        }
+        return P;
+    };
+    float LayeredFoot = 0.f, LayeredCrouch = 0.f;
+    C26Motion::FFielderPose LPrev = SampleLayered(0.f);
+    for (float T = Step; T <= 1.03f; T += Step)
+    {
+        const C26Motion::FFielderPose LCur = SampleLayered(T);
+        LayeredFoot = FMath::Max(LayeredFoot, FMath::Max(FVector::Dist(LPrev.LeftFoot, LCur.LeftFoot), FVector::Dist(LPrev.RightFoot, LCur.RightFoot)));
+        LayeredCrouch = FMath::Max(LayeredCrouch, FMath::Abs(LCur.Crouch - LPrev.Crouch));
+        LPrev = LCur;
+    }
+    AddInfo(FString::Printf(TEXT("C26_FIELD_LAYERED foot=%.2fcm crouch=%.2fcm per 1/120s"), LayeredFoot, LayeredCrouch));
+    // Same speed-scaled reasoning as the braking layer itself: the composite carries a running
+    // stride for its first sixth of a second, so its feet are allowed to travel at running speed.
+    // What this catches is the blend itself teleporting a foot, which the 6.5 cm the swing leg
+    // genuinely covers at 700 cm/s is nowhere near.
+    TestTrue(TEXT("Braking layer adds no foot pop to the sequence"), LayeredFoot < MaxFootTravel);
+    TestTrue(TEXT("Braking layer adds no center-of-mass pop to the sequence"), LayeredCrouch < 3.5f);
+
+    return true;
+}
+
 
 // ============================================================================
 // CRICKET 26 // MATCH PRESENTATION OVERHAUL AUTOMATION SUITE

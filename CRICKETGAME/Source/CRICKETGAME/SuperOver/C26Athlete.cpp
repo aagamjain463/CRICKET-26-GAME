@@ -927,9 +927,23 @@ void AC26Athlete::CurlFingers(const FString& Side,float Amount)
         }
     }
 }
-void AC26Athlete::SetAction(EC26Action NewAction,bool ResetTime){if(NewAction!=Action||ResetTime)ActionTime=0;Action=NewAction;}
+void AC26Athlete::SetAction(EC26Action NewAction,bool ResetTime)
+{
+    const bool Fresh=NewAction!=Action||ResetTime;
+    // A gather is the end of a chase, so the chase has to be remembered across the boundary. The
+    // match code squares the fielder up and zeroes MoveSpeed immediately after this call, and it
+    // then solves a pose with Dt of zero -- which snaps ShownSpeed to zero too. The speed and
+    // stride phase are therefore only readable here, on the frame the action changes.
+    if(Fresh&&NewAction==EC26Action::Pickup)
+    {
+        ApproachSpeed=FMath::Max(ShownSpeed,FMath::Max(0.f,MoveSpeed));
+        ApproachGait=GaitPhase;
+    }
+    if(Fresh)ActionTime=0;
+    Action=NewAction;
+}
 void AC26Athlete::ResetAt(const FVector& Position,float Yaw)
-{SetActorLocationAndRotation(Position,FRotator(0,Yaw,0));if(Presentation&&Presentation->IsActive())Presentation->ResetMotion();MotionTime=0;MoveSpeed=0;GaitPhase=0;Trigger=0;ContactTarget=FVector::ZeroVector;SetAction(EC26Action::Ready);Animate(0);}
+{SetActorLocationAndRotation(Position,FRotator(0,Yaw,0));if(Presentation&&Presentation->IsActive())Presentation->ResetMotion();MotionTime=0;MoveSpeed=0;GaitPhase=0;ApproachSpeed=0;ApproachGait=0;Trigger=0;ContactTarget=FVector::ZeroVector;SetAction(EC26Action::Ready);Animate(0);}
 void AC26Athlete::SetShotContact(const FVector& Target,float Angle,bool bLoft)
 {ContactTarget=Target;ShotAngle=Angle;Loft=bLoft;SetAction(EC26Action::Batting);}
 FVector AC26Athlete::Palm(bool Right) const
@@ -1953,12 +1967,30 @@ void AC26Athlete::Animate(float Dt)
         const auto FP=C26Motion::SolveFielderPickup(ActionTime,Take,AnkleZ,ShoulderZ,PalmReach);
         Crouch=FP.Crouch;
         LeanForward=FP.LeanForward;
+        LeanRight=FP.LeanRight;
+        TurnRight=FP.TurnRight;
+        ChestCounter=FP.ChestCounter;
         Shift=FP.HipShift;
         FL=FP.LeftFoot;FR=FP.RightFoot;
         PitchL=FP.PitchL;PitchR=FP.PitchR;
         LH=FP.LeftHand;RH=FP.RightHand;
         PoleL=FP.PoleL;PoleR=FP.PoleR;
         ActiveFingerCurl=FP.FingerCurl;
+
+        // Deceleration. The authored gather is a standing solve: it assumes the athlete is already
+        // over the ball. A fielder who arrives at 700 cm/s is not, and cutting straight to that
+        // solve is what made a chase end in a single frame with both feet arriving from nowhere.
+        // The speed carried into the action decays, the stride keeps turning over at the cadence
+        // that decaying speed implies, and the braking step is cross-faded into the gather -- so
+        // the legs finish one more real step while the body is already going down to the ball.
+        const C26Motion::FApproachBrake Brake=C26Motion::SolveApproachBrake(
+            ActionTime,ApproachSpeed,ApproachGait,AnkleZ,RunClip?RunClip->GetPlayLength():0.f);
+        FL=FMath::Lerp(Brake.LeftFoot,FL,Brake.Plant);
+        FR=FMath::Lerp(Brake.RightFoot,FR,Brake.Plant);
+        PitchL=FMath::Lerp(Brake.PitchL,PitchL,Brake.Plant);
+        PitchR=FMath::Lerp(Brake.PitchR,PitchR,Brake.Plant);
+        LeanForward+=Brake.LeanForward;
+        Crouch+=Brake.Crouch;
     }
     else if(Action==EC26Action::Catch)
     {
@@ -1994,6 +2026,7 @@ void AC26Athlete::Animate(float Dt)
         LeanForward=FP.LeanForward;
         LeanRight=FP.LeanRight;
         TurnRight=FP.TurnRight;
+        ChestCounter=FP.ChestCounter;
         Shift=FP.HipShift;
         FL=FP.LeftFoot;FR=FP.RightFoot;
         PitchL=FP.PitchL;PitchR=FP.PitchR;
@@ -2104,10 +2137,20 @@ void AC26Athlete::Animate(float Dt)
         const int Shoulder=Bone(Right?TEXT("RightArm"):TEXT("LeftArm"));
         if(Shoulder<0||!Pose.IsValidIndex(Shoulder))return Hand;
         const FVector Origin=Pose[Shoulder].GetLocation();
-        const float MaxArm=(ArmSpan>0.f?ArmSpan:150.f)*0.492f;
+        // ArmSpan is the shoulder-to-wrist chain -- measured 51.8 cm on the shipped rig -- and that
+        // is how every other reach limit in this file reads it: the batting handle clamp and the
+        // bowling circle are both ArmSpan*.95 and up. This one treated it as a full
+        // fingertip-to-fingertip span and halved it, so the hand target was capped at half an arm
+        // from the socket. A fielder could not get his hands down to a ball on the turf: the palms
+        // stayed ~65 cm above it, level and square to the ball but out of reach, and the match then
+        // snapped the ball up into his gloves to cover the gap -- the teleport this project refuses
+        // to ship. Clamping at the real chain length leaves the guard doing its actual job, which is
+        // stopping a hand from being asked for more arm than the bind pose has.
+        const float MaxArm=(ArmSpan>0.f?ArmSpan:73.f)*.98f;
         const FVector Delta=Hand-Origin;
         return Delta.Size()>MaxArm?Origin+Delta.GetSafeNormal()*MaxArm:Hand;
     };
+    FVector LHRaw=LH,RHRaw=RH;
     if(!Batting&&Action!=EC26Action::Bowling)
     {
         LH=ReachableArm(LH,false);
@@ -2115,6 +2158,18 @@ void AC26Athlete::Animate(float Dt)
     }
     ShoulderReach(TEXT("Left"),LH,Batting?.22f:.46f);
     ShoulderReach(TEXT("Right"),RH,Batting?.22f:.46f);
+    if(!Batting&&Action!=EC26Action::Bowling)
+    {
+        // The clavicle has just carried the socket toward the target, so the arm is no longer asked
+        // for as much as it was a moment ago: the clamp above was measured against the shoulder it
+        // used to have. Re-projecting the RAW target from the new socket is what lets the arm extend
+        // into the centimetres the shoulder just bought. Re-clamping the already-clamped point would
+        // do nothing at all -- a clamp only ever pulls a target inward, and that point is now inside
+        // the arm's reach -- which is exactly the trap this used to fall into: the elbow stayed bent
+        // and the hand stopped ~8 cm short of a ball it could have touched.
+        LH=ReachableArm(LHRaw,false);
+        RH=ReachableArm(RHRaw,true);
+    }
     Limb(TEXT("LeftArm"),TEXT("LeftForeArm"),TEXT("LeftHand"),LH,PoleL);
     Limb(TEXT("RightArm"),TEXT("RightForeArm"),TEXT("RightHand"),RH,PoleR);
     if(Batting)

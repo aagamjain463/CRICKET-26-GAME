@@ -132,6 +132,19 @@ private:
     /** Ground speed as the legs see it. The match code can change MoveSpeed instantly; a stride
         length that changes instantly is a skate. */
     float ShownSpeed=0.f;
+    /** Ground speed the legs still carry into a ground gather, in cm/s. The match code ends a
+        chase by zeroing MoveSpeed on the same frame it starts the pickup, so without a record of
+        what the athlete was doing a moment earlier the running stride is replaced by a planted
+        gather stance in one frame -- a sprint that stops dead. Captured when the action begins and
+        bled off over the first sixth of a second, so the last decelerating step is completed
+        underneath the body. */
+    float ApproachSpeed=0.f;
+    /** Where in the stride cycle that approach was when the gather began. The residual step
+        continues from this phase at the cadence the decaying speed implies, rather than restarting
+        the cycle -- a stride that restarts mid-step is the skate this exists to remove. Read-only
+        after capture: C26Motion::SolveApproachBrake advances it in closed form from ActionTime,
+        because the match drives this sequence with Dt of zero. */
+    float ApproachGait=0.f;
     /** How long the displayed pose is given to catch the authored target, in seconds. Actions
         whose timing is load-bearing -- the bat arriving at the ball, the ball leaving the hand --
         get a short one so the authored instant is still the authored instant. */
