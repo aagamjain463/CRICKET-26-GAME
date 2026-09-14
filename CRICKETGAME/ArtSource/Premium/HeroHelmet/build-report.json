@@ -1,0 +1,45 @@
+{
+  "source": "ArtSource/Premium/HeroHands/C26_HeroHands_Review.blend",
+  "approved_for_match": false,
+  "frame": "origin skull pivot, +X face, +Z up (PlaceKit-compatible)",
+  "slots": [
+    "M_C26_HelmetShell",
+    "M_C26_HelmetPeak",
+    "M_C26_HelmetTrim",
+    "M_C26_HelmetPad",
+    "M_C26_HelmetBar"
+  ],
+  "landmarks_cm": {
+    "nose": 11.83,
+    "nape": -12.32,
+    "top": 6.62,
+    "chin": -18.5,
+    "eye_z": -4.32,
+    "face_w": 9.13,
+    "earX": [
+      -2.0365819931030273,
+      3.161865472793579
+    ],
+    "earZ": [
+      -9.77327823638916,
+      0.7424473762512207
+    ],
+    "wide": 11.9
+  },
+  "shell_radii_cm": [
+    13.62,
+    13.0,
+    7.72
+  ],
+  "grille": {
+    "bars": 5,
+    "cross_radius_cm": 0.32,
+    "stem_radius_cm": 0.36,
+    "sides": 10,
+    "top_offset_above_eyes_cm": 0.9,
+    "nose_clearance_cm": 1.9,
+    "max_gap_cm": 2.6
+  },
+  "parent": "head bone (review); runtime: existing PlaceKit Skull/Look, no code change",
+  "signed_standoff": "shell=head+1.0..1.3cm, grille nose+1.9cm"
+}
