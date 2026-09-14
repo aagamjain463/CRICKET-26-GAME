@@ -265,4 +265,134 @@ bool FC26AuthoredClipsTest::RunTest(const FString&)
     }
     return true;
 }
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FC26BatterStanceTest,"Cricket26.Anim.BatterStance",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
+bool FC26BatterStanceTest::RunTest(const FString&)
+{
+    // Round 3: the striker between deliveries. AC26Athlete::Animate drives his stance and his
+    // trigger straight out of these two functions, so what they are is what the batsman does.
+    // Both were wrong in ways that only show on screen, so they are gated numerically here.
+    //
+    // 1. THE TRIGGER HAS TO BE MONOTONE IN LOAD. Load is 0 at the top of the bowler's mark and 1
+    //    as the ball leaves the hand. The stance used to run it through sin(Load*PI), which peaks
+    //    at half load and is back at ZERO on the delivery stride -- so the striker loaded into his
+    //    backlift while the bowler ran in, put the bat back down on the exact ball, and the
+    //    authored clip's own trigger then read as a snap. A load that returns to its start is not
+    //    a load.
+    float Prev=-1.f;
+    bool Monotone=true;
+    for(int I=0;I<=200;++I)
+    {
+        const float P=C26Motion::BatterTrigger(I/200.f).Press;
+        if(P<Prev-1e-6f)Monotone=false;
+        Prev=P;
+    }
+    TestTrue(TEXT("trigger: the load never reverses as the bowler runs in"),Monotone);
+    TestTrue(TEXT("trigger: starts unloaded at the top of the mark"),
+             C26Motion::BatterTrigger(0.f).Press<1e-4f);
+    TestTrue(TEXT("trigger: is fully loaded at release"),
+             C26Motion::BatterTrigger(1.f).Press>0.98f);
+    // The naive formula this replaced, for contrast: it reads 1.0 at half load and 0.0 at release,
+    // so "the batter is loaded when the ball is bowled" is exactly what it could not express.
+    TestTrue(TEXT("trigger: differs from the sin(Load*PI) it replaced at release"),
+             FMath::Abs(C26Motion::BatterTrigger(1.f).Press-FMath::Sin(1.f*PI))>0.9f);
+    TestTrue(TEXT("trigger: load is clamped, not extrapolated past release"),
+             FMath::IsNearlyEqual(C26Motion::BatterTrigger(2.5f).Press,1.f,1e-4f));
+
+    // 2. THE RELOCATING FOOT HAS TO TAKE A STEP, NOT A SCRAPE. Two separate claims: the foot is
+    //    planted and perfectly still before the step and after it, and while it is travelling it
+    //    is off the ground. Driving the travel off the load and the height off a plain sine fails
+    //    the second one, because sin() is falling back to zero exactly where the travel finishes.
+    const auto T=C26Motion::BatterTrigger;
+    TestTrue(TEXT("step: the foot has not moved before the step begins"),
+             T(0.10f).Step<1e-4f&&T(0.15f).Step<1e-4f);
+    TestTrue(TEXT("step: the foot is planted and still once it has arrived"),
+             FMath::IsNearlyEqual(T(0.85f).Step,1.f,1e-4f)&&T(0.85f).Lift<1e-4f
+             &&FMath::IsNearlyEqual(T(1.f).Step,1.f,1e-4f)&&T(1.f).Lift<1e-4f);
+    float WorstTravelWithFootDown=0.f;
+    int32 TravelSamples=0;
+    for(int I=1;I<=400;++I)
+    {
+        const float Lo=(I-1)/400.f,Hi=I/400.f;
+        const float Move=FMath::Abs(T(Hi).Step-T(Lo).Step);
+        if(Move<=0.005f)continue;                 // not actually relocating on this sample
+        ++TravelSamples;
+        // Clearance at the midpoint of the sample, where the foot is doing the moving.
+        const float Clear=T((Lo+Hi)*0.5f).Lift;
+        if(Clear<0.05f)WorstTravelWithFootDown=FMath::Max(WorstTravelWithFootDown,Move);
+    }
+    TestTrue(TEXT("step: the foot does actually leave the ground"),
+             T(0.5f).Lift>0.9f);
+    // Guard against the no-scrape claim passing vacuously on a foot that never moves at all.
+    TestTrue(TEXT("step: the foot genuinely relocates (the no-scrape check is not vacuous)"),
+             TravelSamples>20);
+    TestTrue(TEXT("step: the foot is never carried along at turf height (no scrape)"),
+             WorstTravelWithFootDown<=0.f);
+
+    // 3. THE IDLE MUST NOT LOOP INSIDE A SHOT. This is the whole reason the striker has his own
+    //    idle: the generic Rest() is one sine per channel, so a batter driven by it breathes and
+    //    sways on a single visible period that the eye resolves into a loop within a couple of
+    //    seconds. Sampled at 60 Hz over 20 s, the state must never come back within 0.08 of itself
+    //    at any lag of a second or more. (Measured worst case across seeds is 0.10, so 0.08 leaves
+    //    margin without being a tautology.)
+    constexpr float Dt=1.f/60.f;
+    constexpr int32 Samples=1200;                 // 20 s
+    constexpr float MinLag=1.0f;
+    for(int32 Seed:{0,11,7,3,19,26,13*4+3})
+    {
+        TArray<C26Motion::FBatterIdle> Trail;
+        Trail.Reserve(Samples);
+        for(int32 I=0;I<Samples;++I)Trail.Add(C26Motion::BatterIdle(I*Dt,Seed));
+        float Closest=1e9f;
+        for(int32 J=int32(MinLag/Dt);J<Samples;++J)
+        {
+            for(int32 I=0;I+J<Samples;++I)
+            {
+                const C26Motion::FBatterIdle&A=Trail[I],&B=Trail[I+J];
+                const float D=FMath::Max(
+                    FMath::Max(FMath::Abs(A.Breath-B.Breath),FMath::Abs(A.Weight-B.Weight)),
+                    FMath::Max(FMath::Max(FMath::Abs(A.Micro-B.Micro),FMath::Abs(A.BatTap-B.BatTap)),
+                               FMath::Abs(A.BatDrift-B.BatDrift)));
+                Closest=FMath::Min(Closest,D);
+            }
+        }
+        TestTrue(*FString::Printf(TEXT("idle seed %d: does not repeat inside a 20 s hold (closest %.3f)"),Seed,Closest),
+                 Closest>0.08f);
+    }
+
+    // 4. THE BAT TAP IS GATED, NOT METRONOMIC. A striker taps for a few beats and then rests; a
+    //    plain rectified sine taps forever on one period, which is the fidget the brief rules out.
+    //    Over a minute the tap must be on for a minority of the time AND leave a real rest behind.
+    for(int32 Seed:{0,11,7})
+    {
+        constexpr int32 Minute=3600;
+        int32 On=0,Rest=0,LongestRest=0;
+        for(int32 I=0;I<Minute;++I)
+        {
+            const C26Motion::FBatterIdle B=C26Motion::BatterIdle(I*Dt,Seed);
+            if(B.BatTap>0.5f){++On;Rest=0;}
+            else{++Rest;LongestRest=FMath::Max(LongestRest,Rest);}
+        }
+        const float Duty=float(On)/float(Minute);
+        TestTrue(*FString::Printf(TEXT("idle seed %d: taps but is not constantly fidgeting (%.0f%% of the minute)"),Seed,Duty*100.f),
+                 Duty>0.01f&&Duty<0.40f);
+        TestTrue(*FString::Printf(TEXT("idle seed %d: puts the bat down and leaves it (%.1f s rest)"),Seed,LongestRest*Dt),
+                 LongestRest*Dt>3.f);
+    }
+
+    // 5. EVERYTHING STAYS SUBTLE. These amplitudes are scaled into centimetres and degrees by the
+    //    caller, so a channel that leaves [-1,1] is a stance that lurches rather than breathes.
+    for(int32 Seed:{0,5,9,17})
+    {
+        bool InRange=true;
+        for(int32 I=0;I<6000;++I)
+        {
+            const C26Motion::FBatterIdle B=C26Motion::BatterIdle(I*Dt,Seed);
+            InRange=InRange&&FMath::Abs(B.Breath)<=1.f&&FMath::Abs(B.Weight)<=1.f
+                &&FMath::Abs(B.Micro)<=1.f&&FMath::Abs(B.BatDrift)<=1.f
+                &&B.BatTap>=-1e-5f&&B.BatTap<=1.f;
+        }
+        TestTrue(*FString::Printf(TEXT("idle seed %d: every channel stays inside its authored range"),Seed),InRange);
+    }
+    return true;
+}
 #endif

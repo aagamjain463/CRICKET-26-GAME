@@ -395,11 +395,25 @@ def verify_file(path, target_rig, checks):
     root1 = target_rig.id[TARGET_ROOT]
     ok = True
     print('  verifying %s (%d keys)' % (os.path.basename(path), len(rig.times)))
+    def at(frame1based):
+        """The world pose, by bone name, at any frame of this clip.
+
+        Some qualities are not properties of a single frame at all. "The foot
+        does not skate" and "the recovery comes back to the stance" are both
+        statements about a RELATION between frames, and checking them one frame
+        at a time is exactly how 19 cm of front-foot slide survived the whole
+        first authoring pass. Checks that need it declare a fourth parameter."""
+        Wf = rig.compose(rig.local_at(max(0, min(len(rig.times) - 1, frame1based - 1))))
+        return {rig.name[bid]: w for bid, w in Wf.items()}
+
+    at.frames = len(rig.times)   # checks that sweep the whole clip need the length
     for label, frame1based, test in checks:
         k = frame1based - 1
         W = rig.compose(rig.local_at(k))
         by_name = {rig.name[bid]: w for bid, w in W.items()}
-        good, detail = test(by_name, W1rest, target_rig)
+        good, detail = (test(by_name, W1rest, target_rig, at)
+                        if test.__code__.co_argcount >= 4
+                        else test(by_name, W1rest, target_rig))
         print('    frame %2d %-34s %s  %s' % (frame1based, label, 'PASS' if good else 'FAIL', detail))
         ok = ok and good
     return ok
@@ -498,13 +512,116 @@ def main():
     def hips_height(m):
         return m['mixamorig:Hips'].t[1]
 
+    # ---- Round 3: qualities that live BETWEEN frames -------------------------
+    # The corrected rig is Y-up, so a bone's horizontal position is (x, z) and
+    # its height is y. GROUND is the stance ankle height the clips are pinned to.
+    GROUND = 24.7
+
+    def ankle(m, side):
+        return m['mixamorig:%sFoot' % side].t
+
+    def planted(m, side, slack=3.0):
+        """Is this foot bearing weight on this frame?"""
+        return ankle(m, side)[1] <= GROUND + slack
+
+    def worst_skate(at, side):
+        """Largest horizontal move this foot makes, per frame, while it is on the
+        ground on BOTH ends of that step. A planted foot that translates is a
+        skate; a foot that lifts, travels and lands is a step, and only the
+        first is a defect."""
+        worst, where = 0.0, 0
+        prev = at(1)
+        for fr in range(2, at.frames + 1):
+            cur = at(fr)
+            if planted(prev, side) and planted(cur, side):
+                a, b = ankle(prev, side), ankle(cur, side)
+                d = math.hypot(b[0] - a[0], b[2] - a[2])
+                if d > worst:
+                    worst, where = d, fr
+            prev = cur
+        return worst, where
+
+    def worst_float(at, side, f0, f1):
+        """How high this foot gets above the ground across a window in which it is
+        meant to be carrying weight, and on which frame.
+
+        This exists because worst_skate() has a blind spot. It only compares
+        frames the foot is ALREADY down on, so a foot that never arrives at the
+        ground at all is invisible to it -- and that is precisely what happened:
+        the drive asked the front leg for a target 4-9 cm past the end of its
+        chain, two_bone clamped it, and the front ankle sat 8 cm above the
+        ground through the whole contact window while every gate passed. A foot
+        that is authored planted has to actually BE planted, so assert it."""
+        worst, where = 0.0, f0
+        for fr in range(f0, f1 + 1):
+            h = ankle(at(fr), side)[1] - GROUND
+            if h > worst:
+                worst, where = h, fr
+        return worst, where
+
+    def pose_distance(a, b, bones):
+        """Largest per-bone world-position disagreement between two frames."""
+        worst, name = 0.0, ''
+        for bone in bones:
+            if bone in a and bone in b:
+                d = math.dist(a[bone].t, b[bone].t)
+                if d > worst:
+                    worst, name = d, bone
+        return worst, name
+
+    SETTLE_BONES = ['mixamorig:Hips', 'mixamorig:Head', 'mixamorig:LeftFoot',
+                    'mixamorig:RightFoot', 'mixamorig:LeftHand', 'mixamorig:RightHand']
+
+    def axis_yaw(m, left, right):
+        """Yaw of the line joining a left/right bone pair, in the ground plane.
+        Measured from positions only, so it cannot be fooled by a bone's rest
+        orientation the way reading the quaternion directly can."""
+        a, b = m[left].t, m[right].t
+        return math.degrees(math.atan2(a[0] - b[0], a[2] - b[2]))
+
+    def pelvis_yaw(m):
+        return axis_yaw(m, 'mixamorig:LeftUpLeg', 'mixamorig:RightUpLeg')
+
+    def chest_yaw(m):
+        return axis_yaw(m, 'mixamorig:LeftShoulder', 'mixamorig:RightShoulder')
+
+    def opened(m, yaw_of):
+        """Degrees this segment is still CLOSED off square to the bowler."""
+        return yaw_of(m)
+
+    def hips_travel(at, f_from, f_to):
+        """How far the pelvis moved DOWN THE PITCH between two frames. This is the
+        weight transfer: without it a drive is an arm swing played off a static
+        base, however good the bat path looks."""
+        a, b = at(f_from), at(f_to)
+        fwd = body_forward(b)
+        pa, pb = a['mixamorig:Hips'].t, b['mixamorig:Hips'].t
+        return (pb[0] - pa[0]) * fwd[0] + (pb[2] - pa[2]) * fwd[1]
+
+    def unwind(at, measure, f_from, f_to):
+        """How far a segment OPENED toward the bowler between two frames.
+
+        A drive is a kinetic chain, not an arm swing: the pelvis opens first and
+        the chest is dragged round after it. If the two turn together the body
+        is one rigid block, which is precisely how the procedural poser looked."""
+        d = measure(at(f_from)) - measure(at(f_to))
+        return (d + 180.0) % 360.0 - 180.0
+
     for f in files:
         src = resolve(f)
         dst = os.path.join(outdir, os.path.basename(f))
         if not verify_only:
             nkeys, ncurves = correct_file(src, dst, target)
             print('corrected %s: %d keys, %d curves -> %s' % (f, nkeys, ncurves, dst))
-        checks = [
+        # The drive is the Round 3 reference shot and is held to a batter's own
+        # orientation standard instead of the library's generic one. The generic
+        # gate asserts the chest is SQUARE to the bowler, which is right for a
+        # bowler and an umpire and wrong for a batsman: a right-hander's stance
+        # is side-on, and before the spine rotations were delivered at their
+        # authored size (see the shim's axis-angle units) every clip trivially
+        # read as square because the torso never rotated at all.
+        sideon = 'BattingDrive' in f
+        checks = [] if sideon else [
             ('stance: chest faces the bowler', STANCE_FRAME,
              lambda m, w, t: (abs(math.degrees(math.atan2(*body_forward(m)))) < 20.0,
                               'chest yaw %+.1f deg' % math.degrees(math.atan2(*body_forward(m))))),
@@ -518,6 +635,22 @@ def main():
             ('stance: hips at athletic height', STANCE_FRAME,
              lambda m, w, t: (150.0 < m['mixamorig:Hips'].t[1] < 215.0, 'hips Y %.1f' % m['mixamorig:Hips'].t[1])),
         ]
+        if sideon:
+            checks += [
+                ('stance: side-on to the bowler', STANCE_FRAME,
+                 lambda m, w, t: (
+                     25.0 < math.degrees(math.atan2(*body_forward(m))) < 55.0,
+                     'chest closed %+.1f deg off square' % math.degrees(math.atan2(*body_forward(m))))),
+                ('contact: chest has opened, not squared up', CONTACT_FRAME,
+                 lambda m, w, t, at: (
+                     (lambda d: (2.0 < d < 35.0, 'chest opened %+.1f deg since the stance' % d))(
+                         unwind(at, chest_yaw, STANCE_FRAME, CONTACT_FRAME)))),
+                ('stance: lowest ankle at ground', STANCE_FRAME,
+                 lambda m, w, t: (abs(min(m['mixamorig:LeftFoot'].t[1], m['mixamorig:RightFoot'].t[1]) - 24.7) < 8.0,
+                                  'ankle Y %.1f / %.1f' % (m['mixamorig:LeftFoot'].t[1], m['mixamorig:RightFoot'].t[1]))),
+                ('stance: hips at athletic height', STANCE_FRAME,
+                 lambda m, w, t: (150.0 < m['mixamorig:Hips'].t[1] < 215.0, 'hips Y %.1f' % m['mixamorig:Hips'].t[1])),
+            ]
         if 'Umpire' not in f:
             # Batters hold the handle and bowlers hold the ball in both hands; an
             # umpire's hands hang at his sides at the ready.
@@ -533,6 +666,58 @@ def main():
             checks.append(('backlift: hands behind body', 13,
                            lambda m, w, t: (hands_forward(m) < -10.0,
                                             'hands %.1f cm behind hips' % hands_forward(m))))
+            # ---- Round 3 quality gates. The drive is the reference shot, so it
+            # is the one clip held to the movement standard as well as to the
+            # geometry: planted feet, a whole-body kinetic chain, a head that
+            # stays still over the ball, and a finish that comes all the way
+            # back to the stance it started from.
+            checks.append(('whole clip: front foot never skates', 1,
+                           lambda m, w, t, at: (worst_skate(at, 'Left')[0] < 2.5,
+                                                'worst planted move %.1f cm (frame %d)'
+                                                % worst_skate(at, 'Left'))))
+            checks.append(('whole clip: back foot never skates', 1,
+                           lambda m, w, t, at: (worst_skate(at, 'Right')[0] < 2.5,
+                                                'worst planted move %.1f cm (frame %d)'
+                                                % worst_skate(at, 'Right'))))
+            # f18 plants the front foot and it stays down to the finish. If it is
+            # ever up in that window the leg was clamped and the foot never landed.
+            checks.append(('plant-to-finish: front foot really is on the ground', 18,
+                           lambda m, w, t, at: (worst_float(at, 'Left', 18, 32)[0] < 3.0,
+                                                'worst %.1f cm up (frame %d)'
+                                                % worst_float(at, 'Left', 18, 32))))
+            checks.append(('stride: front foot lifts to relocate', 15,
+                           lambda m, w, t: (ankle(m, 'Left')[1] > GROUND + 6.0,
+                                            'front ankle %.1f cm up' % (ankle(m, 'Left')[1] - GROUND))))
+            checks.append(('recovery: front foot steps, not slides', 34,
+                           lambda m, w, t: (ankle(m, 'Left')[1] > GROUND + 4.0,
+                                            'front ankle %.1f cm up' % (ankle(m, 'Left')[1] - GROUND))))
+            checks.append(('recovery: finishes in the stance', 36,
+                           lambda m, w, t, at: (pose_distance(at(1), at(36), SETTLE_BONES)[0] < 3.0,
+                                                'worst %s %.1f cm from frame 1'
+                                                % (pose_distance(at(1), at(36), SETTLE_BONES)[1].replace('mixamorig:', ''),
+                                                   pose_distance(at(1), at(36), SETTLE_BONES)[0]))))
+            checks.append(('contact: head stays over the ball', CONTACT_FRAME,
+                           lambda m, w, t, at: (max(abs(at(fr)['mixamorig:Head'].t[1]
+                                                        - at(CONTACT_FRAME)['mixamorig:Head'].t[1])
+                                                    for fr in range(21, 27)) < 6.0,
+                                                'head height varies %.1f cm through the contact window'
+                                                % max(abs(at(fr)['mixamorig:Head'].t[1]
+                                                          - at(CONTACT_FRAME)['mixamorig:Head'].t[1])
+                                                      for fr in range(21, 27)))))
+            checks.append(('kinetic chain: the hips lead the chest', 21,
+                           lambda m, w, t, at: (
+                               (lambda hip, chest: (
+                                   hip > chest + 8.0,
+                                   'hips unwound %.1f deg vs chest %.1f between backlift and downswing'
+                                   % (hip, chest)))(
+                                   unwind(at, pelvis_yaw, 13, 21), unwind(at, chest_yaw, 13, 21)))))
+            checks.append(('contact: weight has moved onto the front foot', CONTACT_FRAME,
+                           lambda m, w, t, at: (
+                               (lambda d: (d > 4.0, 'hips %.1f cm forward of the stance' % d))(
+                                   hips_travel(at, 1, CONTACT_FRAME)))))
+            checks.append(('follow-through: bat finishes high', 29,
+                           lambda m, w, t: (hands_height(m) - hips_height(m) > 45.0,
+                                            'hands %.1f cm above hips' % (hands_height(m) - hips_height(m)))))
         if 'BattingPull' in f:
             checks.append(('contact: hands in front of body', CONTACT_FRAME,
                            lambda m, w, t: (hands_forward(m) > 5.0,

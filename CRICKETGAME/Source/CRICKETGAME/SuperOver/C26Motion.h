@@ -137,6 +137,70 @@ namespace C26Motion
         return R;
     }
 
+    /** The striker between deliveries: idle life, and the trigger into a stroke.
+     *
+     *  Two distinct problems, solved together because they are the same body.
+     *
+     *  IDLE. A batter waiting for a fast bowler is not still and is not
+     *  fidgeting. The generic Rest() above is right for a fielder at deep
+     *  cover, but it is one sine per channel, so a batter driven by it breathes
+     *  and sways on a single visible period -- which the eye reads as a loop
+     *  within a couple of seconds. This layers incommensurate periods (11
+     *  breaths a minute, a weight drift four times slower, a postural
+     *  micro-correction four times faster) so nothing lines up again inside any
+     *  shot the camera holds on. The bat tap is GATED rather than metronomic:
+     *  the batter taps for a few beats, then rests, which is what a bat tap
+     *  actually looks like and what a plain squared sine never does.
+     *
+     *  TRIGGER. Load is 0 at the top of the bowler's mark and 1 as he releases,
+     *  so the movement it drives has to be MONOTONE. It previously ran through
+     *  sin(Load*PI), which peaks at half load and returns to zero at full: the
+     *  batter loaded into his backlift while the bowler ran in and then put the
+     *  bat back down on the exact delivery stride, so the stroke began from a
+     *  dead stance and the authored clip had to snap the bat back up again.
+     */
+    struct FBatterIdle{float Breath,Weight,Micro,BatTap,BatDrift;};
+    inline FBatterIdle BatterIdle(float Time,int32 Seed)
+    {
+        const float Phase=float(Seed%23)*.41f;
+        const float Rate=1.f+float(Seed%5)*.017f;
+        FBatterIdle B;
+        B.Breath=FMath::Sin(Time*1.15f*Rate+Phase);
+        B.Weight=FMath::Sin(Time*.29f*Rate+Phase*1.3f);
+        B.Micro=FMath::Sin(Time*4.30f*Rate+Phase*2.1f);
+        // Envelope: a slow gate that is open for roughly a third of its cycle.
+        const float Gate=FMath::Clamp(FMath::Sin(Time*.37f*Rate+Phase)*2.2f-.9f,0.f,1.f);
+        B.BatTap=FMath::Square(FMath::Max(0.f,FMath::Sin(Time*2.9f*Rate+Phase)))*Gate;
+        B.BatDrift=FMath::Sin(Time*.53f*Rate+Phase*.7f);
+        return B;
+    }
+
+    /** Press: how far into the trigger the body is (monotone in Load).
+     *  Step:  how far the relocating foot has travelled toward its new position.
+     *  Lift:  how far that foot is off the ground.
+     *
+     *  Step and Lift are deliberately NOT the same curve. Driving the horizontal travel
+     *  with the load and the height with sin(Press*PI) leaves the foot creeping along the
+     *  turf through the last of the load, because sin() is falling back to zero exactly
+     *  where the travel is finishing -- which is a scrape, and a scrape is the single most
+     *  obvious tell that a stance is procedural rather than animated. Instead the step is
+     *  a sub-motion of the load: it begins after the batter has started to press, it is
+     *  OVER before the ball is released, and the foot is planted and perfectly still at
+     *  both ends of it. A foot that is stationary on the ground, then picks up, travels
+     *  and puts down, has taken a step.
+     */
+    struct FBatterTrigger{float Press,Step,Lift;};
+    inline FBatterTrigger BatterTrigger(float Load)
+    {
+        const float P=FMath::Clamp(Load,0.f,1.f);
+        FBatterTrigger T;
+        T.Press=FMath::SmoothStep(0.f,1.f,P);
+        const float Travel=FMath::Clamp((P-.15f)/.65f,0.f,1.f);
+        T.Step=FMath::SmoothStep(0.f,1.f,Travel);
+        T.Lift=FMath::Sin(Travel*PI);
+        return T;
+    }
+
     /** Batting shot classification and kinematics. */
     enum class EC26Shot : uint8
     {

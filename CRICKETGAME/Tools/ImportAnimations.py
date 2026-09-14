@@ -29,6 +29,7 @@ If anything here fails, no existing asset is touched and the match keeps running
 """
 import unreal as u
 import os
+import re
 
 LIB = u.EditorAssetLibrary
 DEST = '/Game/Cricket26/Animations'
@@ -98,7 +99,7 @@ def main():
 
     LIB.make_directory(DEST)
 
-    for name in CLIPS:
+    for name in selected_clips():
         seq = import_one(name, skeleton)
         if not seq:
             continue
@@ -118,6 +119,32 @@ def main():
         LIB.save_loaded_asset(seq)
 
     u.log('C26_ANIM_DONE')
+
+
+def selected_clips():
+    """Optionally narrow the import to one or more clips.
+
+    Reimporting all 18 rewrites 18 .uasset files. When only one clip's source FBX
+    changed, that dirties the other 17 in source control for no reason. So:
+        -C26Clip=A_C26_BattingDrive            (repeatable / comma separated)
+    With no such argument the behaviour is unchanged: import the whole library.
+    """
+    cmd = ''
+    try:
+        cmd = u.SystemLibrary.get_command_line()
+    except Exception:
+        pass
+    names = []
+    for m in re.finditer(r'-C26Clip=([^\s]+)', cmd):
+        names += [n for n in m.group(1).split(',') if n]
+    if not names:
+        return CLIPS
+    unknown = [n for n in names if n not in CLIPS]
+    if unknown:
+        u.log_error('C26_ANIM_FAIL -C26Clip names not in the library: %s' % unknown)
+        return []
+    u.log('C26_ANIM narrowed to %s' % names)
+    return names
 
 
 main()

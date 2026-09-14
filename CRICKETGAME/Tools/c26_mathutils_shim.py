@@ -127,8 +127,16 @@ class Quaternion:
 
     def __init__(self, seq=(1.0, 0.0, 0.0, 0.0), angle=None):
         if angle is not None:
-            # Quaternion(axis_vector, angle)
-            h = math.radians(angle) / 2.0
+            # Quaternion(axis_vector, angle). RADIANS, exactly as mathutils
+            # defines it. This shim used to take degrees, which silently made
+            # the offline solve disagree with the Blender one: c26_anim_author's
+            # R() passes RAD(deg), so every authored spine rotation -- the
+            # batter's stance turn, the hip and torso rotation through a stroke,
+            # every lean and head turn -- was applied at 1/57.3 of its intended
+            # size. A 52 degree side-on stance came out as 0.9 degrees, which is
+            # why the offline-built clips moved their arms and legs over a torso
+            # that never rotated at all.
+            h = angle / 2.0
             s = math.sin(h)
             ax = seq.normalized().v
             self.q = (math.cos(h), ax[0]*s, ax[1]*s, ax[2]*s)

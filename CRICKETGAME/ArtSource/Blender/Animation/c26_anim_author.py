@@ -103,7 +103,7 @@ def repair_facing(spec, hips_loc, ik):
         the imagined frame. The chain defaults baked into Rig.apply are
         injected here as explicit, repaired poles so they can never fight this.
     """
-    R180 = Quaternion(Vector((0.0, 0.0, 1.0)), 180.0)
+    R180 = Quaternion(Vector((0.0, 0.0, 1.0)), math.pi)
     spec = {name: (R180 @ q @ R180.conjugated()) for name, q in spec.items()}
     if hips_loc is not None:
         hips_loc = Vector((-hips_loc[0], -hips_loc[1], hips_loc[2]))
@@ -125,6 +125,16 @@ def repair_facing(spec, hips_loc, ik):
         else:
             out[k] = Vector((-v[0], -v[1], v[2]))
     return spec, hips_loc, out
+
+
+# Every IK target two_bone() could not reach, as (frame, bone, asked, available).
+# two_bone() CLAMPS an over-long target and hands back the closest point on the
+# chain. That is the right behaviour for a solver and the wrong behaviour for an
+# authoring pass, because a clamped limb does not error -- it just quietly hangs
+# in mid-air. That is exactly how the front foot spent a whole round floating
+# ~13 cm off the ground at the moment of contact while every existing gate passed.
+# So the flag is no longer thrown away: it is recorded here and the rebuild fails.
+UNREACHABLE = []
 
 
 class Rig:
@@ -236,7 +246,9 @@ class Rig:
                 S = base.to_translation()
                 L1 = self.rest_len(upper)
                 L2 = self.rest_len(lower)
-                E, _ok = self.two_bone(S, T, L1, L2, pole)
+                E, ok = self.two_bone(S, T, L1, L2, pole)
+                if not ok:
+                    UNREACHABLE.append((CURRENT_FRAME, upper, (T - S).length, L1 + L2))
 
                 # Aim the bone by rotating from where it CURRENTLY points (its inherited
                 # direction, which already carries the whole spine chain's rotation) onto the
@@ -374,27 +386,128 @@ def batting_keys():
         }
         return (frame, spec, V(0.0, hips_y, hips_z), ik)
 
-    # Stance: side-on, knees loaded, hands on the handle in front of the back hip.
-    keys.append(K(1, 52, -6, -14, -10, -26, (0.08, 0.12, 0.88), (0.10, 0.26, 0.09),
-                  (-0.14, 0.06, 0.09), -0.115))
-    # Trigger: weight rocks back, hands lift to the top of the backlift.
-    keys.append(K(7, 58, -3, -18, -10, -28, (0.14, -0.04, 1.08), (0.10, 0.24, 0.09),
-                  (-0.15, 0.02, 0.09), -0.128, -0.03))
-    # Top of backlift: hands high behind the back shoulder, chest coiled.
-    keys.append(K(13, 64, 1, -22, -8, -26, (0.18, -0.20, 1.30), (0.11, 0.20, 0.09),
-                  (-0.15, -0.02, 0.09), -0.132, -0.05))
-    # Downswing: hands come down the line of the ball, front foot reaching out.
-    keys.append(K(18, 44, -12, -4, -6, -18, (0.12, 0.14, 1.00), (0.13, 0.38, 0.10),
-                  (-0.14, 0.06, 0.09), -0.125, 0.02))
-    # CONTACT: hands out past the front foot, chest over the ball, leaning in over it.
-    keys.append(K(23, 26, -20, 10, -2, -8, (0.08, 0.50, 0.94), (0.15, 0.46, 0.10),
-                  (-0.12, 0.12, 0.09), -0.135, 0.10))
-    # Follow-through: hands swing up past the front shoulder, weight fully forward.
-    keys.append(K(29, 6, -17, 22, 2, 0, (0.00, 0.40, 1.30), (0.15, 0.48, 0.10),
-                  (-0.11, 0.16, 0.09), -0.118, 0.13))
-    # Recover.
-    keys.append(K(36, 20, -9, 6, -4, -10, (0.06, 0.26, 1.00), (0.14, 0.40, 0.10),
-                  (-0.12, 0.12, 0.09), -0.120, 0.08))
+    # ------------------------------------------------------------------
+    # ROUND 3. The footwork below is authored around two planted positions and
+    # two genuine STEPS between them, because the previous pass slid the feet.
+    # Measured on the old keys: the front foot travelled 26 -> 20 cm during the
+    # trigger and 38 -> 46 cm between the downswing and contact while flat on
+    # the ground, and the back foot was dragged 6 -> 12 cm through the stroke.
+    # A foot that translates at ground height IS a skate, whatever else the body
+    # is doing. So:
+    #   * the front foot is airborne (z above the 0.09 ground) on exactly the two
+    #     frames it relocates on -- the trigger's back-and-across (f5) and the
+    #     step back out of the finish (f34) -- and is otherwise nailed to one of
+    #     two Y values, 0.20 (trigger position) or 0.45 (stride position);
+    #   * the stride lands at its FINAL 0.45 on the plant frame (f18) and does
+    #     not creep forward into contact;
+    #   * the back foot never changes X or Y after the stance. It expresses the
+    #     pivot by lifting the heel -- z climbing 0.09 -> 0.13 -- which is what a
+    #     back foot actually does while the hips rotate over a braced front leg.
+    # ------------------------------------------------------------------
+
+    FRONT_PLANT = 0.09   # ankle height with the sole on the ground
+    BACK = 0.20          # front-foot Y after the back-and-across trigger
+    STRIDE = 0.45        # front-foot Y after the stride; held to the finish
+
+    # ------------------------------------------------------------------
+    # ROUND 3, SECOND PASS -- WHY THE HIPS CARRY A FORWARD OFFSET.
+    #
+    # The footwork above is right, but on its own it asked the front leg for
+    # more than the leg has. two_bone() silently CLAMPS a target it cannot
+    # reach (it returns a reachable flag that nobody read), so the front ankle
+    # stopped short of its authored point and hung in the air instead of
+    # landing. Measured on the previous pass: the front ankle sat 2.4-9.0 cm
+    # above its own target from f17 to f33, and the corrector then preserved
+    # that as a whole-body lift, leaving the front sole about 13 cm off the
+    # ground at the moment of contact. The front knee was also dead straight
+    # (100.5% extension) in the stance.
+    #
+    # The leg is 76.4 cm. With the hips parked over the back foot the front
+    # foot is ~50 cm away horizontally, which no bent knee can span. A real
+    # batsman solves this the obvious way: he drives his HIPS forward over the
+    # front foot. That shortens the front leg's span and lengthens the back
+    # leg's at the same time, which is exactly the weight transfer the stroke
+    # is supposed to show. So hips_y below now ramps 0.00 -> 0.27 through the
+    # plant and back to 0.00 by f36, and hips_z sinks 1.5-5 cm onto the front
+    # leg instead of the 1 cm it used to.
+    #
+    # Verified per key (front req/L, back req/L -- both must stay under 1.0):
+    #   f1 0.988 f5 0.957 f11 0.969 f13 0.892 f15 0.934 f17 0.971
+    #   f18 0.947 f21 0.924 f23 0.930 f26 0.918 f29 0.924 f32 0.959
+    #   f33 0.958 f35 0.953 f36 0.988
+    # Front knee now runs 162 -> 146 -> 126 -> 142 -> 137 -> 135 -> 147 -> 162
+    # degrees; back knee stays loaded between 113 and 124 degrees.
+    # ------------------------------------------------------------------
+
+    # f1 STANCE / anticipation. Side-on, knees loaded, hands on the handle in
+    # front of the back hip. Frame 36 returns to this pose exactly so the clip
+    # can be left, re-entered and blended against the procedural stance without
+    # a step in it.
+    keys.append(K(1, 52, -6, -14, -10, -26, (0.08, 0.12, 0.88), (0.10, 0.26, FRONT_PLANT),
+                  (-0.14, 0.06, FRONT_PLANT), -0.130, 0.00, 0.04))
+    # f5 TRIGGER. Back and across: the front foot is picked up and replaced, so
+    # it is off the ground on this frame (z 0.115) and lands again at f11. The
+    # hands only begin to lift -- the trigger is not the backlift.
+    keys.append(K(5, 55, -5, -16, -10, -27, (0.11, 0.05, 0.97), (0.105, 0.23, 0.115),
+                  (-0.14, 0.06, FRONT_PLANT), -0.128, -0.02, 0.04))
+    # f11 TOP OF BACKLIFT. Front foot replanted back and across; chest coiled
+    # away from the bowler, hands high behind the back shoulder, weight back.
+    keys.append(K(11, 64, 1, -22, -8, -26, (0.18, -0.20, 1.30), (0.11, BACK, FRONT_PLANT),
+                  (-0.14, 0.06, FRONT_PLANT), -0.135, -0.05, 0.04))
+    # f13 TOE-OFF. The lift LEADS the travel. Keying only the departure and the
+    # landing lets the interpolator carry the foot most of the way across while
+    # it is still a centimetre off the turf, which reads as a scrape; this frame
+    # has the foot clear of the ground before it has gone anywhere.
+    keys.append(K(13, 61, -1, -19, -8, -25, (0.17, -0.16, 1.28), (0.115, 0.22, 0.155),
+                  (-0.14, 0.06, FRONT_PLANT), -0.132, -0.01, 0.04))
+    # f15 STRIDE. The front foot is in the air travelling down the pitch and the
+    # whole body is supported by the rear leg -- the moment a drive commits.
+    keys.append(K(15, 56, -4, -14, -8, -22, (0.16, -0.10, 1.22), (0.12, 0.33, 0.160),
+                  (-0.14, 0.06, FRONT_PLANT), -0.135, 0.03, 0.04))
+    # f17 REACHING. Descending onto the plant with the heel leading, already at
+    # very nearly the Y it will hold for the rest of the stroke.
+    keys.append(K(17, 48, -9, -8, -7, -20, (0.14, 0.06, 1.10), (0.13, 0.44, 0.115),
+                  (-0.14, 0.06, FRONT_PLANT), -0.160, 0.13, 0.04))
+    # f18 FRONT-FOOT PLANT + knee flexion. It lands on the Y it will hold all the
+    # way to the finish; nothing slides forward from here. Hips start to open and
+    # the hands come down into the line of the ball.
+    keys.append(K(18, 44, -12, -4, -6, -18, (0.12, 0.16, 1.00), (0.13, STRIDE, 0.095),
+                  (-0.14, 0.06, 0.095), -0.165, 0.21, 0.04))
+    # f21 DOWNSWING. Hips have rotated through, the torso follows them, and the
+    # back heel comes off the ground as the weight crosses onto the front leg.
+    keys.append(K(21, 34, -17, 3, -4, -13, (0.10, 0.34, 0.96), (0.14, STRIDE, FRONT_PLANT),
+                  (-0.14, 0.06, 0.106), -0.168, 0.27, 0.04))
+    # f23 CONTACT. Bat on ball under the eyes, past the front pad. The match pins
+    # this frame to C26Field::BatContactPoseTime -- it must not move. Head steady
+    # (neck/head near zero relative to the chest), front foot planted, back foot
+    # up on its toe, weight forward.
+    keys.append(K(23, 26, -20, 10, -8, -16, (0.08, 0.50, 0.94), (0.15, STRIDE, FRONT_PLANT),
+                  (-0.14, 0.06, 0.115), -0.168, 0.26, 0.04))
+    # f26 EXTENSION. Arms run on through the line of the ball before the bat is
+    # allowed to turn upward: this is what separates a drive from a heave.
+    keys.append(K(26, 16, -19, 10, -6, -12, (0.04, 0.48, 1.14), (0.15, STRIDE, FRONT_PLANT),
+                  (-0.13, 0.06, 0.125), -0.165, 0.27, 0.04))
+    # f29 FOLLOW-THROUGH. High front elbow, blade finishing up toward the sight
+    # screen, chest come round over a still-planted front foot.
+    keys.append(K(29, 6, -17, 6, -4, -8, (0.00, 0.40, 1.32), (0.15, STRIDE, FRONT_PLANT),
+                  (-0.12, 0.06, 0.130), -0.160, 0.24, 0.04))
+    # f32 POISED FINISH. The stroke's energy is absorbed rather than stopped: the
+    # shape is held while the bat decelerates and the back heel starts down.
+    keys.append(K(32, 24, -12, 4, -6, -14, (0.04, 0.30, 1.12), (0.15, STRIDE, FRONT_PLANT),
+                  (-0.13, 0.06, 0.110), -0.158, 0.20, 0.04))
+    # f33 UNWEIGHT. Same lead-the-travel rule as the stride: the front foot comes
+    # off the ground before it starts coming back, so the recovery is a step and
+    # not a 19 cm slide along the pitch.
+    keys.append(K(33, 30, -11, 2, -7, -16, (0.05, 0.26, 1.06), (0.15, 0.44, 0.145),
+                  (-0.14, 0.06, FRONT_PLANT), -0.145, 0.12, 0.04))
+    # f35 STEP BACK. The back foot is flat and carrying the weight while the
+    # front foot swings back toward the crease and begins to descend.
+    keys.append(K(35, 44, -8, -6, -8, -20, (0.07, 0.17, 0.93), (0.11, 0.30, 0.125),
+                  (-0.14, 0.06, FRONT_PLANT), -0.128, 0.04, 0.04))
+    # f36 RECOVERED. Identical to f1 -- balanced, ready, and a clean seam back
+    # into the procedural stance the athlete holds between deliveries.
+    keys.append(K(36, 52, -6, -14, -10, -26, (0.08, 0.12, 0.88), (0.10, 0.26, FRONT_PLANT),
+                  (-0.14, 0.06, FRONT_PLANT), -0.130, 0.00, 0.04))
     return keys
 
 

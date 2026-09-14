@@ -93,7 +93,7 @@ class SolverRig:
         W1 = v1.world_rest()
         ratio = _bone_len(v1, 'mixamorig:LeftLeg') / (_bone_len(anim_rig, 'mixamorig:LeftLeg') * 100.0)
         k = 1.0 / (ratio * 100.0)      # asset units -> v2 metres
-        R90 = Quaternion(Vector((1.0, 0.0, 0.0)), 90.0)
+        R90 = Quaternion(Vector((1.0, 0.0, 0.0)), math.pi / 2.0)
         self.rest = {}
         for bid in v1.order:
             nm = v1.name[bid]
@@ -334,11 +334,22 @@ def main():
         ('A_C26_BowlingLegSpin', authoring['bowling_legspin_keys'](), 'A_C26_BowlingPace',
          1, 46, [('gather', 8), ('backfoot', 20), ('release', 31), ('follow', 38)]),
     ]
+    # A round that owns one clip must be able to rebuild that clip alone. The
+    # library is 18 files and regenerating all of them puts 17 unrelated assets
+    # into the commit, which is exactly what the per-task scope rules forbid.
+    only = [a for a in sys.argv[1:] if not a.startswith('-')]
+    if only:
+        jobs = [j for j in jobs if j[0] in only]
+        missing = set(only) - {j[0] for j in jobs}
+        if missing:
+            raise SystemExit('unknown clip(s): %s' % ', '.join(sorted(missing)))
+    unreachable = 0
     for name, keys, template, f0, f1, marks in jobs:
         src = os.path.join(SRC_DIR, template + '.fbx')
         dst = os.path.join(OUT_DIR, name + '.fbx')
         rig = RigData(src)
         solver = SolverRig(rig, authoring)
+        authoring['UNREACHABLE'][:] = []
         frames_basis = solve_clip(solver, keys, repair, f0, f1)
         frames_locals = poses_to_locals(solver, frames_basis)
         changed = write_clip(src, dst, frames_locals)
@@ -346,7 +357,17 @@ def main():
               % (name, len(keys), f1 - f0 + 1, changed))
         print('  armature-space landmarks (forward is -Y after the repair):')
         report(solver, frames_locals, marks)
+        # An IK target past the end of its chain is a bug in the KEY, not in the
+        # solve: the limb will be clamped and will hang short of where it was
+        # authored, and nothing downstream can tell. Fail instead of shipping it.
+        for frame, bone, asked, available in authoring['UNREACHABLE']:
+            unreachable += 1
+            print('C26_REACH_FAIL %s frame %d %s: target %.1f cm, chain reaches %.1f cm'
+                  % (name, frame, bone, asked * 100.0, available * 100.0))
     print('C26_REBUILD_DONE')
+    if unreachable:
+        raise SystemExit('%d unreachable IK target(s) -- fix the keys, not the solver'
+                         % unreachable)
 
 
 if __name__ == '__main__':

@@ -52,6 +52,13 @@ const FC26Beat GC26Beats[]={
     {EC26Phase::Intro,-1,0,4.2f,TEXT("12_intro_batter"),60.f,-1,nullptr,0},
     {EC26Phase::Ready,1,0,.5f,TEXT("13_ready_batting"),60.f,-1,nullptr,0},
     {EC26Phase::RunUp,1,0,1.9f,TEXT("14_runup_batting"),60.f,-1,nullptr,0},
+    // The striker mid-trigger. RunUpDuration is 3.25 s and the trigger's load ramps over the last
+    // 0.65 s of it, so 2.95 s in is load ~0.54: the body is half pressed and the front foot is at
+    // the top of its step across, which is the one frame that shows the trigger is a step and not
+    // a foot dragged along the turf. Paired with 14_runup_batting (load 0, unloaded stance) it is
+    // the before/after of the whole pre-delivery movement. Kept 0.30 s clear of the phase end so a
+    // slow frame cannot land it in Delivery and have the beat time out.
+    {EC26Phase::RunUp,1,0,2.95f,TEXT("14b_trigger_batting"),60.f,-1,nullptr,0},
     {EC26Phase::Delivery,1,0,.3f,TEXT("15_delivery_batting"),60.f,-1,nullptr,0},
     {EC26Phase::InPlay,-1,0,.45f,TEXT("16_in_play"),60.f,-1,nullptr,0},
     {EC26Phase::InPlay,-1,0,1.6f,TEXT("17_fielding"),60.f,-1,nullptr,0},

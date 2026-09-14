@@ -1583,8 +1583,14 @@ void AC26Athlete::Animate(float Dt)
     // fielders sharing one stance used to share one clock as well, so the whole side rose and fell
     // together -- which reads as clones far more strongly than shared geometry does.
     const C26Motion::FRest Easy=C26Motion::Rest(MotionTime,SquadNumber*13+int32(Role));
-    const float Sway=Easy.Sway;
     float ActiveFingerCurl=0.38f;
+    // The striker waiting for a bowler is the one body the camera holds on long enough for the
+    // generic Rest()'s single period per channel to read as a loop, so he is driven by the batter's
+    // own idle instead: incommensurate periods, and a bat tap that is gated rather than
+    // metronomic. It also OWNS his breath and weight, so the generic block below stands down for
+    // him rather than stacking a second sway on top of the first.
+    const bool StrikerIdle=Batting&&!Running&&Action==EC26Action::Ready&&!NonStriker;
+    const C26Motion::FBatterIdle BatterLife=C26Motion::BatterIdle(MotionTime,SquadNumber*13+int32(Role));
 
     // Crouch is a hip drop; Shift moves the pelvis horizontally. A batter flexes his knees, he
     // does not sit down: the old fixed 23 cm drop held him in a squat through an entire stroke.
@@ -1725,12 +1731,23 @@ void AC26Athlete::Animate(float Dt)
         }
         else if(Action==EC26Action::Ready)
         {
-            // Rhythmic bat tap and a small weight shift; a still batter reads as a mannequin.
-            const float Tap=FMath::Square(FMath::Max(0.f,FMath::Sin(MotionTime*2.4f)))*3.f;
+            // The stance a striker holds while the bowler is at the top of his mark. It is not a
+            // still pose with a tap bolted on: the bat rests on the turf through the gate, the
+            // weight sits over the balls of the feet, and every movement in it comes from
+            // BatterIdle -- four incommensurate periods plus a GATED bat tap, so nothing lines up
+            // again inside the few seconds the camera holds on him. A squared sine on one channel
+            // (what this was) is legible as a loop within two seconds.
+            const float Tap=BatterLife.BatTap*2.4f;
             const FVector Toe=Rig(4,16,6.f+Tap);
-            Dir=Rig(.10f,.05f,.993f).GetSafeNormal();
+            // The blade drifts a degree or two on its own slow clock. A bat that is welded to one
+            // angle for the whole over is the tell that the stance is being held, not stood in.
+            Dir=Rig(.10f+BatterLife.BatDrift*.035f,.05f,.993f).GetSafeNormal();
             Grip=Toe+Dir*BatLength;
-            TurnRight=46.f+Sway*2.5f;LeanForward=22.f;
+            TurnRight=46.f+BatterLife.Micro*1.1f+BatterLife.Weight*1.6f;
+            LeanForward=22.f+BatterLife.Breath*.7f;
+            LeanRight+=BatterLife.Weight*1.1f;
+            Shift+=Rig(BatterLife.Weight*.7f,BatterLife.Weight*1.2f,0);
+            Crouch-=BatterLife.Breath*.35f;
         }
         else if(Action==EC26Action::Celebrate){Grip=Rig(6,26,196);Dir=Rig(-.25f,.30f,.92f).GetSafeNormal();TurnRight=12.f;LeanForward=-6.f;}
         else if(Action==EC26Action::Disappointed){Grip=Rig(14,16,74);Dir=Rig(.55f,.10f,.83f).GetSafeNormal();TurnRight=22.f;LeanForward=24.f;}
@@ -1747,17 +1764,39 @@ void AC26Athlete::Animate(float Dt)
         }
         else if(Action==EC26Action::Ready)
         {
-            // Trigger movement. A batter does not keep his bat on the ground while the bowler is
-            // running in: he presses forward onto the front foot and lifts the bat up behind his
-            // back shoulder into the backlift, so that the only thing left to do at release is
-            // come down through the line of the ball. The old trigger raised the grip 9 cm, which
-            // reads as a twitch rather than as a batsman loading.
-            const float Press=FMath::Sin(Trigger*PI);
-            Shift=Rig(-Press*4.f,Press*1.5f,0);
-            const FVector Loaded=Rig(-15.f,19.f,114.f);
-            Grip=FMath::Lerp(Grip,Loaded,Press*.92f);
-            Dir=FMath::Lerp(Dir,Rig(-.42f,.26f,.87f).GetSafeNormal(),Press*.92f).GetSafeNormal();
-            Crouch-=Press*5.f;LeanForward+=Press*4.f;
+            // Trigger movement. Load is 0 at the top of the bowler's mark and 1 as the ball leaves
+            // the hand, so what it drives has to be MONOTONE. This used to run through
+            // sin(Load*PI), which peaks at half load and is back at zero on the delivery stride:
+            // the striker loaded into his backlift while the bowler ran in and then put the bat
+            // back down on the exact ball, so the stroke had to start over from a dead stance and
+            // the authored clip's own trigger read as a snap.
+            //
+            // It is deliberately SMALL. A trigger that visibly strides is one the bowler can read,
+            // and it has to hand over to the clip's own trigger (A_C26_BattingDrive frame 5)
+            // without a step -- so this is the load a batsman takes, not the backlift, which
+            // belongs to the clip.
+            const C26Motion::FBatterTrigger Set=C26Motion::BatterTrigger(Trigger);
+            const float Press=Set.Press;
+            // Back and across: the pelvis drifts a hand's width off the front foot and the
+            // shoulders follow it, with the knees taking the load rather than the hips sitting.
+            Shift=Rig(-Press*3.4f,Press*1.2f,0);
+            Crouch-=Press*3.2f;
+            LeanForward+=Press*2.6f;
+            TurnRight+=Press*2.2f;
+            // Preparation of the hands: the bat comes up off the turf about a hand's width and the
+            // blade closes a few degrees. Not the backlift -- see above.
+            const FVector Loaded=Rig(4.f,21.f,100.f);
+            Grip=FMath::Lerp(Grip,Loaded,Press*.85f);
+            Dir=FMath::Lerp(Dir,Rig(-.10f,.16f,.982f).GetSafeNormal(),Press*.85f).GetSafeNormal();
+            // The front foot relocates back and across -- and it takes a STEP to do it. Set.Step
+            // carries the travel and Set.Lift the height, and the two are shaped so the foot is
+            // planted and still before the step and planted and still after it, with the lift
+            // leading the travel in between. Driving the travel off the load and the height off a
+            // plain sine leaves the foot creeping along the turf as the load finishes, which is a
+            // scrape, and a scrape is the tell that gives a procedural stance away.
+            FL=Rig(17.f-Set.Step*5.5f+FootworkIntent*4.f,
+                   -4.f+Set.Step*2.4f+StrideIntent*3.f,
+                   AnkleZ+Set.Lift*5.5f);
         }
         // Keep the handle inside the arms' reach before deriving the hands from it. The IK clamps
         // silently at full extension, so a follow-through that asked for more arm than the athlete
@@ -1773,10 +1812,12 @@ void AC26Athlete::Animate(float Dt)
     // Resting motion for anyone the match is not currently driving: breath through the chest, and
     // weight drifting slowly from one foot to the other. It is small on purpose -- a player who
     // sways visibly is not standing still, he is unbalanced -- but a player with none of it at all
-    // is a statue, and a field of statues is the first thing a viewer notices.
+    // is a statue, and a field of statues is the first thing a viewer notices. The striker is
+    // excluded: BatterIdle above already gave him a richer version of exactly this, and adding a
+    // second sway on top would double the amplitude and re-introduce the single period.
     const bool Busy=Action==EC26Action::Batting||Action==EC26Action::Bowling||Action==EC26Action::Throw
         ||Action==EC26Action::Catch||Action==EC26Action::Pickup||Action==EC26Action::Dive;
-    if(!Running&&!Busy)
+    if(!Running&&!Busy&&!StrikerIdle)
     {
         LeanForward+=Easy.Breath*1.2f;
         Shift+=Rig(Easy.Weight*.8f,Easy.Weight*1.4f,0);
