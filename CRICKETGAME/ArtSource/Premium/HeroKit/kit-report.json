@@ -1,0 +1,82 @@
+{
+  "kit": "HeroKit_02",
+  "match_approved": false,
+  "round1_body_sha256": "8f4fdddf5b4c2d2b68994ec9cba56917737e5617993e1acb2b79d7f9630ef926",
+  "skeleton_sha256": "fdf359c253b75d835ad37559acb82b62631e7a750269e511cd52f742c60b02b2",
+  "bones": 342,
+  "skeleton_unchanged": true,
+  "body_verts_unchanged": true,
+  "parts": [
+    {
+      "name": "SKM_MH_C26_Player_001_BodyMesh.001",
+      "verts": 25898,
+      "tris": 48856,
+      "slots": [
+        "MI_Body_Skin"
+      ]
+    },
+    {
+      "name": "SKM_MH_C26_Player_001_FaceMesh.001",
+      "verts": 19283,
+      "tris": 34514,
+      "slots": [
+        "MI_Face_Skin_LOD1",
+        "MI_Face_Teeth",
+        "M_Hide",
+        "MI_Face_Eye_Left",
+        "MI_Face_Eye_Right",
+        "MI_Face_EyeShell",
+        "MI_Face_Eyelashes",
+        "MI_Face_LacrimalFluid",
+        "M_Hide",
+        "MI_Face_EyelashesHiLODs",
+        "MI_Face_Skin_LOD3",
+        "MI_Face_Skin_LOD5to7"
+      ]
+    },
+    {
+      "name": "C26_ContinuousJersey",
+      "verts": 11502,
+      "tris": 22996,
+      "slots": [
+        "Jersey",
+        "HeroJerseyTrim",
+        "HeroJerseyStitch"
+      ]
+    },
+    {
+      "name": "C26_Trousers",
+      "verts": 13192,
+      "tris": 26394,
+      "slots": [
+        "Trousers",
+        "HeroTrouserTrim",
+        "HeroTrouserStitch"
+      ]
+    },
+    {
+      "name": "C26_Shoe_L",
+      "verts": 461,
+      "tris": 780,
+      "slots": [
+        "M_C26_ShoeUpper",
+        "M_C26_ShoeSole",
+        "M_C26_ShoeFlash",
+        "M_C26_ShoeLace",
+        "M_C26_ShoeSpike"
+      ]
+    },
+    {
+      "name": "C26_Shoe_R",
+      "verts": 461,
+      "tris": 780,
+      "slots": [
+        "M_C26_ShoeUpper",
+        "M_C26_ShoeSole",
+        "M_C26_ShoeFlash",
+        "M_C26_ShoeLace",
+        "M_C26_ShoeSpike"
+      ]
+    }
+  ]
+}
