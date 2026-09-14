@@ -54,9 +54,16 @@ facing.normalize()
 up = Vector((0, 0, 1))
 
 offsets = {}
+desired_frames = {}
+BONES = ('pelvis', 'spine_05', 'neck_01', 'head', 'clavicle_l', 'clavicle_r', 'upperarm_l', 'upperarm_r',
+         'lowerarm_l', 'lowerarm_r', 'hand_l', 'hand_r', 'thigh_l', 'thigh_r', 'calf_l', 'calf_r',
+         'foot_l', 'foot_r', 'ball_l', 'ball_r')
 
 
 def record(slot, bone, desired):
+    desired_frames[slot] = {'bone': bone, 'origin': list(desired.translation),
+                            'z': list(desired.col[2].to_3d().normalized()),
+                            'x': list(desired.col[0].to_3d().normalized())}
     off = mat(bone).inverted() @ desired
     loc = off.translation
     rot = off.to_3x3()
@@ -81,7 +88,9 @@ top, bottom = palm('l'), palm('r')
 shaft = top - bottom
 if shaft.length < 4.0:
     shaft = facing
-bat = Matrix.Translation(top + shaft.normalized() * 4.5) @ make_from_zx(shaft, facing).to_4x4()
+# The animations orient hand_l so that hand_l @ BAT_OFFSET_L IS the authored bat (c26_rig.apply),
+# so the socket must reproduce exactly that frame or every stroke's blade path is wrong in game.
+bat = mat('hand_l') @ rig_lib.BAT_OFFSET_L
 record('Bat', 'hand_l', bat)
 
 # Gloves: centred on the palm, opening toward the wrist.
@@ -105,4 +114,6 @@ skull = head('head') + Vector((0, 0, 10.5)) + facing * 0.8
 record('Helmet', 'head', Matrix.Translation(skull) @ make_from_xz(facing, up).to_4x4())
 
 OUT.write_text(json.dumps(offsets, indent=1))
+(ROOT / 'Artifacts/CharacterAudit/batter-desired-stance.json').write_text(json.dumps(
+    {'bones': {n: list(head(n)) for n in BONES}, 'slots': desired_frames}, indent=1))
 print('C26_BATTER_FIT', len(offsets), 'slots ->', OUT)

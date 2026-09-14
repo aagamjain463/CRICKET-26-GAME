@@ -89,6 +89,16 @@ bool FC26CharacterContractTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("Spin fallback does not become pace"),C26Character::BowlingKey(EC26Delivery::OffBreak,false)!=C26Character::BowlingKey(EC26Delivery::Pace,false));
     TestTrue(TEXT("Finger and wrist spin have distinct actions"),C26Character::BowlingKey(EC26Delivery::OffBreak,false)!=C26Character::BowlingKey(EC26Delivery::LegBreak,false));
     TestTrue(TEXT("Handed batting has distinct assets"),C26Character::ShotKey(TEXT("COVER DRIVE"),true)!=C26Character::ShotKey(TEXT("COVER DRIVE"),false));
+    // Every label the shot classifier can print must land on an authored stroke clip.
+    for(const TCHAR* Label:{TEXT("BACK-FOOT DEFENCE"),TEXT("YORKER BLOCK"),TEXT("DEFENSIVE PUSH"),TEXT("UPPER CUT"),TEXT("SQUARE CUT"),
+        TEXT("HOOK"),TEXT("PULL"),TEXT("DUG-OUT DRIVE"),TEXT("LATE CUT"),TEXT("BACK-FOOT PUNCH"),TEXT("EXTRA-COVER DRIVE"),
+        TEXT("LOFTED COVER DRIVE"),TEXT("COVER DRIVE"),TEXT("LEG GLANCE"),TEXT("LEG-SIDE PICKUP"),TEXT("FLICK"),TEXT("ON DRIVE"),
+        TEXT("LOFTED STRAIGHT DRIVE"),TEXT("STRAIGHT DRIVE"),TEXT("SWEEP"),TEXT("SLOG SWEEP")})
+    {
+        FString Clip=C26Character::ShotKey(Label,false).ToString();Clip.RemoveFromEnd(TEXT("_R"));
+        TestTrue(FString::Printf(TEXT("Label %s maps to an authored stroke"),Label),C26Character::ShotClips().Contains(Clip));
+    }
+    TestEqual(TEXT("Right-handed batter uses right-handed clips"),C26Character::ShotKey(TEXT("SQUARE CUT"),false),FName(TEXT("SQUARECUT_R")));
     return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FC26CharacterGraphTest,"Cricket26.Characters.NativeSkeletalGraph",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)

@@ -32,9 +32,25 @@ bool Requires(EC26VisualRole Role, EC26EquipmentSlot Slot)
     return Allows(Role,Slot)&&Slot!=EC26EquipmentSlot::Headwear&&Slot!=EC26EquipmentSlot::Accessory
         &&!(Slot==EC26EquipmentSlot::Helmet&&Role==EC26VisualRole::Keeper);
 }
+const TArray<FString>& ShotClips()
+{
+    static const TArray<FString> Clips={TEXT("STRAIGHTDRIVE"),TEXT("COVERDRIVE"),TEXT("ONDRIVE"),TEXT("FRONTFOOTDEFENCE"),
+        TEXT("LOFTEDDRIVE"),TEXT("BACKFOOTDEFENCE"),TEXT("BACKFOOTPUNCH"),TEXT("SQUARECUT"),TEXT("PULL"),TEXT("HOOK"),
+        TEXT("SWEEP"),TEXT("SLOGSWEEP"),TEXT("LOFTEDSTRAIGHT"),TEXT("LEGGLANCE")};
+    return Clips;
+}
 FName ShotKey(const FString& Label,bool Left)
 {
     FString Key=Label.ToUpper();Key.ReplaceInline(TEXT(" "),TEXT(""));Key.ReplaceInline(TEXT("-"),TEXT(""));
+    // Every label C26Controls::ShotFamily can print resolves to a stroke that is biomechanically that
+    // family, so the simulation's named shot is the one the batter visibly plays.
+    static const TMap<FString,FString> Alias={
+        {TEXT("DEFENSIVEPUSH"),TEXT("FRONTFOOTDEFENCE")},{TEXT("YORKERBLOCK"),TEXT("FRONTFOOTDEFENCE")},
+        {TEXT("DUGOUTDRIVE"),TEXT("STRAIGHTDRIVE")},{TEXT("EXTRACOVERDRIVE"),TEXT("COVERDRIVE")},
+        {TEXT("LOFTEDCOVERDRIVE"),TEXT("LOFTEDDRIVE")},{TEXT("LOFTEDSTRAIGHTDRIVE"),TEXT("LOFTEDSTRAIGHT")},
+        {TEXT("LEGSIDEPICKUP"),TEXT("LOFTEDSTRAIGHT")},{TEXT("UPPERCUT"),TEXT("SQUARECUT")},
+        {TEXT("LATECUT"),TEXT("SQUARECUT")},{TEXT("FLICK"),TEXT("LEGGLANCE")}};
+    if(const FString* Clip=Alias.Find(Key))Key=*Clip;
     return FName(*(Key+(Left?TEXT("_L"):TEXT("_R"))));
 }
 FName BowlingKey(EC26Delivery Delivery,bool Left)
@@ -171,7 +187,7 @@ bool UC26CharacterProfile::Validate(TArray<FString>& Errors,bool RequireApproval
     for(FName Key:Base)if(!FindClip(Key))Errors.Add(TEXT("Missing required animation: ")+Key.ToString());
     for(const TCHAR* Hand:{TEXT("_R"),TEXT("_L")})
     {
-        for(const TCHAR* Shot:{TEXT("COVERDRIVE"),TEXT("STRAIGHTDRIVE"),TEXT("ONDRIVE"),TEXT("PULL"),TEXT("SWEEP"),TEXT("LEGGLANCE"),TEXT("FRONTFOOTDEFENCE")})
+        for(const FString& Shot:C26Character::ShotClips())
         {
             const FName Key(*(FString(Shot)+Hand));const auto* Clip=FindClip(Key);
             if(!Clip||Clip->Event!=TEXT("BatContact"))Errors.Add(TEXT("Missing shot/BatContact: ")+Key.ToString());
@@ -240,8 +256,8 @@ TArray<FString> UC26CharacterProfile::InspectRole(EC26VisualRole Role) const
         for(const TCHAR* Hand:{TEXT("_L"),TEXT("_R")})
         {
             for(const TCHAR* Key:{TEXT("BatterReady"),TEXT("BatterRun"),TEXT("BatterCelebrate")})Required.Add(FName(*(FString(Key)+Hand)),NAME_None);
-            for(const TCHAR* Key:{TEXT("COVERDRIVE"),TEXT("STRAIGHTDRIVE"),TEXT("ONDRIVE"),TEXT("PULL"),TEXT("SWEEP"),TEXT("LEGGLANCE"),TEXT("FRONTFOOTDEFENCE")})
-                Required.Add(FName(*(FString(Key)+Hand)),TEXT("BatContact"));
+            for(const FString& Key:C26Character::ShotClips())
+                Required.Add(FName(*(Key+Hand)),TEXT("BatContact"));
         }
     }
     else if(Role==EC26VisualRole::Umpire)

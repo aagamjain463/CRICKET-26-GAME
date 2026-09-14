@@ -80,6 +80,9 @@ def clear(rig):
     for pb in rig.pose.bones:
         pb.rotation_quaternion = Quaternion((1, 0, 0, 0))
         pb.location = Vector()
+        # Every pb.matrix assignment leaks a little float scale. Never resetting it let limb
+        # lengths drift across a long authoring session, so later clips got longer or shorter arms.
+        pb.scale = Vector((1, 1, 1))
     update()
 
 
@@ -255,6 +258,66 @@ def to_rig(spec):
     return out
 
 
+def _reach_assist(rig, solved, arm, limit=42.0):
+    """The bat is placed where the ball is, so both hands are fixed. If a shoulder cannot reach its
+    hand, turn and bend the upper torso towards the bat the way a batter's chest follows the hands,
+    instead of tearing the bottom hand off the handle. The head keeps its world orientation, so the
+    eyes stay on the ball while the chest works underneath them.
+
+    The search minimises reach deficit plus a small cost on the turn itself and is warm-started from
+    the previous frame, so the assist fades in and out smoothly instead of snapping on."""
+    targets = [solved.get('hand_l'), solved.get('hand_r')]
+    if None in targets:
+        return
+    pivot = rig.pose.bones['spine_02']
+    h = pivot.head.copy()
+    shoulders = [rig.pose.bones['upperarm_l'].head - h, rig.pose.bones['upperarm_r'].head - h]
+
+    def cost(q):
+        over = sum(max(0.0, ((h + q @ s) - t).length - arm * 0.955) ** 2 for s, t in zip(shoulders, targets))
+        return over + 0.004 * math.degrees(q.angle) ** 2
+
+    warm = getattr(_reach_assist, 'warm', None)
+    total = Quaternion()
+    best = cost(total)
+    if warm is not None and cost(warm) < best:
+        total, best = warm.copy(), cost(warm)
+    step = 2.0 * D
+    axes = [Vector(a) for a in ((1, 0, 0), (0, 1, 0), (0, 0, 1))]
+    for _ in range(120):
+        pick = None
+        for axis in axes:
+            for sign in (1.0, -1.0):
+                q = Quaternion(axis, sign * step) @ total
+                if math.degrees(q.angle) > limit:
+                    continue
+                c = cost(q)
+                if c < best - 1e-5:
+                    pick, best = q, c
+        if pick is None:
+            if step < 0.25 * D:
+                break
+            step *= 0.5
+            continue
+        total = pick
+    _reach_assist.warm = total.copy()
+    if math.degrees(total.angle) < 0.05:
+        return
+    head = rig.pose.bones['head']
+    head_rot = head.matrix.to_quaternion()
+    # Spread the turn through the lumbar and thoracic joints so it bends the ribcage, not one hinge.
+    names = ('spine_02', 'spine_03', 'spine_04', 'spine_05')
+    part = Quaternion().slerp(total, 1.0 / len(names))
+    for name in names:
+        pb = rig.pose.bones[name]
+        update()
+        c = pb.head.copy()
+        pb.matrix = Matrix.Translation(c) @ part.to_matrix().to_4x4() @ Matrix.Translation(-c) @ pb.matrix
+    update()
+    head.matrix = Matrix.LocRotScale(head.head.copy(), head_rot, Vector((1, 1, 1)))
+    update()
+
+
 def apply(rig, spec):
     """Resolve one pose specification onto the rig.
 
@@ -361,6 +424,9 @@ def apply(rig, spec):
                 if solved.get(f'hand_{side}') is not None:
                     solved[f'hand_{side}'] = solved[f'hand_{side}'] + shift
 
+    if 'shaft' in spec:
+        _reach_assist(rig, solved, arm)
+
     for side in ('l', 'r'):
         target = solved.get(f'hand_{side}')
         if target is not None:
@@ -385,7 +451,10 @@ def apply(rig, spec):
             bat_m = Matrix.Translation(Vector(top_pos) + sh * 4.5) @ make_from_zx(sh, fc)
             hand_bone = rig.pose.bones[f'hand_{bat_side}']
             off = BAT_OFFSET_R if bat_side == 'r' else BAT_OFFSET_L
-            hand_bone.matrix = bat_m @ off.inverted()
+            # Rotation only: the wrist stays where the arm put it, so a short reach can move the
+            # bat a little but can never pull the hand off the end of the forearm.
+            hand_bone.matrix = Matrix.LocRotScale(hand_bone.head.copy(),
+                                                  (bat_m @ off.inverted()).to_quaternion(), Vector((1, 1, 1)))
             update()
 
     apply.last_targets = solved
@@ -466,30 +535,112 @@ def _fcurves(action):
         yield from action.fcurves
 
 
-def bake(rig, name, keys, loop=False):
+def _monotone(xs, ys, x):
+    """Fritsch-Carlson monotone cubic: C1-smooth through every key, and never overshoots a key.
+    Overshoot is what pushes a planted shoe through the floor or a hand past the handle."""
+    n = len(xs)
+    if n == 1 or x <= xs[0]:
+        return ys[0]
+    if x >= xs[-1]:
+        return ys[-1]
+    h = [xs[i + 1] - xs[i] for i in range(n - 1)]
+    s = [(ys[i + 1] - ys[i]) / h[i] for i in range(n - 1)]
+    m = [s[0]] + [0.0 if s[i - 1] * s[i] <= 0 else (s[i - 1] + s[i]) * 0.5 for i in range(1, n - 1)] + [s[-1]]
+    m[0] = m[-1] = 0.0  # every stroke starts and ends at rest
+    for i in range(n - 1):
+        if s[i] == 0.0:
+            m[i] = m[i + 1] = 0.0
+            continue
+        a, b = m[i] / s[i], m[i + 1] / s[i]
+        if a * a + b * b > 9.0:
+            t = 3.0 / math.sqrt(a * a + b * b)
+            m[i], m[i + 1] = t * a * s[i], t * b * s[i]
+    i = max(k for k in range(n - 1) if xs[k] <= x)
+    t = (x - xs[i]) / h[i]
+    t2, t3 = t * t, t * t * t
+    return ((2 * t3 - 3 * t2 + 1) * ys[i] + (t3 - 2 * t2 + t) * h[i] * m[i]
+            + (-2 * t3 + 3 * t2) * ys[i + 1] + (t3 - t2) * h[i] * m[i + 1])
+
+
+def spec_at(keys, frame):
+    """Technique-space interpolation: the stance, IK targets, bat shaft and face are blended, then the
+    pose is solved. Blending solved bone rotations instead lets the bottom hand drift off the handle
+    and flips the bat between keys, which is exactly what a camera catches."""
+    frames = [float(f) for f, _ in keys]
+    out = {}
+    names = []
+    for _, spec in keys:
+        names.extend(k for k in spec if k not in names)
+    for key in names:
+        present = [(f, s[key]) for f, s in zip(frames, (s for _, s in keys)) if key in s]
+        values = [v for _, v in present]
+        xs = [f for f, _ in present]
+        v0 = values[0]
+        numeric = isinstance(v0, tuple) and all(isinstance(e, (int, float)) for e in v0)
+        tagged = (isinstance(v0, tuple) and v0 and isinstance(v0[0], str)
+                  and all(isinstance(v, tuple) and v[:1] == v0[:1] and len(v) == len(v0)
+                          and (v0[0] != 'OFF' or v[1] == v0[1]) for v in values))
+        if numeric and all(isinstance(v, tuple) and len(v) == len(v0) for v in values):
+            out[key] = tuple(_monotone(xs, [v[i] for v in values], frame) for i in range(len(v0)))
+            if key in ('shaft', 'face'):
+                vec = Vector(out[key]).normalized()
+                out[key] = (vec.x, vec.y, vec.z)
+        elif tagged:
+            head = 2 if v0[0] == 'OFF' else 1
+            out[key] = v0[:head] + tuple(_monotone(xs, [v[i] for v in values], frame)
+                                         for i in range(head, len(v0)))
+        else:  # grips and mixed forms step on the key at or before this frame
+            out[key] = next((v for f, v in reversed(present) if f <= frame), v0)
+    return out
+
+
+def bake(rig, name, keys, loop=False, dense=False):
     """Write one action. `keys` is [(frame, spec), ...]; the pose at each frame is resolved and
-    stamped onto every controlled bone so interpolation never drifts through an unkeyed joint."""
+    stamped onto every controlled bone so interpolation never drifts through an unkeyed joint.
+    `dense` resolves the interpolated technique on every frame (batting: two hands, one bat)."""
     if rig.animation_data is None:
         rig.animation_data_create()
+    bones = key_bones(rig)
+    if loop and keys[0][1] != keys[-1][1]:
+        keys = list(keys) + [(keys[-1][0] + (keys[1][0] - keys[0][0]), keys[0][1])]
+    if dense:
+        keys = [(f, spec_at(keys, f)) for f in range(int(keys[0][0]), int(keys[-1][0]) + 1)]
+    # Solve every pose with no action bound. With an action attached, a depsgraph update can
+    # re-evaluate the previous clip over the pose being solved and leak it into this one.
+    rig.animation_data.action = None
+    _reach_assist.warm = None
+    solved, previous = [], {}
+    for frame, spec in keys:
+        apply(rig, spec)
+        pose = {}
+        for n in bones:
+            q = rig.pose.bones[n].rotation_quaternion.copy()
+            # q and -q are the same rotation; keep neighbours in one hemisphere so no sampler
+            # ever spins a joint the long way round between two frames.
+            if n in previous and previous[n].dot(q) < 0:
+                q.negate()
+            previous[n] = q
+            pose[n] = (q, rig.pose.bones[n].location.copy())
+        solved.append((frame, pose))
+    # Any bone the solver translated must be keyed, or playback keeps a stale offset from the last
+    # pose that happened to be solved.
+    moved = {'pelvis'} | {n for _, pose in solved for n in bones if pose[n][1].length > 1e-4}
     action = bpy.data.actions.new(name)
     action.use_fake_user = True
     rig.animation_data.action = action
     if hasattr(action, 'slots'):  # Blender 4.4+ slotted actions
         slot = action.slots.new(id_type='OBJECT', name=rig.name)
         rig.animation_data.action_slot = slot
-    bones = key_bones(rig)
-    if loop and keys[0][1] != keys[-1][1]:
-        keys = list(keys) + [(keys[-1][0] + (keys[1][0] - keys[0][0]), keys[0][1])]
-    for frame, spec in keys:
-        apply(rig, spec)
+    for frame, pose in solved:
         for n in bones:
             pb = rig.pose.bones[n]
+            pb.rotation_quaternion, pb.location = pose[n]
             pb.keyframe_insert('rotation_quaternion', frame=frame, group=n)
-            if n == 'pelvis':
+            if n in moved:
                 pb.keyframe_insert('location', frame=frame, group=n)
     for fc in _fcurves(action):
         for kp in fc.keyframe_points:
-            kp.interpolation = 'BEZIER'
+            kp.interpolation = 'LINEAR' if dense else 'BEZIER'
             kp.handle_left_type = kp.handle_right_type = 'AUTO_CLAMPED'
     bpy.context.scene.frame_start = int(keys[0][0])
     bpy.context.scene.frame_end = int(keys[-1][0])

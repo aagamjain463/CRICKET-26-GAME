@@ -303,6 +303,10 @@ namespace C26Controls
             return BallHeightCm > 148.f ? TEXT("HOOK") : TEXT("PULL");
         }
         if (Yorker) return TEXT("DUG-OUT DRIVE");
+        // Committing well beyond the ideal press to a full leg-side ball below the hip means going
+        // down on the back knee: a sweep, or a slog sweep when lofted.
+        if (ShotAngleDeg < -34.f && BallHeightCm < 80.f && Stride > IdealStrideForLength(LengthCm) + 0.1f)
+            return bLoft ? TEXT("SLOG SWEEP") : TEXT("SWEEP");
         if (ShotAngleDeg > 78.f) return TEXT("LATE CUT");
         if (ShotAngleDeg > 55.f) return Stride < -0.3f ? TEXT("BACK-FOOT PUNCH") : TEXT("EXTRA-COVER DRIVE");
         if (ShotAngleDeg > 22.f) return bLoft ? TEXT("LOFTED COVER DRIVE") : TEXT("COVER DRIVE");

@@ -75,21 +75,56 @@ BOWLER_READY = {
     'grip_l': 'open', 'grip_r': 'seam',
 }
 
-# Right-handed stance: hips ~48 deg closed, shoulders a further 20, head turned back square to the
-# bowler. The turn is spread across pelvis, chest, neck_01, neck_02 and head so no joint exceeds 30.
-# Hands rest cleanly at the right hip with the bat blade grounded just outside the back foot.
+# Right-handed stance. Hips ~58 deg closed and shoulders a further 22, so the LEFT shoulder points at
+# the bowler; neck and head turn back square so both eyes are level on the ball. Toes point towards
+# point (back foot parallel to the crease, front foot a touch open) and every knee tracks its toes -
+# a knee aimed down the pitch over a side-on foot is what makes a stance read as a mannequin.
+# LEFT hand is the top hand; the bat toe rests just outside the back toe.
+import math as _math
+
+
+def _foot(side, x, y, z=GROUND, toe=-70.0, knee_out=62.0):
+    """Planted or travelling foot, its toe direction (rig rz, negative = towards point for a
+    right-hander) and a knee pole that keeps the knee over the toes."""
+    t = _math.radians(toe)
+    dx, dy = _math.sin(t), _math.cos(t)
+    return {f'foot_{side}': (x, y, z), f'ankle_{side}': (0, 0, toe),
+            f'knee_{side}': (x + dx * 90.0, y + dy * 90.0, knee_out)}
+
+
+_SWEET = 62.0 - 4.5   # hand_l target to the middle of the blade, measured down the handle
+
+
+def _unit(v):
+    n = _math.sqrt(sum(c * c for c in v)) or 1.0
+    return tuple(c / n for c in v)
+
+
+def _bat_at(sweet, shaft, face):
+    """Place the bat by where the middle of the blade is - that is where the ball is. `shaft` points
+    from the blade up to the handle, `face` is the hitting-face normal. The LEFT (top) hand is solved
+    from it and the RIGHT (bottom) hand is derived 8.5cm down the same handle, so the grip can never
+    come apart and a right-hander can never end up with the hands swapped."""
+    s = _unit(shaft)
+    hand = tuple(p + c * _SWEET for p, c in zip(sweet, s))
+    return {'hand_l': hand, 'shaft': s, 'face': _unit(face), 'grip_l': 'bat', 'grip_r': 'bat'}
+
+
+def _bat_held(hand, shaft, face):
+    return {'hand_l': hand, 'shaft': _unit(shaft), 'face': _unit(face), 'grip_l': 'bat', 'grip_r': 'bat'}
+
+
 BATTER_READY_R = {
-    'pelvis': (8, 0, -38, 0, 0, -9), 'spine': (14, 0, -9), 'chest': (4, 0, -14),
-    'neck': (-10, 0, 30), 'head': (-4, 0, 28),
-    'foot_l': (1, 10, GROUND), 'foot_r': (-3, -13, GROUND),
-    'elbow_l': (14, 12, 115), 'elbow_r': (-22, -10, 105),
-    **_bat_hands((-12, 3, 92), (0.06, 0.20, 0.98), (0.10, 0.98, -0.10)),
+    'pelvis': (8, 0, -58, 0, -3, -10), 'spine': (16, 0, -10), 'chest': (5, 2, -12),
+    'neck': (-12, 0, 34), 'head': (-8, 0, 34),
+    **_foot('l', 3, 15, toe=-62), **_foot('r', -1, -21, toe=-86),
+    'elbow_l': (-34, 58, 112), 'elbow_r': (-8, -46, 92),
+    **_bat_held((-27, 2, 92), (0.16, 0.30, 0.94), (0.12, 0.99, -0.05)),
 }
 BATTER_READY_TAP = dict(BATTER_READY_R, **{   # bat tap: the stance breathes instead of freezing
-    'pelvis': (9, 0, -38, 0, 0, -10), 'spine': (15, 0, -9),
-    **_bat_hands((-12, 3, 90), (0.06, 0.20, 0.98), (0.10, 0.98, -0.10)),
+    'pelvis': (9, 0, -58, 0, -3, -11), 'spine': (17, 0, -10),
+    **_bat_held((-27, 2, 89), (0.16, 0.30, 0.94), (0.12, 0.99, -0.05)),
 })
-
 
 # ================================================================= locomotion
 
@@ -189,305 +224,465 @@ def _turn(sign):
 
 
 # ================================================================= batting
+#
+# Round 4 library. Every stroke is authored as real technique in the batter's own frame - where the
+# feet go, where the middle of the bat meets the ball, which way the face points - and baked densely
+# (c26_rig.spec_at), so the pose is re-solved on every frame instead of blending bone rotations.
+#
+# RIGHT-HANDED INVARIANTS (enforced by batting_lab.py before anything is exported):
+#   * LEFT shoulder, LEFT hip and LEFT foot lead down the pitch; the left foot is always the front foot
+#   * LEFT hand is the top hand (`_bat_at`/`_bat_held` solve it), RIGHT hand sits 8.5cm below it
+#   * off side is -X, leg side is +X; a stroke `direction` of 0 is straight, positive is off side
+#   * the bat never passes through the torso, head or thighs on any frame
+# Left-handers are the sagittal mirror of these clips, never a separately bent set of arms.
+#
+# Phases on the 30fps clock: stance 0 -> trigger 6 -> backlift 11 -> stride/load 17 -> plant 22 ->
+# downswing 26 -> contact -> extension -> finish -> hold -> recovery -> stance.
 
-def _shot(name, backlift, stride, plant, contact, through, recover, contact_frame=30, length=58):
-    """A stroke as five real phases. `contact_frame` is where the BatContact notify goes, and the
-    simulation warps its own timing onto that frame rather than the clip dictating the outcome."""
-    return {
-        'name': name, 'event': 'BatContact', 'contact': contact_frame,
-        'keys': [(0, BATTER_READY_R), (8, backlift), (16, stride), (23, plant),
-                 (contact_frame, contact), (38, through), (48, recover), (length, BATTER_READY_R)],
-    }
+G = GROUND
 
 
-# Backlift is shared: hands lift up and back over the off stump along the right hip,
-# front shoulder drops, weight settles on the back foot. Bat blade angles back towards slips.
-_BACKLIFT = dict(BATTER_READY_R, **{
-    'pelvis': (6, 0, -42, 0, -2, -11), 'spine': (12, 0, -11), 'chest': (2, -6, -16),
-    'neck': (-10, 0, 32), 'head': (-4, 0, 28),
-    'foot_l': (1, 12, GROUND + 2), 'foot_r': (-3, -14, GROUND),
-    'elbow_l': (18, 14, 125), 'elbow_r': (-26, -14, 115),
-    **_bat_hands((-14, -2, 108), (-0.15, 0.65, -0.74), (0.15, 0.85, 0.50)),
-})
+def _stroke(name, beats, contact, direction, footwork, length, face_tolerance=38):
+    """Beats are cumulative: each one only states what changes, so a stroke reads like coaching
+    notes and a joint nobody mentioned keeps doing what it was doing."""
+    keys, pose = [(0, BATTER_READY_R)], dict(BATTER_READY_R)
+    for frame, delta in beats:
+        pose = dict(pose, **delta)
+        keys.append((frame, pose))
+    keys.append((length, BATTER_READY_R))
+    return {'name': name, 'event': 'BatContact', 'contact': contact, 'keys': keys, 'dense': True,
+            'direction': direction, 'footwork': footwork, 'face_tolerance': face_tolerance}
 
-COVER_DRIVE = _shot(
-    'COVERDRIVE',
-    backlift=_BACKLIFT,
-    # Stride is across and towards the pitch of the ball, not merely forward.
-    stride=dict(_BACKLIFT, **{
-        'pelvis': (11, 0, -40, -3, 6, -16), 'spine': (16, 0, -12), 'chest': (4, -4, -18),
-        'foot_l': (-7, 29, GROUND), 'foot_r': (-3, -15, GROUND + 1),
-        'elbow_l': (16, 14, 126), 'elbow_r': (-24, -12, 115),
-        **_bat_hands((-14, -2, 110), (-0.15, 0.65, -0.74), (0.15, 0.85, 0.50)),
-    }),
-    plant=dict(_BACKLIFT, **{
-        'pelvis': (15, 0, -34, -5, 9, -19), 'spine': (19, 0, -4), 'chest': (7, -2, -8),
-        'neck': (-14, 0, 24), 'head': (-8, 0, 22),
-        'foot_l': (-8, 31, GROUND), 'foot_r': (-4, -16, GROUND + 3),
-        'elbow_l': (14, 18, 124), 'elbow_r': (-22, -6, 108),
-        **_bat_hands((-14, 22, 102), (-0.20, -0.25, 0.94), (-0.30, 0.94, 0.15)),
-    }),
-    # Head over the ball, hands out in front of the front pad, high front elbow.
-    contact=dict(BATTER_READY_R, **{
-        'pelvis': (17, 0, -12, -5, 10, -18), 'spine': (20, 0, 12), 'chest': (8, 0, 10),
-        'neck': (-16, 0, 10), 'head': (-10, 0, 8),
-        'foot_l': (-8, 31, GROUND), 'foot_r': (-5, -17, GROUND + 5),
-        'elbow_l': (10, 24, 128), 'elbow_r': (-20, 6, 104),
-        **_bat_hands((-12, 32, 94), (-0.25, -0.10, 0.96), (-0.40, 0.91, 0.0)),
-    }),
-    through=dict(BATTER_READY_R, **{
-        'pelvis': (14, 0, 16, -4, 9, -15), 'spine': (14, 0, 26), 'chest': (4, 4, 20),
-        'neck': (-12, 0, -8), 'head': (-8, 0, -6),
-        'foot_l': (-8, 31, GROUND), 'foot_r': (-7, -16, GROUND + 9),
-        'elbow_l': (6, 28, 142), 'elbow_r': (-14, 18, 124),
-        **_bat_hands((-8, 36, 140), (-0.25, -0.45, -0.86), (-0.40, 0.91, 0.0)),
-    }),
-    recover=dict(BATTER_READY_R, **{
-        'pelvis': (10, 0, -40, -2, 5, -14), 'spine': (14, 0, -6),
-        'foot_l': (-5, 24, GROUND), 'foot_r': (-4, -16, GROUND),
-        'elbow_l': (12, 16, 120), 'elbow_r': (-20, -6, 108),
-        **_bat_hands((-12, 16, 104), (-0.10, 0.10, 0.99), (-0.10, 0.99, -0.05)),
-    }),
-)
 
-STRAIGHT_DRIVE = _shot(
-    'STRAIGHTDRIVE', backlift=_BACKLIFT,
-    stride=dict(_BACKLIFT, **{
-        'pelvis': (10, 0, -40, 0, 6, -15), 'spine': (15, 0, -10), 'chest': (4, -4, -14),
-        'neck': (-12, 0, 30), 'head': (-6, 0, 26),
-        'foot_l': (1, 30, GROUND + 2), 'foot_r': (-3, -14, GROUND),
-        'elbow_l': (16, 14, 126), 'elbow_r': (-24, -12, 115),
-        **_bat_hands((-14, -2, 110), (-0.15, 0.65, -0.74), (0.15, 0.85, 0.50)),
-    }),
-    plant=dict(_BACKLIFT, **{
-        'pelvis': (14, 0, -32, 0, 9, -18), 'spine': (18, 0, -4), 'chest': (6, -2, -8),
-        'neck': (-14, 0, 24), 'head': (-8, 0, 20),
-        'foot_l': (1, 32, GROUND), 'foot_r': (-4, -15, GROUND + 2),
-        'elbow_l': (12, 18, 124), 'elbow_r': (-20, -6, 108),
-        **_bat_hands((-10, 24, 102), (-0.05, -0.25, 0.96), (0.05, 0.96, 0.25)),
-    }),
-    contact=dict(BATTER_READY_R, **{
-        'pelvis': (16, 0, -16, 0, 11, -16), 'spine': (20, 0, 10), 'chest': (8, 0, 8),
-        'neck': (-16, 0, 12), 'head': (-10, 0, 8),
-        'foot_l': (1, 32, GROUND), 'foot_r': (-5, -16, GROUND + 5),
-        'elbow_l': (6, 26, 126), 'elbow_r': (-16, 8, 104),
-        **_bat_hands((-4, 36, 95), (-0.02, -0.10, 0.99), (0.0, 1.0, 0.0)),
-    }),
-    through=dict(BATTER_READY_R, **{
-        'pelvis': (14, 0, 10, 0, 10, -14), 'spine': (14, 0, 20), 'chest': (6, 2, 16),
-        'neck': (-12, 0, -4), 'head': (-8, 0, -2),
-        'foot_l': (1, 32, GROUND), 'foot_r': (-6, -15, GROUND + 8),
-        'elbow_l': (6, 32, 142), 'elbow_r': (-12, 22, 128),
-        **_bat_hands((0, 38, 142), (0.0, -0.45, -0.89), (0.0, 1.0, 0.0)),
-    }),
-    recover=dict(BATTER_READY_R, **{
-        'pelvis': (10, 0, -32, 0, 5, -13), 'spine': (15, 0, -6),
-        'foot_l': (1, 20, GROUND), 'foot_r': (-4, -14, GROUND),
-        'elbow_l': (12, 16, 120), 'elbow_r': (-20, -6, 108),
-        **_bat_hands((-12, 16, 104), (0.05, 0.10, 0.99), (0.05, 0.99, -0.05)),
-    }),
-)
+def _trigger(back=(-7, -25), hands=(-28, -2, 100)):
+    """Small back-and-across press: the back foot moves first, the hands start up outside the back
+    knee so the blade clears the pad."""
+    mid = ((back[0] - 1) * 0.5, (back[1] - 21) * 0.5)
+    return [
+        (3, {**_foot('r', mid[0], mid[1], G + 3.5, toe=-87)}),
+        (6, {'pelvis': (8, 0, -60, -2, -6, -11), **_foot('r', back[0], back[1], toe=-88),
+             **_bat_held(hands, (0.30, 0.60, 0.74), (0.10, 0.76, -0.64))}),
+    ]
 
-ON_DRIVE = _shot(
-    'ONDRIVE', backlift=_BACKLIFT,
-    stride=dict(_BACKLIFT, **{
-        'pelvis': (12, 0, -44, 3, 7, -16), 'spine': (17, 0, -8),
-        'foot_l': (9, 28, GROUND), 'foot_r': (-3, -15, GROUND + 1),
-        'elbow_l': (16, 14, 126), 'elbow_r': (-24, -12, 115),
-        **_bat_hands((-14, -2, 110), (-0.15, 0.65, -0.74), (0.15, 0.85, 0.50)),
-    }),
-    plant=dict(_BACKLIFT, **{
-        'pelvis': (16, 0, -28, 5, 9, -19), 'spine': (20, 0, 2), 'neck': (-14, 0, 20),
-        'foot_l': (11, 30, GROUND), 'foot_r': (-4, -16, GROUND + 3),
-        'elbow_l': (12, 18, 124), 'elbow_r': (-18, -6, 108),
-        **_bat_hands((-6, 22, 102), (0.15, -0.25, 0.95), (0.30, 0.95, 0.10)),
-    }),
-    # The bat works around the front pad, so the hips open earlier than in a straight drive.
-    contact=dict(BATTER_READY_R, **{
-        'pelvis': (17, 0, -6, 5, 10, -18), 'spine': (20, 0, 18), 'chest': (8, 2, 14),
-        'neck': (-16, 0, 2), 'head': (-10, 0, 2),
-        'foot_l': (11, 30, GROUND), 'foot_r': (-5, -17, GROUND + 5),
-        'elbow_l': (8, 24, 126), 'elbow_r': (-12, 10, 104),
-        **_bat_hands((2, 32, 94), (0.20, -0.10, 0.97), (0.35, 0.93, 0.0)),
-    }),
-    through=dict(BATTER_READY_R, **{
-        'pelvis': (13, 0, 24, 4, 9, -15), 'spine': (13, 0, 30), 'chest': (4, 6, 22),
-        'neck': (-10, 0, -14), 'foot_l': (11, 30, GROUND), 'foot_r': (-8, -14, GROUND + 10),
-        'elbow_l': (10, 28, 142), 'elbow_r': (-8, 20, 124),
-        **_bat_hands((6, 36, 140), (0.20, -0.45, -0.87), (0.35, 0.93, 0.0)),
-    }),
-    recover=dict(BATTER_READY_R, **{
-        'pelvis': (10, 0, -38, 2, 5, -14), 'spine': (14, 0, -4),
-        'foot_l': (7, 22, GROUND),
-        'elbow_l': (12, 16, 120), 'elbow_r': (-20, -6, 108),
-        **_bat_hands((-10, 16, 104), (0.05, 0.10, 0.99), (0.05, 0.99, -0.05)),
-    }),
-)
 
-# Back-foot stroke: rock back, open up, swing across the line at chest height, finish wrapped round.
-PULL = _shot(
-    'PULL',
-    backlift=dict(_BACKLIFT, **{
-        'pelvis': (4, 0, -56, 0, -6, -12), 'foot_r': (-5, -18, GROUND),
-        'elbow_l': (18, 10, 128), 'elbow_r': (-24, -16, 118),
-        **_bat_hands((-16, -4, 115), (-0.20, 0.60, -0.77), (0.20, 0.80, 0.56)),
-    }),
-    stride=dict(_BACKLIFT, **{
-        'pelvis': (2, 0, -48, -4, -9, -15), 'spine': (8, 0, -8), 'neck': (-8, 0, 30),
-        'foot_l': (4, 2, GROUND + 4), 'foot_r': (-10, -19, GROUND),
-        'elbow_l': (18, 10, 128), 'elbow_r': (-24, -16, 118),
-        **_bat_hands((-16, -4, 115), (-0.20, 0.60, -0.77), (0.20, 0.80, 0.56)),
-    }),
-    plant=dict(_BACKLIFT, **{
-        'pelvis': (2, 0, -30, -4, -9, -16), 'spine': (8, 0, 4), 'chest': (2, 0, -6),
-        'neck': (-8, 0, 20), 'foot_l': (6, 4, GROUND + 2), 'foot_r': (-11, -19, GROUND),
-        'elbow_l': (14, 16, 128), 'elbow_r': (-20, -8, 115),
-        **_bat_hands((-14, 10, 120), (-0.40, 0.10, 0.91), (0.10, 0.99, 0.10)),
-    }),
-    contact=dict(BATTER_READY_R, **{
-        'pelvis': (3, 0, 6, -3, -8, -15), 'spine': (6, 0, 28), 'chest': (0, 0, 20),
-        'neck': (-6, 0, -14), 'head': (-4, 0, -10),
-        'foot_l': (8, 6, GROUND + 1), 'foot_r': (-11, -19, GROUND),
-        'elbow_l': (12, 24, 130), 'elbow_r': (-12, 14, 118),
-        **_bat_hands((0, 24, 118), (0.50, 0.10, 0.86), (0.60, 0.79, 0.0)),
-    }),
-    through=dict(BATTER_READY_R, **{
-        'pelvis': (2, 0, 42, -2, -7, -14), 'spine': (4, 0, 40), 'chest': (-2, 0, 28),
-        'neck': (-4, 0, -34), 'head': (-2, 0, -22),
-        'foot_l': (9, 5, GROUND + 3), 'foot_r': (-11, -19, GROUND),
-        'elbow_l': (16, 20, 134), 'elbow_r': (-4, 20, 124),
-        **_bat_hands((14, 16, 126), (0.80, -0.20, 0.56), (0.80, 0.58, 0.10)),
-    }),
-    recover=dict(BATTER_READY_R, **{
-        'pelvis': (6, 0, -26, -1, -4, -14), 'spine': (10, 0, 4), 'neck': (-8, 0, 16),
-        'foot_l': (5, 6, GROUND), 'foot_r': (-8, -17, GROUND),
-        'elbow_l': (12, 16, 120), 'elbow_r': (-20, -6, 108),
-        **_bat_hands((-12, 10, 104), (0.05, 0.10, 0.99), (0.05, 0.99, -0.05)),
-    }),
-    contact_frame=29,
-)
+def _backlift(hands=(-20, -12, 118), shaft=(0.12, 0.62, -0.78), pelvis=(7, 0, -62, -2, -7, -11)):
+    """Hands up over the back hip, blade up towards the slips, face open to point."""
+    return (11, {'pelvis': pelvis, 'spine': (13, 0, -12), 'chest': (4, -4, -14),
+                 'elbow_l': (-40, 40, 150), 'elbow_r': (-10, -60, 120),
+                 **_bat_held(hands, shaft, (-0.70, -0.45, -0.55))})
 
-# Front knee drives across and the back knee goes to the ground; the bat sweeps low and horizontal.
-SWEEP = _shot(
-    'SWEEP', backlift=_BACKLIFT,
-    stride=dict(_BACKLIFT, **{
-        'pelvis': (14, 0, -48, -2, 5, -24), 'spine': (18, 0, -10),
-        'foot_l': (-4, 30, GROUND), 'foot_r': (-12, -12, GROUND + 4),
-        'elbow_l': (16, 14, 126), 'elbow_r': (-24, -12, 115),
-        **_bat_hands((-14, -2, 110), (-0.15, 0.65, -0.74), (0.15, 0.85, 0.50)),
-    }),
-    plant=dict(_BACKLIFT, **{
-        'pelvis': (22, 0, -38, -3, 6, -42), 'spine': (22, 0, -4), 'neck': (-18, 0, 26),
-        'foot_l': (-6, 33, GROUND), 'foot_r': (-15, -9, GROUND + 12),
-        'knee_r': (-15, -22, 2),
-        'elbow_l': (12, 16, 100), 'elbow_r': (-18, -6, 88),
-        **_bat_hands((-10, 20, 80), (-0.30, 0.0, 0.95), (0.0, 0.98, 0.15)),
-    }),
-    contact=dict(BATTER_READY_R, **{
-        'pelvis': (26, 0, -18, -3, 6, -44), 'spine': (24, 0, 14), 'chest': (8, 0, 6),
-        'neck': (-22, 0, 8), 'head': (-14, 0, 8),
-        'foot_l': (-6, 33, GROUND), 'foot_r': (-15, -9, GROUND + 13),
-        'knee_r': (-15, -24, 2),
-        'elbow_l': (10, 20, 86), 'elbow_r': (-10, 12, 76),
-        **_bat_hands((0, 28, 65), (0.50, 0.10, 0.86), (0.60, 0.79, 0.0)),
-    }),
-    through=dict(BATTER_READY_R, **{
-        'pelvis': (24, 0, 4, -3, 6, -43), 'spine': (20, 0, 30), 'chest': (6, 0, 20),
-        'neck': (-18, 0, -12), 'head': (-10, 0, -8),
-        'foot_l': (-6, 33, GROUND), 'foot_r': (-15, -9, GROUND + 13),
-        'knee_r': (-15, -24, 2),
-        'elbow_l': (14, 18, 92), 'elbow_r': (-4, 16, 82),
-        **_bat_hands((12, 20, 75), (0.80, -0.10, 0.59), (0.80, 0.58, 0.10)),
-    }),
-    recover=dict(BATTER_READY_R, **{
-        'pelvis': (18, 0, -34, -2, 4, -30), 'spine': (18, 0, 0), 'neck': (-14, 0, 20),
-        'foot_l': (-4, 26, GROUND), 'foot_r': (-12, -12, GROUND + 3),
-        'elbow_l': (12, 16, 120), 'elbow_r': (-20, -6, 108),
-        **_bat_hands((-10, 16, 104), (0.05, 0.10, 0.99), (0.05, 0.99, -0.05)),
-    }),
-    contact_frame=31,
-)
 
-# Wristy deflection: almost no footwork, hands stay inside the line, the face rolls at contact.
-LEG_GLANCE = _shot(
-    'LEGGLANCE',
-    backlift=dict(_BACKLIFT, **{
-        'pelvis': (7, 0, -42, 0, 0, -12),
-        'elbow_l': (18, 14, 125), 'elbow_r': (-26, -14, 115),
-        **_bat_hands((-14, -2, 108), (-0.15, 0.65, -0.74), (0.15, 0.85, 0.50)),
-    }),
-    stride=dict(_BACKLIFT, **{
-        'pelvis': (10, 0, -48, 1, 3, -14), 'spine': (14, 0, -12),
-        'foot_l': (4, 18, GROUND),
-        'elbow_l': (16, 14, 126), 'elbow_r': (-24, -12, 115),
-        **_bat_hands((-14, -2, 110), (-0.15, 0.65, -0.74), (0.15, 0.85, 0.50)),
-    }),
-    plant=dict(_BACKLIFT, **{
-        'pelvis': (12, 0, -44, 2, 4, -15), 'spine': (15, 0, -8), 'neck': (-12, 0, 28),
-        'foot_l': (5, 20, GROUND),
-        'elbow_l': (14, 16, 120), 'elbow_r': (-20, -6, 108),
-        **_bat_hands((-8, 16, 102), (-0.05, -0.15, 0.98), (0.15, 0.98, 0.15)),
-    }),
-    contact=dict(BATTER_READY_R, **{
-        'pelvis': (13, 0, -36, 2, 5, -15), 'spine': (16, 0, -2), 'chest': (5, 0, -8),
-        'neck': (-13, 0, 22), 'head': (-9, 0, 18),
-        'foot_l': (5, 20, GROUND), 'foot_r': (-4, -15, GROUND + 1),
-        'elbow_l': (10, 20, 112), 'elbow_r': (-14, 8, 98),
-        **_bat_hands((4, 22, 92), (0.25, -0.15, 0.95), (0.70, 0.71, 0.0)),
-    }),
-    through=dict(BATTER_READY_R, **{
-        'pelvis': (12, 0, -24, 2, 4, -15), 'spine': (14, 0, 10), 'chest': (4, 0, 4),
-        'neck': (-11, 0, 12), 'foot_l': (5, 20, GROUND), 'foot_r': (-5, -15, GROUND + 2),
-        'elbow_l': (12, 22, 118), 'elbow_r': (-8, 14, 106),
-        **_bat_hands((8, 26, 100), (0.45, -0.20, 0.87), (0.80, 0.58, 0.10)),
-    }),
-    recover=dict(BATTER_READY_R, **{
-        'pelvis': (10, 0, -44, 1, 2, -13),
-        'elbow_l': (12, 16, 120), 'elbow_r': (-20, -6, 108),
-        **_bat_hands((-10, 16, 104), (0.05, 0.10, 0.99), (0.05, 0.99, -0.05)),
-    }),
-    contact_frame=30, length=52,
-)
+def _front_load(foot, toe, pelvis_stride, pelvis_plant, hands_top, hands_plant, plant_shaft, plant_face,
+                head_down=4):
+    """Front-foot load: the head leads, the front foot travels in the air and lands on the line of the
+    ball, the weight follows it and the downswing starts only once the foot is down."""
+    mid = (foot[0] * 0.55 + 3 * 0.45, foot[1] * 0.62 + 15 * 0.38)
+    return [
+        (17, {**_foot('l', mid[0], mid[1], G + 9, toe=(toe - 62) * 0.5), 'pelvis': pelvis_stride,
+              'spine': (17, 0, -10), 'neck': (-14, 0, 32), 'head': (-2, 0, 32),
+              **_bat_held(hands_top, (0.12, 0.62, -0.78), (-0.70, -0.45, -0.55))}),
+        (22, {**_foot('l', foot[0], foot[1], toe=toe), 'pelvis': pelvis_plant,
+              'spine': (19, 0, -8), 'chest': (7, 0, -9), 'head': (head_down, 0, 30),
+              **_bat_held(hands_plant, plant_shaft, plant_face)}),
+    ]
 
-# Soft hands, bat vertical and angled down, no follow-through at all.
-DEFENCE = _shot(
-    'FRONTFOOTDEFENCE',
-    backlift=_BACKLIFT,
-    stride=dict(_BACKLIFT, **{
-        'pelvis': (13, 0, -48, 0, 6, -17), 'spine': (18, 0, -12),
-        'foot_l': (0, 25, GROUND),
-        'elbow_l': (16, 14, 126), 'elbow_r': (-24, -12, 115),
-        **_bat_hands((-14, -2, 110), (-0.15, 0.65, -0.74), (0.15, 0.85, 0.50)),
-    }),
-    plant=dict(_BACKLIFT, **{
-        'pelvis': (17, 0, -44, 0, 8, -20), 'spine': (21, 0, -10), 'neck': (-16, 0, 26),
-        'foot_l': (0, 27, GROUND), 'foot_r': (-4, -16, GROUND + 2),
-        'elbow_l': (12, 16, 120), 'elbow_r': (-20, -6, 108),
-        **_bat_hands((-10, 20, 100), (-0.05, -0.15, 0.98), (0.05, 0.98, 0.15)),
-    }),
-    contact=dict(BATTER_READY_R, **{
-        'pelvis': (19, 0, -40, 0, 9, -21), 'spine': (23, 0, -6), 'chest': (9, 0, -10),
-        'neck': (-18, 0, 24), 'head': (-13, 0, 20),
-        'foot_l': (0, 27, GROUND), 'foot_r': (-4, -16, GROUND + 3),
-        'elbow_l': (10, 20, 114), 'elbow_r': (-16, -4, 96),
-        **_bat_hands((-6, 28, 92), (0.0, -0.15, 0.98), (0.0, 0.98, 0.15)),
-    }),
-    through=dict(BATTER_READY_R, **{
-        'pelvis': (18, 0, -40, 0, 9, -20), 'spine': (22, 0, -6), 'chest': (8, 0, -10),
-        'neck': (-17, 0, 24), 'head': (-12, 0, 20),
-        'foot_l': (0, 27, GROUND), 'foot_r': (-4, -16, GROUND + 3),
-        'elbow_l': (10, 20, 114), 'elbow_r': (-16, -4, 96),
-        **_bat_hands((-6, 28, 92), (0.0, -0.15, 0.98), (0.0, 0.98, 0.15)),
-    }),
-    recover=dict(BATTER_READY_R, **{
-        'pelvis': (12, 0, -46, 0, 4, -15), 'foot_l': (0, 20, GROUND),
-        'elbow_l': (12, 16, 120), 'elbow_r': (-20, -6, 108),
-        **_bat_hands((-10, 16, 104), (0.05, 0.10, 0.99), (0.05, 0.99, -0.05)),
-    }),
-    contact_frame=30, length=50,
-)
 
-SHOTS = [COVER_DRIVE, STRAIGHT_DRIVE, ON_DRIVE, PULL, SWEEP, LEG_GLANCE, DEFENCE]
+def _back_load(back, front, back_toe=-88, front_toe=-62, hands_top=(-26, -10, 124)):
+    """Back-foot load: the back foot goes back and across first, the front foot follows it back,
+    the body stays tall so the ball can be played under the eyes. The blade stays up over off
+    stump, well away from the back of the head."""
+    bmid = ((back[0] - 7) * 0.5, (back[1] - 25) * 0.5)
+    fmid = ((front[0] + 3) * 0.5, (front[1] + 15) * 0.5)
+    return [
+        (14, {**_foot('r', bmid[0], bmid[1], G + 7, toe=back_toe), 'pelvis': (6, 0, -60, -3, -14, -9),
+              'spine': (10, 0, -12), 'neck': (-8, 0, 34), 'head': (-10, 0, 34),
+              **_bat_held(hands_top, (0.35, 0.30, -0.89), (-0.80, -0.35, -0.45))}),
+        (18, {**_foot('r', back[0], back[1], toe=back_toe), 'pelvis': (5, 0, -62, -4, -20, -8)}),
+        (22, {**_foot('l', fmid[0], fmid[1], G + 7, toe=front_toe)}),
+    ]
+
+
+def _recover(front_from, front_toe, back_from, back_toe, length, over=True):
+    """Walk back into the stance: the bat comes down in front of the body (never back over the head),
+    then the front foot, then the back foot - never both feet off the ground at once. `over` is for
+    finishes with the blade up behind the shoulder; blocks and glances already have it down."""
+    py = (front_from[1] + back_from[1]) * 0.5
+    if over:
+        # Relax the bat down the leg side: the blade drops beside the body, never over the helmet.
+        carry = [_bat_held((6, py + 24, 118), (-0.90, 0.35, -0.25), (0.30, 0.90, -0.30)),
+                 _bat_held((min(-30, front_from[0] - 20), py * 0.5 + 26, 98), (0.05, -0.20, 0.98), (0.05, 0.98, 0.20))]
+    else:
+        carry = [_bat_held((-30, py + 18, 96), (0.05, 0.20, 0.98), (0.0, 0.98, -0.20)),
+                 _bat_held((-29, (py + 6) * 0.5 + 2, 94), (0.12, 0.28, 0.95), (0.08, 0.95, -0.28))]
+    return [
+        (length - 17, {'pelvis': (10, 0, -50, -2, py, -13), 'spine': (15, 0, -6), 'chest': (5, 0, -8),
+                       'neck': (-12, 0, 30), 'head': (-6, 0, 32),
+                       'elbow_l': (-34, 58, 130), 'elbow_r': (-20, -20, 110), **carry[0]}),
+        (length - 13, {**_foot('l', (front_from[0] + 3) * 0.5, (front_from[1] + 15) * 0.5, G + 7,
+                               toe=(front_toe - 62) * 0.5),
+                       'pelvis': (9, 0, -54, -1, (py - 3) * 0.5, -12), **carry[1]}),
+        (length - 9, {**_foot('l', 3, 15, toe=-62), 'spine': (16, 0, -9), 'chest': (5, 1, -11),
+                      'neck': (-12, 0, 33), 'head': (-8, 0, 34),
+                      'elbow_l': (-34, 58, 116), 'elbow_r': (-8, -46, 96)}),
+        (length - 5, {**_foot('r', (back_from[0] - 1) * 0.5, (back_from[1] - 21) * 0.5, G + 3.5,
+                              toe=(back_toe - 86) * 0.5)}),
+    ]
+
+
+# ---------------------------------------------------------------- front foot
+
+STRAIGHT_DRIVE = _stroke('STRAIGHTDRIVE', [
+    *_trigger(), _backlift(),
+    *_front_load((-4, 50), -22, (11, 0, -58, -3, 6, -14), (15, 0, -52, -4, 17, -17),
+                 (-22, -8, 121), (-24, 4, 112), (0.05, 0.90, -0.43), (-0.50, 0.20, -0.84)),
+    (26, {'pelvis': (15, 0, -48, -4, 21, -18),
+          **_bat_held((-28, 34, 96), (0.05, 0.62, 0.78), (-0.10, 0.78, -0.62))}),
+    # Head over the front knee, full face presented straight back past the bowler, the bat coming
+    # down just outside the front pad.
+    (30, {'pelvis': (15, 0, -44, -4, 23, -19), 'spine': (20, 4, -2), 'chest': (8, 6, 0),
+          'neck': (-16, 0, 24), 'head': (6, 0, 26), 'elbow_l': (-30, 80, 150), 'elbow_r': (-20, 10, 80),
+          **_bat_at((-22, 62, 22), (0.0, 0.25, 0.97), (0.0, 1.0, -0.2))}),
+    (34, {'pelvis': (14, 0, -40, -4, 24, -18), 'spine': (18, 4, 2), 'neck': (-14, 0, 20), 'head': (2, 0, 22),
+          **_bat_held((-20, 82, 100), (0.0, -0.30, 0.95), (0.0, 0.95, 0.30))}),
+    (42, {'pelvis': (12, 0, -32, -3, 20, -15), 'spine': (12, 0, 6), 'chest': (4, 0, 6),
+          'neck': (-10, 0, 12), 'head': (-4, 0, 14), 'elbow_l': (-10, 70, 170), 'elbow_r': (-30, 40, 150),
+          **_foot('r', -7, -23, G + 3, toe=-72),
+          **_bat_held((-6, 50, 148), (-0.65, 0.45, -0.62), (0.55, 0.80, 0.25))}),
+    (48, {'pelvis': (11, 0, -34, -3, 17, -14), **_foot('r', -7, -23, toe=-76),
+          **_bat_held((-6, 46, 144), (-0.65, 0.45, -0.62), (0.55, 0.80, 0.25))}),
+    *_recover((-4, 50), -22, (-7, -23), -76, 70),
+], contact=30, direction=0, footwork='front', length=70)
+
+COVER_DRIVE = _stroke('COVERDRIVE', [
+    *_trigger(), _backlift(),
+    # Stride goes towards the pitch of the ball outside off, not merely forward.
+    *_front_load((-20, 44), -36, (11, 0, -60, -7, 5, -14), (16, 0, -58, -11, 15, -18),
+                 (-22, -8, 122), (-30, 2, 113), (0.10, 0.92, -0.38), (-0.60, 0.15, -0.78)),
+    (26, {'pelvis': (17, 0, -56, -12, 19, -19), 'spine': (21, -4, -10),
+          **_bat_held((-38, 30, 98), (0.12, 0.60, 0.79), (-0.45, 0.70, -0.55))}),
+    # High front elbow, shoulders still side-on, face opened towards cover.
+    (30, {'pelvis': (17, 0, -52, -12, 21, -20), 'spine': (22, -2, -6), 'chest': (9, 2, -4),
+          'neck': (-16, 0, 28), 'head': (8, 0, 28), 'elbow_l': (-40, 70, 160), 'elbow_r': (-30, 10, 80),
+          **_bat_at((-44, 56, 20), (-0.18, 0.22, 0.96), (-0.66, 0.74, -0.10))}),
+    (34, {'pelvis': (16, 0, -44, -12, 22, -19), 'spine': (20, -2, -2), 'head': (4, 0, 24),
+          **_bat_held((-50, 70, 100), (-0.40, -0.22, 0.89), (-0.60, 0.70, 0.35))}),
+    (42, {'pelvis': (13, 0, -22, -8, 18, -16), 'spine': (12, 0, 10), 'chest': (4, 0, 8),
+          'neck': (-10, 0, 6), 'head': (-4, 0, 8), 'elbow_l': (-20, 70, 175), 'elbow_r': (-40, 30, 150),
+          **_foot('r', -8, -23, G + 3, toe=-66),
+          **_bat_held((-10, 56, 146), (-0.75, 0.45, -0.49), (0.55, 0.80, 0.20))}),
+    (48, {'pelvis': (12, 0, -26, -8, 16, -15), **_foot('r', -8, -23, toe=-72),
+          **_bat_held((-10, 54, 142), (-0.75, 0.45, -0.49), (0.55, 0.80, 0.20))}),
+    *_recover((-20, 44), -36, (-8, -23), -72, 70),
+], contact=30, direction=40, footwork='front', length=70)
+
+ON_DRIVE = _stroke('ONDRIVE', [
+    *_trigger(), _backlift(),
+    *_front_load((6, 46), -12, (11, 0, -54, -1, 6, -14), (15, 0, -46, 1, 16, -17),
+                 (-20, -8, 121), (-22, 4, 112), (0.02, 0.90, -0.43), (-0.30, 0.30, -0.90)),
+    # The front hip opens early so the bat can come through around the front pad.
+    (26, {'pelvis': (16, 0, -38, 1, 20, -18), 'spine': (19, 2, 0),
+          **_bat_held((-26, 32, 96), (0.22, 0.60, 0.77), (0.20, 0.78, -0.60))}),
+    (30, {'pelvis': (16, 0, -30, 1, 22, -19), 'spine': (20, 4, 6), 'chest': (8, 4, 4),
+          'neck': (-16, 0, 18), 'head': (6, 0, 20), 'elbow_l': (-10, 80, 150), 'elbow_r': (-20, 10, 80),
+          **_bat_at((-14, 64, 24), (0.12, 0.22, 0.97), (0.42, 0.90, -0.10))}),
+    (34, {'pelvis': (15, 0, -18, 1, 22, -18), 'spine': (18, 2, 10), 'head': (2, 0, 14),
+          **_bat_held((-2, 82, 100), (0.25, -0.30, 0.92), (0.45, 0.85, 0.30))}),
+    (38, {'pelvis': (13, 0, -10, 2, 20, -16), 'spine': (14, 0, 14),
+          **_bat_held((8, 62, 124), (-0.90, -0.30, 0.0), (0.10, 0.20, 0.97))}),
+    (42, {'pelvis': (12, 0, -4, 2, 18, -15), 'spine': (11, 0, 16), 'chest': (4, 0, 10),
+          'neck': (-10, 0, -2), 'head': (-4, 0, 0), 'elbow_l': (10, 70, 170), 'elbow_r': (-30, 40, 150),
+          **_foot('r', -5, -21, G + 5, toe=-50),
+          **_bat_held((14, 40, 148), (-0.75, 0.35, -0.56), (0.55, 0.80, 0.20))}),
+    (48, {'pelvis': (11, 0, -10, 2, 16, -14), **_foot('r', -5, -21, toe=-60),
+          **_bat_held((12, 38, 144), (-0.75, 0.35, -0.56), (0.55, 0.80, 0.20))}),
+    (52, {'pelvis': (11, 0, -26, 1, 14, -14), 'spine': (13, 0, 6), 'chest': (4, 0, 0),
+          'neck': (-10, 0, 14), 'head': (-4, 0, 16),
+          **_bat_held((-2, 64, 130), (-0.20, -0.30, -0.93), (0.20, -0.93, 0.30))}),
+    *_recover((6, 46), -12, (-5, -21), -60, 72),
+], contact=30, direction=-25, footwork='front', length=72)
+
+FORWARD_DEFENCE = _stroke('FRONTFOOTDEFENCE', [
+    *_trigger(), _backlift(hands=(-22, -7, 108), shaft=(0.10, 0.75, -0.65)),
+    *_front_load((-6, 42), -22, (12, 0, -58, -3, 4, -15), (17, 0, -54, -4, 16, -19),
+                 (-22, -5, 110), (-26, 6, 104), (0.05, 0.95, -0.30), (-0.30, 0.40, -0.86), head_down=8),
+    (26, {'pelvis': (18, 0, -52, -4, 19, -21), 'spine': (22, 2, -6),
+          **_bat_held((-28, 30, 88), (0.0, 0.60, 0.80), (-0.05, 0.80, -0.60))}),
+    # Bat and pad together, handle ahead of the blade so the ball goes down, soft bottom hand.
+    (30, {'pelvis': (19, 0, -50, -4, 21, -22), 'spine': (22, 4, -4), 'chest': (10, 6, -2),
+          'neck': (-18, 0, 26), 'head': (12, 0, 28), 'elbow_l': (-30, 70, 150), 'elbow_r': (-30, 0, 70),
+          **_bat_at((-26, 56, 20), (-0.05, 0.38, 0.92), (0.0, 0.92, -0.38))}),
+    (35, {**_bat_held((-29, 74, 74), (-0.05, 0.34, 0.94), (0.0, 0.94, -0.34))}),   # give with the ball
+    (44, {'pelvis': (18, 0, -51, -4, 20, -21),
+          **_bat_held((-29, 73, 75), (-0.05, 0.34, 0.94), (0.0, 0.94, -0.34))}),
+    *_recover((-6, 42), -22, (-7, -25), -88, 64, over=False),
+], contact=30, direction=0, footwork='front', length=64)
+
+LOFTED_DRIVE = _stroke('LOFTEDDRIVE', [
+    *_trigger(hands=(-28, -4, 104)),
+    _backlift(hands=(-20, -16, 128), shaft=(0.10, 0.45, -0.89), pelvis=(6, 0, -63, -2, -8, -10)),
+    # Bigger stride, the hands wait longer and the whole body drives up through the ball.
+    *_front_load((-12, 56), -26, (11, 0, -60, -4, 8, -14), (15, 0, -54, -6, 20, -18),
+                 (-20, -12, 131), (-26, 0, 124), (0.10, 0.95, -0.30), (-0.55, 0.20, -0.81)),
+    (26, {'pelvis': (15, 0, -48, -6, 24, -18), 'spine': (19, 0, -4),
+          **_bat_held((-30, 34, 104), (0.0, 0.75, 0.66), (-0.20, 0.66, -0.72))}),
+    # Hands level with the ball rather than ahead of it: the bat meets it on the up, face open.
+    (30, {'pelvis': (14, 0, -42, -6, 27, -18), 'spine': (18, 2, 0), 'chest': (6, 4, 0),
+          'neck': (-14, 0, 24), 'head': (6, 0, 24), 'elbow_l': (-30, 80, 160), 'elbow_r': (-30, 20, 90),
+          **_bat_at((-28, 68, 30), (-0.08, 0.02, 1.0), (-0.25, 0.92, 0.30))}),
+    (34, {'pelvis': (12, 0, -32, -6, 27, -16), 'spine': (14, 0, 4), 'head': (2, 0, 20),
+          'elbow_l': (-20, 90, 180), 'elbow_r': (-30, 50, 150),
+          **_bat_held((-24, 84, 130), (-0.12, -0.55, 0.83), (-0.10, 0.83, 0.55))}),
+    (44, {'pelvis': (8, 0, -18, -5, 22, -12), 'spine': (4, 0, 12), 'chest': (-2, 0, 8),
+          'neck': (-8, 0, 2), 'head': (-10, 0, 4), 'elbow_l': (-10, 60, 200), 'elbow_r': (-40, 30, 190),
+          **_foot('r', -9, -19, G + 7, toe=-58),
+          **_bat_held((6, 46, 162), (-0.72, 0.50, -0.48), (0.50, 0.60, 0.62))}),
+    (50, {'pelvis': (9, 0, -22, -5, 20, -13), **_foot('r', -9, -17, toe=-62),
+          **_bat_held((6, 44, 156), (-0.72, 0.50, -0.48), (0.50, 0.60, 0.62))}),
+    *_recover((-12, 56), -26, (-9, -17), -62, 74),
+], contact=30, direction=15, footwork='front', length=74)
+
+# ---------------------------------------------------------------- back foot
+
+BACK_FOOT_DEFENCE = _stroke('BACKFOOTDEFENCE', [
+    *_trigger(), _backlift(hands=(-22, -10, 116)),
+    *_back_load((-12, -40), (-3, -6)),
+    (25, {**_foot('l', -3, -6, toe=-60), 'pelvis': (5, 0, -62, -4, -22, -7), 'spine': (8, 0, -12),
+          'neck': (-8, 0, 32), 'head': (0, 0, 32),
+          **_bat_held((-28, 2, 130), (0.0, 0.85, 0.52), (-0.10, 0.52, -0.85))}),
+    # Tall, on the toes of the back foot, dead bat under the eyes with the top elbow high.
+    (29, {'pelvis': (6, 0, -62, -4, -22, -6), 'spine': (10, 0, -12), 'chest': (4, 0, -12),
+          'neck': (-8, 0, 30), 'head': (10, 0, 30), 'elbow_l': (-30, 50, 185), 'elbow_r': (-30, -10, 110),
+          **_bat_at((-24, 4, 80), (-0.05, 0.30, 0.95), (0.0, 0.95, -0.30))}),
+    (34, {**_bat_held((-26, 18, 131), (-0.05, 0.26, 0.96), (0.0, 0.96, -0.26))}),
+    (42, {'pelvis': (6, 0, -62, -4, -21, -6),
+          **_bat_held((-26, 17, 130), (-0.05, 0.26, 0.96), (0.0, 0.96, -0.26))}),
+    (48, {**_foot('l', 0, 5, G + 7, toe=-62), 'pelvis': (7, 0, -60, -2, -12, -9),
+          **_bat_held((-28, 6, 104), (0.16, 0.40, 0.90), (0.10, 0.91, -0.40))}),
+    (53, {**_foot('l', 3, 15, toe=-62)}),
+    (57, {**_foot('r', -6, -30, G + 5, toe=-87)}),
+], contact=29, direction=0, footwork='back', length=62)
+
+BACK_FOOT_PUNCH = _stroke('BACKFOOTPUNCH', [
+    *_trigger(), _backlift(hands=(-23, -12, 120)),
+    *_back_load((-20, -36), (-8, -4), hands_top=(-26, -12, 126)),
+    (25, {**_foot('l', -8, -4, toe=-58), 'pelvis': (6, 0, -64, -8, -18, -6), 'spine': (9, -3, -12),
+          'neck': (-8, 0, 32), 'head': (2, 0, 32),
+          **_bat_held((-32, 0, 132), (0.05, 0.85, 0.52), (-0.50, 0.40, -0.77))}),
+    # Up on the back toes, punched through the line outside off: short, firm, checked.
+    (29, {'pelvis': (8, 0, -60, -10, -16, -5), 'spine': (12, -5, -10), 'chest': (5, -4, -10),
+          'neck': (-10, 0, 30), 'head': (10, 0, 28), 'elbow_l': (-50, 50, 175), 'elbow_r': (-40, 0, 100),
+          **_bat_at((-38, 8, 84), (-0.10, 0.25, 0.96), (-0.75, 0.65, -0.10))}),
+    (33, {'pelvis': (8, 0, -54, -10, -14, -5),
+          **_bat_held((-46, 26, 124), (-0.20, -0.45, 0.87), (-0.60, 0.70, 0.40))}),
+    (38, {'spine': (10, -3, -6),
+          **_bat_held((-44, 28, 130), (-0.12, -0.62, -0.78), (-0.50, 0.75, -0.45))}),
+    (45, {**_bat_held((-43, 27, 129), (-0.12, -0.62, -0.78), (-0.50, 0.75, -0.45))}),
+    (50, {**_bat_held((-38, 18, 120), (-0.05, -0.95, 0.30), (-0.50, 0.25, 0.83))}),
+    (54, {**_foot('l', -3, 6, G + 7, toe=-62), 'pelvis': (7, 0, -60, -4, -10, -9), 'spine': (15, 0, -9),
+          'chest': (5, 0, -11), 'neck': (-10, 0, 32), 'head': (-6, 0, 33),
+          'elbow_l': (-34, 58, 118), 'elbow_r': (-8, -46, 98),
+          **_bat_held((-32, 8, 106), (-0.05, -0.50, 0.86), (0.0, 0.86, 0.50))}),
+    (58, {**_foot('l', 3, 15, toe=-62)}),
+    (62, {**_foot('r', -10, -28, G + 5, toe=-87)}),
+], contact=29, direction=50, footwork='back', length=67)
+
+SQUARE_CUT = _stroke('SQUARECUT', [
+    *_trigger(), _backlift(hands=(-22, -12, 128), shaft=(0.25, 0.35, -0.90)),
+    # Back foot goes across towards the ball, the body makes room, the bat comes from high.
+    *_back_load((-26, -30), (-10, 2), back_toe=-92, hands_top=(-26, -10, 134)),
+    (25, {**_foot('l', -10, 2, toe=-55), 'pelvis': (8, -4, -68, -10, -14, -8), 'spine': (12, -6, -14),
+          'chest': (5, -5, -14), 'neck': (-10, 0, 34), 'head': (4, 0, 34),
+          'elbow_l': (-50, 30, 190), 'elbow_r': (-30, -30, 150),
+          **_bat_held((-32, -4, 140), (0.20, -0.40, -0.90), (-0.90, 0.30, -0.30))}),
+    # Arms extend out to the width of the ball; the blade runs flat towards the bowler and the face
+    # slices down towards point.
+    (29, {'pelvis': (10, -8, -72, -12, -12, -10), 'spine': (16, -10, -16), 'chest': (7, -6, -14),
+          'neck': (-12, 0, 36), 'head': (10, 0, 34), 'elbow_l': (-70, 30, 140), 'elbow_r': (-50, -10, 110),
+          **_bat_at((-50, 40, 86), (-0.12, -0.93, 0.35), (-0.95, 0.25, -0.20))}),
+    (33, {'pelvis': (10, -6, -64, -12, -11, -10), 'spine': (14, -6, -8),
+          **_bat_held((-48, 10, 100), (0.10, -0.70, 0.70), (-0.95, 0.10, 0.20))}),
+    # The blade keeps travelling down and round, finishing low on the leg side of the front knee.
+    (40, {'pelvis': (8, -2, -56, -10, -11, -9), 'spine': (12, -2, -6), 'chest': (5, 0, -6),
+          'neck': (-10, 0, 26), 'head': (4, 0, 28), 'elbow_l': (-40, 40, 150), 'elbow_r': (-40, 10, 120),
+          **_bat_held((-36, 16, 104), (-0.30, -0.50, 0.81), (0.20, -0.85, -0.45))}),
+    (47, {**_bat_held((-35, 15, 106), (-0.30, -0.50, 0.81), (0.20, -0.85, -0.45))}),
+    (55, {**_foot('l', -3, 8, G + 7, toe=-62), 'pelvis': (7, 0, -60, -5, -9, -9), 'spine': (15, 0, -9),
+          'chest': (5, 0, -11), 'neck': (-10, 0, 32), 'head': (-6, 0, 33),
+          'elbow_l': (-34, 58, 118), 'elbow_r': (-8, -46, 98),
+          **_bat_held((-34, 8, 100), (0.10, 0.20, 0.97), (0.05, 0.97, -0.20))}),
+    (59, {**_foot('l', 3, 15, toe=-62)}),
+    (63, {**_foot('r', -13, -26, G + 5, toe=-88)}),
+], contact=29, direction=75, footwork='back', length=68)
+
+PULL = _stroke('PULL', [
+    *_trigger(), _backlift(hands=(-26, -14, 130), shaft=(0.30, 0.25, -0.92)),
+    *_back_load((-16, -32), (8, -2), front_toe=-30, hands_top=(-24, -14, 136)),
+    # Hips and shoulders open hard to face the bowler; the bat comes down from high across the line.
+    (25, {**_foot('l', 12, -2, toe=-10), 'pelvis': (6, 0, -34, -2, -16, -10), 'spine': (10, 0, 2),
+          'chest': (4, 0, 0), 'neck': (-10, 0, 18), 'head': (0, 0, 20),
+          'elbow_l': (-20, 20, 190), 'elbow_r': (-40, -40, 140),
+          **_bat_held((-24, -2, 132), (0.80, 0.30, -0.52), (-0.20, 0.90, 0.40))}),
+    (28, {'pelvis': (6, 0, -8, 0, -15, -12), 'spine': (10, 0, 14), 'chest': (4, 0, 10),
+          'neck': (-10, 0, -2), 'head': (6, 0, 0), 'elbow_l': (10, 40, 150), 'elbow_r': (-10, 20, 120),
+          **_foot('r', -16, -32, toe=-60),
+          **_bat_at((-12, 60, 110), (0.42, -0.90, 0.05), (0.90, 0.42, -0.10))}),
+    (32, {'pelvis': (6, 0, 10, 2, -14, -12), 'spine': (8, 0, 20), 'chest': (2, 0, 12),
+          'neck': (-8, 0, -18), 'head': (0, 0, -16), **_foot('r', -16, -32, toe=-40),
+          **_bat_held((20, 16, 118), (-0.40, -0.90, -0.10), (0.30, -0.10, -0.95))}),
+    (38, {'pelvis': (5, 0, 16, 2, -14, -11), 'spine': (6, 0, 22), 'elbow_l': (30, 10, 160),
+          **_bat_held((26, -2, 132), (-0.60, 0.70, -0.38), (-0.60, -0.70, -0.38))}),
+    (44, {**_bat_held((18, -8, 146), (-0.30, 0.70, -0.65), (-0.60, -0.55, 0.58)),
+          'pelvis': (5, 0, 10, 1, -14, -11), 'spine': (8, 0, 16), 'neck': (-8, 0, -10), 'head': (-4, 0, -8)}),
+    (49, {**_bat_held((6, 12, 118), (-0.90, 0.35, -0.25), (0.30, 0.90, -0.30)),
+          'pelvis': (6, 0, -12, 0, -12, -11), 'spine': (10, 0, 6), 'neck': (-10, 0, 10), 'head': (-4, 0, 12)}),
+    (53, {**_foot('l', 5, 6, G + 7, toe=-40), 'pelvis': (7, 0, -40, -1, -10, -10),
+          'spine': (12, 0, -4), 'chest': (4, 0, -8), 'neck': (-10, 0, 26), 'head': (-6, 0, 28),
+          **_foot('r', -16, -32, toe=-80), 'elbow_l': (-34, 58, 118), 'elbow_r': (-8, -46, 98),
+          **_bat_held((-30, 18, 98), (0.05, -0.20, 0.98), (0.05, 0.98, 0.20))}),
+    (57, {**_foot('l', 3, 15, toe=-62)}),
+    (61, {**_foot('r', -8, -26, G + 5, toe=-86)}),
+], contact=28, direction=-65, footwork='back', length=67)
+
+HOOK = _stroke('HOOK', [
+    *_trigger(), _backlift(hands=(-26, -14, 134), shaft=(0.30, 0.20, -0.93)),
+    *_back_load((-14, -36), (14, -8), front_toe=-20, hands_top=(-24, -14, 142)),
+    # Ball at the head: the head moves inside the line, the bat whips over the top and rolls down.
+    (25, {**_foot('l', 16, -8, toe=0), 'pelvis': (3, -4, -40, -4, -18, -7), 'spine': (5, -4, 0),
+          'chest': (1, -3, -2), 'neck': (-12, 0, 20), 'head': (-10, 0, 22),
+          'elbow_l': (-10, 10, 210), 'elbow_r': (-40, -40, 170),
+          **_bat_held((-22, -8, 148), (0.85, 0.30, -0.43), (-0.20, 0.90, 0.40))}),
+    (26, {'pelvis': (2, -5, -30, -4, -18, -6), 'spine': (4, -5, 5), 'chest': (0, -4, 3),
+          **_bat_held((-14, -2, 152), (0.45, -0.60, -0.66), (0.55, 0.75, -0.30))}),
+    (29, {'pelvis': (2, -8, -4, -5, -18, -6), 'spine': (4, -8, 18), 'chest': (0, -6, 12),
+          'neck': (-14, 0, -8), 'head': (-12, 0, -6), 'elbow_l': (10, 30, 190), 'elbow_r': (-10, 20, 160),
+          **_foot('r', -14, -36, toe=-50),
+          **_bat_at((10, 54, 150), (-0.30, -0.93, -0.10), (0.90, -0.30, -0.30))}),
+    (32, {'pelvis': (2, -6, 20, -3, -17, -6), 'spine': (4, -4, 24), 'chest': (0, 0, 14),
+          'neck': (-12, 0, -26), 'head': (-10, 0, -20), **_foot('r', -14, -36, toe=-24),
+          **_bat_held((26, 8, 146), (-0.50, -0.80, 0.33), (0.20, -0.50, -0.84))}),
+    (38, {'pelvis': (3, -2, 26, -2, -16, -7), 'spine': (4, 0, 26), 'elbow_l': (40, 0, 180),
+          **_bat_held((28, -10, 150), (-0.50, 0.75, -0.43), (-0.40, -0.70, -0.58))}),
+    (44, {**_bat_held((20, -12, 156), (-0.30, 0.72, -0.62), (-0.60, -0.55, 0.58)),
+          'pelvis': (4, 0, 16, -2, -16, -8), 'spine': (6, 0, 18)}),
+    (49, {**_bat_held((6, 10, 120), (-0.90, 0.35, -0.25), (0.30, 0.90, -0.30)),
+          'pelvis': (6, 0, -12, -1, -14, -9), 'spine': (10, 0, 6), 'neck': (-10, 0, 10), 'head': (-4, 0, 12)}),
+    (53, {**_foot('l', 7, 4, G + 7, toe=-36), 'pelvis': (7, 0, -40, -2, -12, -10),
+          'spine': (12, 0, -4), 'chest': (4, 0, -8), 'neck': (-10, 0, 26), 'head': (-6, 0, 28),
+          **_foot('r', -14, -36, toe=-80), 'elbow_l': (-34, 58, 118), 'elbow_r': (-8, -46, 98),
+          **_bat_held((-30, 16, 98), (0.05, -0.20, 0.98), (0.05, 0.98, 0.20))}),
+    (57, {**_foot('l', 3, 15, toe=-62)}),
+    (61, {**_foot('r', -7, -28, G + 5, toe=-86)}),
+], contact=29, direction=-105, footwork='back', length=67, face_tolerance=45)
+
+# ---------------------------------------------------------------- spin and aggression
+
+SWEEP = _stroke('SWEEP', [
+    *_trigger(hands=(-28, -4, 96)), _backlift(hands=(-24, -8, 112), shaft=(0.15, 0.70, -0.70)),
+    # Long stride down the line, back knee goes to the turf, head down over the front knee.
+    (17, {**_foot('l', -4, 36, G + 9, toe=-50), 'pelvis': (12, 0, -58, -3, 8, -22),
+          'spine': (16, 0, -10), 'neck': (-14, 0, 32), 'head': (0, 0, 32)}),
+    (22, {**_foot('l', -10, 54, toe=-40), **_foot('r', -8, -24, G + 2, toe=-88, knee_out=4),
+          'pelvis': (18, 0, -52, -5, 14, -44), 'spine': (18, 0, -8), 'chest': (6, 0, -8),
+          'head': (8, 0, 30), 'elbow_l': (-40, 60, 130), 'elbow_r': (-40, -10, 80),
+          **_bat_held((-32, 18, 88), (0.10, 0.95, -0.30), (-0.70, 0.20, -0.70))}),
+    (26, {'pelvis': (19, 0, -44, -5, 16, -48), 'spine': (18, 0, -4),
+          **_bat_held((-34, 36, 74), (0.60, 0.20, 0.77), (-0.10, 0.95, -0.30))}),
+    # Bat flat, well out in front of the front pad, face rolling towards square leg.
+    (30, {'pelvis': (19, 0, -34, -5, 17, -50), 'spine': (18, 2, 4), 'chest': (6, 2, 2),
+          'neck': (-16, 0, 20), 'head': (14, 0, 22), 'elbow_l': (-20, 80, 110), 'elbow_r': (-20, 30, 60),
+          **_bat_at((-30, 90, 26), (0.10, -0.70, 0.70), (0.95, 0.20, -0.25))}),
+    (34, {'pelvis': (18, 0, -22, -5, 17, -49), 'spine': (17, 0, 12), 'neck': (-14, 0, 10),
+          **_bat_held((6, 52, 66), (-0.30, -0.95, 0.10), (0.30, -0.10, -0.95))}),
+    (40, {'pelvis': (17, 0, -16, -5, 16, -47), 'spine': (16, 0, 16),
+          **_bat_held((20, 34, 86), (-0.70, 0.50, -0.50), (0.10, -0.75, -0.65))}),
+    (44, {**_bat_held((18, 32, 88), (-0.70, 0.50, -0.50), (0.10, -0.75, -0.65))}),
+    (52, {'pelvis': (12, 0, -44, -3, 8, -24), 'spine': (16, 0, -6), 'chest': (6, 0, -10),
+          'neck': (-12, 0, 30), 'head': (-4, 0, 32), **_foot('r', -8, -24, toe=-88),
+          'elbow_l': (-34, 58, 118), 'elbow_r': (-8, -46, 98)}),
+    *_recover((-10, 54), -40, (-8, -24), -88, 72),
+], contact=30, direction=-85, footwork='front', length=72, face_tolerance=45)
+
+SLOG_SWEEP = _stroke('SLOGSWEEP', [
+    *_trigger(hands=(-28, -6, 104)), _backlift(hands=(-24, -14, 132), shaft=(0.25, 0.35, -0.90)),
+    (17, {**_foot('l', -6, 36, G + 9, toe=-50), 'pelvis': (12, 0, -60, -3, 7, -22),
+          'spine': (16, 0, -10), 'neck': (-14, 0, 32), 'head': (0, 0, 32),
+          **_bat_held((-24, -14, 138), (0.25, 0.35, -0.90), (-0.70, -0.45, -0.55))}),
+    (22, {**_foot('l', -14, 52, toe=-45), **_foot('r', -8, -24, G + 2, toe=-88, knee_out=4),
+          'pelvis': (18, 0, -56, -6, 13, -42), 'spine': (18, 0, -10), 'chest': (6, 0, -10),
+          'head': (8, 0, 30), 'elbow_l': (-30, 30, 190), 'elbow_r': (-40, -40, 150),
+          **_bat_held((-24, -6, 130), (0.60, 0.20, -0.77), (-0.70, 0.40, -0.60))}),
+    (26, {'pelvis': (19, 0, -46, -6, 15, -46), 'spine': (18, 0, -2),
+          **_bat_held((-42, 36, 100), (0.70, -0.30, 0.65), (-0.40, 0.70, 0.60))}),
+    # Down on the back knee, big arc from high, face open and up to clear mid-wicket.
+    (30, {'pelvis': (19, 0, -30, -6, 16, -48), 'spine': (18, 2, 8), 'chest': (6, 2, 6),
+          'neck': (-16, 0, 14), 'head': (12, 0, 16), 'elbow_l': (0, 70, 130), 'elbow_r': (-20, 40, 80),
+          **_bat_at((-24, 94, 34), (0.10, -0.75, 0.65), (0.85, 0.35, 0.40))}),
+    (34, {'pelvis': (18, 0, -12, -5, 16, -47), 'spine': (17, 0, 18), 'neck': (-14, 0, 2),
+          **_bat_held((14, 50, 98), (-0.40, -0.85, -0.35), (0.40, -0.50, 0.77))}),
+    (42, {'pelvis': (15, 0, 0, -4, 14, -44), 'spine': (13, 0, 24), 'chest': (4, 0, 12),
+          'neck': (-10, 0, -10), 'head': (-6, 0, -8), 'elbow_l': (30, 30, 190), 'elbow_r': (-10, 20, 170),
+          **_bat_held((30, 34, 122), (-0.82, 0.40, -0.40), (0.20, -0.75, -0.63))}),
+    (46, {**_bat_held((28, 32, 120), (-0.82, 0.40, -0.40), (0.20, -0.75, -0.63))}),
+    (50, {'pelvis': (15, 0, -20, -4, 12, -38), 'spine': (15, 0, 10), 'chest': (5, 0, 2),
+          'neck': (-12, 0, 10), 'head': (-4, 0, 12),
+          }),
+    (54, {'pelvis': (12, 0, -44, -3, 8, -24), 'spine': (16, 0, -6), 'chest': (6, 0, -10),
+          'neck': (-12, 0, 30), 'head': (-4, 0, 32), **_foot('r', -8, -24, toe=-88),
+          'elbow_l': (-34, 58, 118), 'elbow_r': (-8, -46, 98)}),
+    *_recover((-14, 52), -45, (-8, -24), -88, 74),
+], contact=30, direction=-60, footwork='front', length=74, face_tolerance=45)
+
+# Clearing the front leg: the front foot opens to the leg side, the base stays wide and braced and
+# the bat swings in a full arc over long-on. Shared by LOFTED STRAIGHT DRIVE and LEG-SIDE PICKUP.
+LOFTED_STRAIGHT = _stroke('LOFTEDSTRAIGHT', [
+    *_trigger(hands=(-28, -6, 108)),
+    _backlift(hands=(-22, -18, 136), shaft=(0.20, 0.25, -0.95), pelvis=(6, 0, -64, -2, -8, -10)),
+    (17, {**_foot('l', 8, 30, G + 10, toe=-30), 'pelvis': (10, 0, -56, 0, 4, -14),
+          'spine': (15, 0, -10), 'neck': (-14, 0, 32), 'head': (-2, 0, 32),
+          **_bat_held((-22, -18, 140), (0.20, 0.25, -0.95), (-0.70, -0.45, -0.55))}),
+    (22, {**_foot('l', 14, 40, toe=-10), 'pelvis': (12, 0, -44, 3, 12, -18), 'spine': (16, 0, -6),
+          'chest': (5, 0, -6), 'head': (4, 0, 28), 'elbow_l': (-20, 30, 200), 'elbow_r': (-40, -40, 160),
+          **_bat_held((-24, -8, 134), (0.20, 0.85, -0.49), (-0.70, 0.20, -0.68))}),
+    (26, {'pelvis': (13, 0, -30, 3, 15, -19), 'spine': (17, 0, 2),
+          **_bat_held((-30, 26, 110), (0.15, 0.70, 0.70), (0.10, 0.70, -0.70))}),
+    (30, {'pelvis': (12, 0, -14, 4, 16, -19), 'spine': (15, 2, 10), 'chest': (5, 2, 8),
+          'neck': (-14, 0, 8), 'head': (6, 0, 10), 'elbow_l': (0, 80, 160), 'elbow_r': (-20, 30, 100),
+          **_foot('r', -7, -25, toe=-70),
+          **_bat_at((-18, 54, 36), (0.10, 0.05, 0.99), (0.35, 0.90, 0.25))}),
+    (34, {'pelvis': (10, 0, 2, 4, 16, -17), 'spine': (10, 0, 18), 'head': (0, 0, 2),
+          'elbow_l': (10, 90, 190), 'elbow_r': (-20, 60, 160),
+          **_bat_held((0, 74, 130), (-0.20, -0.60, 0.77), (0.60, 0.60, 0.53))}),
+    (44, {'pelvis': (6, 0, 18, 4, 14, -14), 'spine': (4, 0, 24), 'chest': (-2, 0, 14),
+          'neck': (-8, 0, -16), 'head': (-8, 0, -14), 'elbow_l': (40, 40, 200), 'elbow_r': (0, 40, 200),
+          **_foot('r', -6, -22, G + 6, toe=-40),
+          **_bat_held((22, 32, 164), (-0.75, 0.35, -0.56), (0.35, -0.90, 0.25))}),
+    (50, {'pelvis': (7, 0, 12, 4, 13, -14), **_foot('r', -6, -20, toe=-50),
+          **_bat_held((20, 30, 158), (-0.75, 0.35, -0.56), (0.35, -0.90, 0.25))}),
+    *_recover((14, 40), -10, (-6, -20), -50, 76),
+], contact=30, direction=-20, footwork='front', length=76)
+
+# Wristy deflection: short press, hands stay inside the line, the face rolls towards fine leg.
+LEG_GLANCE = _stroke('LEGGLANCE', [
+    *_trigger(), _backlift(hands=(-22, -8, 110), shaft=(0.15, 0.72, -0.68)),
+    (17, {**_foot('l', 5, 28, G + 7, toe=-40), 'pelvis': (10, 0, -54, 1, 6, -13),
+          'spine': (15, 0, -10), 'neck': (-12, 0, 32), 'head': (0, 0, 32)}),
+    (22, {**_foot('l', 7, 40, toe=-30), 'pelvis': (14, 0, -46, 2, 16, -16),
+          **_bat_held((-26, 8, 104), (0.25, 0.90, -0.36), (-0.30, 0.40, -0.86))}),
+    (26, {'pelvis': (15, 0, -40, 2, 20, -17), 'spine': (18, 3, -2),
+          **_bat_held((-26, 44, 94), (0.12, 0.45, 0.88), (0.10, 0.89, -0.45))}),
+    (30, {'pelvis': (15, 0, -32, 2, 22, -18), 'spine': (19, 4, 2), 'chest': (7, 6, 2),
+          'neck': (-14, 0, 18), 'head': (8, 0, 18), 'elbow_l': (-10, 70, 130), 'elbow_r': (-10, 20, 80),
+          **_bat_at((4, 64, 26), (0.20, 0.20, 0.96), (0.87, -0.48, 0.0))}),
+    (35, {'pelvis': (15, 0, -28, 2, 22, -18), 'spine': (18, 2, 6),
+          **_bat_held((12, 70, 86), (0.45, 0.20, 0.87), (0.80, -0.55, -0.20))}),
+    (44, {'pelvis': (14, 0, -34, 2, 20, -17), 'spine': (18, 2, 0),
+          **_bat_held((12, 68, 90), (0.45, 0.20, 0.87), (0.80, -0.55, -0.20))}),
+    *_recover((7, 40), -30, (-7, -25), -88, 68, over=False),
+], contact=30, direction=-120, footwork='front', length=68, face_tolerance=45)
+
+SHOTS = [STRAIGHT_DRIVE, COVER_DRIVE, ON_DRIVE, FORWARD_DEFENCE, LOFTED_DRIVE,
+         BACK_FOOT_DEFENCE, BACK_FOOT_PUNCH, SQUARE_CUT, PULL, HOOK,
+         SWEEP, SLOG_SWEEP, LOFTED_STRAIGHT, LEG_GLANCE]
 
 
 # ================================================================= bowling
@@ -840,12 +1035,12 @@ UMPIRE_WALK = _locomotion(reach=20, lift=10, drop=2.6, lean=3,
 
 # ================================================================= assembly
 
-def _loopclip(name, keys, speed=0.0):
-    return {'name': name, 'keys': keys, 'loop': True, 'speed': speed}
+def _loopclip(name, keys, speed=0.0, dense=False):
+    return {'name': name, 'keys': keys, 'loop': True, 'speed': speed, 'dense': dense}
 
 
-def _oneshot(name, keys, event=None, contact=0):
-    return {'name': name, 'keys': keys, 'loop': False, 'event': event, 'contact': contact}
+def _oneshot(name, keys, event=None, contact=0, dense=False):
+    return {'name': name, 'keys': keys, 'loop': False, 'event': event, 'contact': contact, 'dense': dense}
 
 
 def _mirror_keys(keys):
@@ -872,7 +1067,7 @@ def build_manifest():
                                                              'hand_r': R(.46, -.10, .86, -.50)})),
                                   (76, BOWLER_READY)]),
         _loopclip('BatterReady_R', [(0, BATTER_READY_R), (30, BATTER_READY_TAP),
-                                    (64, BATTER_READY_R)]),
+                                    (64, BATTER_READY_R)], dense=True),
         _loopclip('Walk', WALK, 100.0), _loopclip('Run', RUN, 310.0),
         _loopclip('Jog', JOG, 200.0), _loopclip('Sprint', SPRINT, 460.0),
         _loopclip('UmpireWalk', UMPIRE_WALK, 60.0),
@@ -889,14 +1084,14 @@ def build_manifest():
 
     # Mirror the batter-specific loops and one-shots.
     clips.append(_loopclip('BatterReady_L', _mirror_keys(
-        [(0, BATTER_READY_R), (30, BATTER_READY_TAP), (64, BATTER_READY_R)])))
+        [(0, BATTER_READY_R), (30, BATTER_READY_TAP), (64, BATTER_READY_R)]), dense=True))
     clips.append(_loopclip('BatterRun_L', _mirror_keys(BATTER_RUN_R), 300.0))
     clips.append(_oneshot('BatterCelebrate_L', _mirror_keys(BATTER_CELEBRATE_R)))
 
     for shot in SHOTS:
-        clips.append(_oneshot(f"{shot['name']}_R", shot['keys'], shot['event'], shot['contact']))
+        clips.append(_oneshot(f"{shot['name']}_R", shot['keys'], shot['event'], shot['contact'], dense=True))
         clips.append(_oneshot(f"{shot['name']}_L", _mirror_keys(shot['keys']),
-                              shot['event'], shot['contact']))
+                              shot['event'], shot['contact'], dense=True))
     for delivery in DELIVERIES:
         clips.append(_oneshot(f"{delivery['name']}_R", delivery['keys'],
                               delivery['event'], delivery['contact']))

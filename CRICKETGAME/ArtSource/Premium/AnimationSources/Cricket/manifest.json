@@ -319,28 +319,6 @@
   "fps": 30
  },
  {
-  "name": "COVERDRIVE_R",
-  "asset": "A_C26_COVERDRIVE_R",
-  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_COVERDRIVE_R.fbx",
-  "event": "BatContact",
-  "event_time": 1.0,
-  "loop": false,
-  "ground_speed": 0.0,
-  "length": 1.9333,
-  "fps": 30
- },
- {
-  "name": "COVERDRIVE_L",
-  "asset": "A_C26_COVERDRIVE_L",
-  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_COVERDRIVE_L.fbx",
-  "event": "BatContact",
-  "event_time": 1.0,
-  "loop": false,
-  "ground_speed": 0.0,
-  "length": 1.9333,
-  "fps": 30
- },
- {
   "name": "STRAIGHTDRIVE_R",
   "asset": "A_C26_STRAIGHTDRIVE_R",
   "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_STRAIGHTDRIVE_R.fbx",
@@ -348,7 +326,7 @@
   "event_time": 1.0,
   "loop": false,
   "ground_speed": 0.0,
-  "length": 1.9333,
+  "length": 2.3333,
   "fps": 30
  },
  {
@@ -359,7 +337,29 @@
   "event_time": 1.0,
   "loop": false,
   "ground_speed": 0.0,
-  "length": 1.9333,
+  "length": 2.3333,
+  "fps": 30
+ },
+ {
+  "name": "COVERDRIVE_R",
+  "asset": "A_C26_COVERDRIVE_R",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_COVERDRIVE_R.fbx",
+  "event": "BatContact",
+  "event_time": 1.0,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 2.3333,
+  "fps": 30
+ },
+ {
+  "name": "COVERDRIVE_L",
+  "asset": "A_C26_COVERDRIVE_L",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_COVERDRIVE_L.fbx",
+  "event": "BatContact",
+  "event_time": 1.0,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 2.3333,
   "fps": 30
  },
  {
@@ -370,7 +370,7 @@
   "event_time": 1.0,
   "loop": false,
   "ground_speed": 0.0,
-  "length": 1.9333,
+  "length": 2.4,
   "fps": 30
  },
  {
@@ -381,73 +381,7 @@
   "event_time": 1.0,
   "loop": false,
   "ground_speed": 0.0,
-  "length": 1.9333,
-  "fps": 30
- },
- {
-  "name": "PULL_R",
-  "asset": "A_C26_PULL_R",
-  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_PULL_R.fbx",
-  "event": "BatContact",
-  "event_time": 0.9667,
-  "loop": false,
-  "ground_speed": 0.0,
-  "length": 1.9333,
-  "fps": 30
- },
- {
-  "name": "PULL_L",
-  "asset": "A_C26_PULL_L",
-  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_PULL_L.fbx",
-  "event": "BatContact",
-  "event_time": 0.9667,
-  "loop": false,
-  "ground_speed": 0.0,
-  "length": 1.9333,
-  "fps": 30
- },
- {
-  "name": "SWEEP_R",
-  "asset": "A_C26_SWEEP_R",
-  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_SWEEP_R.fbx",
-  "event": "BatContact",
-  "event_time": 1.0333,
-  "loop": false,
-  "ground_speed": 0.0,
-  "length": 1.9333,
-  "fps": 30
- },
- {
-  "name": "SWEEP_L",
-  "asset": "A_C26_SWEEP_L",
-  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_SWEEP_L.fbx",
-  "event": "BatContact",
-  "event_time": 1.0333,
-  "loop": false,
-  "ground_speed": 0.0,
-  "length": 1.9333,
-  "fps": 30
- },
- {
-  "name": "LEGGLANCE_R",
-  "asset": "A_C26_LEGGLANCE_R",
-  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_LEGGLANCE_R.fbx",
-  "event": "BatContact",
-  "event_time": 1.0,
-  "loop": false,
-  "ground_speed": 0.0,
-  "length": 1.7333,
-  "fps": 30
- },
- {
-  "name": "LEGGLANCE_L",
-  "asset": "A_C26_LEGGLANCE_L",
-  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_LEGGLANCE_L.fbx",
-  "event": "BatContact",
-  "event_time": 1.0,
-  "loop": false,
-  "ground_speed": 0.0,
-  "length": 1.7333,
+  "length": 2.4,
   "fps": 30
  },
  {
@@ -458,7 +392,7 @@
   "event_time": 1.0,
   "loop": false,
   "ground_speed": 0.0,
-  "length": 1.6667,
+  "length": 2.1333,
   "fps": 30
  },
  {
@@ -469,7 +403,227 @@
   "event_time": 1.0,
   "loop": false,
   "ground_speed": 0.0,
-  "length": 1.6667,
+  "length": 2.1333,
+  "fps": 30
+ },
+ {
+  "name": "LOFTEDDRIVE_R",
+  "asset": "A_C26_LOFTEDDRIVE_R",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_LOFTEDDRIVE_R.fbx",
+  "event": "BatContact",
+  "event_time": 1.0,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 2.4667,
+  "fps": 30
+ },
+ {
+  "name": "LOFTEDDRIVE_L",
+  "asset": "A_C26_LOFTEDDRIVE_L",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_LOFTEDDRIVE_L.fbx",
+  "event": "BatContact",
+  "event_time": 1.0,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 2.4667,
+  "fps": 30
+ },
+ {
+  "name": "BACKFOOTDEFENCE_R",
+  "asset": "A_C26_BACKFOOTDEFENCE_R",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_BACKFOOTDEFENCE_R.fbx",
+  "event": "BatContact",
+  "event_time": 0.9667,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 2.0667,
+  "fps": 30
+ },
+ {
+  "name": "BACKFOOTDEFENCE_L",
+  "asset": "A_C26_BACKFOOTDEFENCE_L",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_BACKFOOTDEFENCE_L.fbx",
+  "event": "BatContact",
+  "event_time": 0.9667,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 2.0667,
+  "fps": 30
+ },
+ {
+  "name": "BACKFOOTPUNCH_R",
+  "asset": "A_C26_BACKFOOTPUNCH_R",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_BACKFOOTPUNCH_R.fbx",
+  "event": "BatContact",
+  "event_time": 0.9667,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 2.2333,
+  "fps": 30
+ },
+ {
+  "name": "BACKFOOTPUNCH_L",
+  "asset": "A_C26_BACKFOOTPUNCH_L",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_BACKFOOTPUNCH_L.fbx",
+  "event": "BatContact",
+  "event_time": 0.9667,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 2.2333,
+  "fps": 30
+ },
+ {
+  "name": "SQUARECUT_R",
+  "asset": "A_C26_SQUARECUT_R",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_SQUARECUT_R.fbx",
+  "event": "BatContact",
+  "event_time": 0.9667,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 2.2667,
+  "fps": 30
+ },
+ {
+  "name": "SQUARECUT_L",
+  "asset": "A_C26_SQUARECUT_L",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_SQUARECUT_L.fbx",
+  "event": "BatContact",
+  "event_time": 0.9667,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 2.2667,
+  "fps": 30
+ },
+ {
+  "name": "PULL_R",
+  "asset": "A_C26_PULL_R",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_PULL_R.fbx",
+  "event": "BatContact",
+  "event_time": 0.9333,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 2.2333,
+  "fps": 30
+ },
+ {
+  "name": "PULL_L",
+  "asset": "A_C26_PULL_L",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_PULL_L.fbx",
+  "event": "BatContact",
+  "event_time": 0.9333,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 2.2333,
+  "fps": 30
+ },
+ {
+  "name": "HOOK_R",
+  "asset": "A_C26_HOOK_R",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_HOOK_R.fbx",
+  "event": "BatContact",
+  "event_time": 0.9667,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 2.2333,
+  "fps": 30
+ },
+ {
+  "name": "HOOK_L",
+  "asset": "A_C26_HOOK_L",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_HOOK_L.fbx",
+  "event": "BatContact",
+  "event_time": 0.9667,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 2.2333,
+  "fps": 30
+ },
+ {
+  "name": "SWEEP_R",
+  "asset": "A_C26_SWEEP_R",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_SWEEP_R.fbx",
+  "event": "BatContact",
+  "event_time": 1.0,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 2.4,
+  "fps": 30
+ },
+ {
+  "name": "SWEEP_L",
+  "asset": "A_C26_SWEEP_L",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_SWEEP_L.fbx",
+  "event": "BatContact",
+  "event_time": 1.0,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 2.4,
+  "fps": 30
+ },
+ {
+  "name": "SLOGSWEEP_R",
+  "asset": "A_C26_SLOGSWEEP_R",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_SLOGSWEEP_R.fbx",
+  "event": "BatContact",
+  "event_time": 1.0,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 2.4667,
+  "fps": 30
+ },
+ {
+  "name": "SLOGSWEEP_L",
+  "asset": "A_C26_SLOGSWEEP_L",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_SLOGSWEEP_L.fbx",
+  "event": "BatContact",
+  "event_time": 1.0,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 2.4667,
+  "fps": 30
+ },
+ {
+  "name": "LOFTEDSTRAIGHT_R",
+  "asset": "A_C26_LOFTEDSTRAIGHT_R",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_LOFTEDSTRAIGHT_R.fbx",
+  "event": "BatContact",
+  "event_time": 1.0,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 2.5333,
+  "fps": 30
+ },
+ {
+  "name": "LOFTEDSTRAIGHT_L",
+  "asset": "A_C26_LOFTEDSTRAIGHT_L",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_LOFTEDSTRAIGHT_L.fbx",
+  "event": "BatContact",
+  "event_time": 1.0,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 2.5333,
+  "fps": 30
+ },
+ {
+  "name": "LEGGLANCE_R",
+  "asset": "A_C26_LEGGLANCE_R",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_LEGGLANCE_R.fbx",
+  "event": "BatContact",
+  "event_time": 1.0,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 2.2667,
+  "fps": 30
+ },
+ {
+  "name": "LEGGLANCE_L",
+  "asset": "A_C26_LEGGLANCE_L",
+  "fbx": "ArtSource/Premium/AnimationSources/Cricket/A_C26_LEGGLANCE_L.fbx",
+  "event": "BatContact",
+  "event_time": 1.0,
+  "loop": false,
+  "ground_speed": 0.0,
+  "length": 2.2667,
   "fps": 30
  },
  {

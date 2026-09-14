@@ -29,8 +29,7 @@ for hand, ready in [('R', actions.BATTER_READY_R),
                     ('L', rig_lib.mirror(actions.BATTER_READY_R))]:
     m0 = midpoint(ready)
     for shot in actions.SHOTS:
-        keys = {f: s for f, s in shot['keys']}
-        contact = shot['keys'][4][1]
+        contact = rig_lib.spec_at(shot['keys'], shot['contact'])
         if hand == 'L':
             contact = rig_lib.mirror(contact)
         m1 = midpoint(contact)

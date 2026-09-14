@@ -12,6 +12,12 @@ public:
     AC26CharacterReviewMode();
     virtual void Tick(float Dt) override;
 private:
+    /** -C26ShotReview: every authored stroke on the real batter profile (body + fitted equipment). */
+    void TickShotReview(class ASkeletalMeshActor* Actor);
     float Age=0;
     int32 Frame=-1;
+    int32 ShotStep=-1;
+    int32 MeasuredShot=-1;
+    TArray<TObjectPtr<class UStaticMeshComponent>> ReviewGear;
+    FString ShotReport;
 };

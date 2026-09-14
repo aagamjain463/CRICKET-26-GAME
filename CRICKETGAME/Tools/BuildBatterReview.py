@@ -44,6 +44,11 @@ for name, bone in [('BatGrip_L', 'hand_l'), ('BatGrip_R', 'hand_r'),
         mesh, name, bone, u.Transform()), 'socket ' + name
 LIB.save_loaded_asset(skeleton, only_if_is_dirty=False)
 
+path = '/Game/Cricket26/Characters/Data/DA_C26_BatterReview'
+profile = u.load_asset(path) if LIB.does_asset_exist(path) else None
+# Re-running (e.g. to add strokes) must keep the measured offsets ApplyBatterOffsets.py wrote.
+kept = {str(i.get_editor_property('slot')): i for i in profile.get_editor_property('equipment')} if profile else {}
+
 items = []
 for slot, asset, socket, mirrored, offset in [
         ('BAT', 'SM_C26_Bat_Hero', 'BatGrip_L', 'BatGrip_R', BAT_OFFSET),
@@ -61,14 +66,19 @@ for slot, asset, socket, mirrored, offset in [
     item.set_editor_property('socket', socket)
     item.set_editor_property('left_handed_socket', mirrored)
     item.set_editor_property('offset', offset)
+    old = kept.get(str(getattr(u.C26EquipmentSlot, slot)))
+    if old:
+        item.set_editor_property('offset', old.get_editor_property('offset'))
+        item.set_editor_property('left_handed_offset', old.get_editor_property('left_handed_offset'))
     items.append(item)
 
 manifest = json.loads((ROOT / 'ArtSource/Premium/AnimationSources/Cricket/manifest.json').read_text())
 BAT_KEYS = {'BatterReady_R', 'BatterReady_L', 'BatterRun_R', 'BatterRun_L',
             'BatterCelebrate_R', 'BatterCelebrate_L', 'Walk', 'Run', 'Start', 'Stop',
             'TurnLeft', 'TurnRight', 'Celebrate', 'Disappointed'}
-for shot in ('COVERDRIVE', 'STRAIGHTDRIVE', 'ONDRIVE', 'PULL', 'SWEEP', 'LEGGLANCE',
-             'FRONTFOOTDEFENCE'):
+for shot in ('STRAIGHTDRIVE', 'COVERDRIVE', 'ONDRIVE', 'FRONTFOOTDEFENCE', 'LOFTEDDRIVE',
+             'BACKFOOTDEFENCE', 'BACKFOOTPUNCH', 'SQUARECUT', 'PULL', 'HOOK',
+             'SWEEP', 'SLOGSWEEP', 'LOFTEDSTRAIGHT', 'LEGGLANCE'):   # = C26Character::ShotClips()
     BAT_KEYS.add(shot + '_R')
     BAT_KEYS.add(shot + '_L')
 clips = {}
@@ -91,8 +101,6 @@ for entry in manifest:
 clips['Run'].set_editor_property(
     'sequence', u.load_asset('/Game/Cricket26/Characters/Animations/Locomotion/C26_A_Run'))
 
-path = '/Game/Cricket26/Characters/Data/DA_C26_BatterReview'
-profile = u.load_asset(path) if LIB.does_asset_exist(path) else None
 if profile is None:
     factory = u.DataAssetFactory()
     factory.set_editor_property('data_asset_class', u.C26CharacterProfile)

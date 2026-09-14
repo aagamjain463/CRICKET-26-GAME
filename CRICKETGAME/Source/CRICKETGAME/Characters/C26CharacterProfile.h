@@ -26,6 +26,9 @@ namespace C26Character
 {
     CRICKETGAME_API bool Allows(EC26VisualRole Role, EC26EquipmentSlot Slot);
     CRICKETGAME_API bool Requires(EC26VisualRole Role, EC26EquipmentSlot Slot);
+    /** Authored stroke clips every batter profile must carry (each with one BatContact notify). */
+    CRICKETGAME_API const TArray<FString>& ShotClips();
+    /** Match shot label -> authored clip key, e.g. "EXTRA-COVER DRIVE" -> COVERDRIVE_R. */
     CRICKETGAME_API FName ShotKey(const FString& MatchLabel, bool LeftHanded);
     CRICKETGAME_API FName BowlingKey(EC26Delivery Delivery, bool LeftHanded);
     CRICKETGAME_API float MapEventTime(float ActionTime, float MatchEventTime, float ClipEventTime, float ClipLength);

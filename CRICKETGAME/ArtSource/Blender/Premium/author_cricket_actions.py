@@ -45,10 +45,12 @@ manifest = []
 for clip in actions.build_manifest():
     name = clip['name']
     if selected is not None and name not in selected:
-        assert name in old_manifest, 'No prior manifest entry for ' + name
+        if name not in old_manifest:
+            continue  # new clip outside this --only run: authored when selected
         manifest.append(old_manifest[name])
         continue
-    action = rig_lib.bake(rig, f'A_C26_{name}', clip['keys'], loop=clip.get('loop', False))
+    action = rig_lib.bake(rig, f'A_C26_{name}', clip['keys'], loop=clip.get('loop', False),
+                          dense=clip.get('dense', False))
     path = OUT / f'A_C26_{name}.fbx'
     rig_lib.export(rig, action, path)
     start, end = action.frame_range

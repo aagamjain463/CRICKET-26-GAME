@@ -279,6 +279,10 @@ bool FC26GestureControlsTest::RunTest(const FString& Parameters)
         FString(ShotFamily(0.f, 620.f, 40.f, .75f, 0.f, false, false)) == TEXT("STRAIGHT DRIVE"));
     TestTrue(TEXT("Leg-side drag to a full ball flicks"),
         FString(ShotFamily(-45.f, 620.f, 40.f, .75f, 10.f, false, false)) == TEXT("FLICK"));
+    TestTrue(TEXT("Committed press to a low leg-side good-length ball sweeps"),
+        FString(ShotFamily(-50.f, 450.f, 45.f, .80f, 0.f, false, false)) == TEXT("SWEEP"));
+    TestTrue(TEXT("Lofted committed press to a low leg-side ball slog sweeps"),
+        FString(ShotFamily(-50.f, 450.f, 45.f, .80f, 0.f, true, false)) == TEXT("SLOG SWEEP"));
     TestTrue(TEXT("A tiny pull defends"),
         FString(ShotFamily(0.f, 430.f, 70.f, .25f, 0.f, false, true)) == TEXT("DEFENSIVE PUSH"));
     TestTrue(TEXT("Straight drag to a short ball still becomes a cross-bat shot"),

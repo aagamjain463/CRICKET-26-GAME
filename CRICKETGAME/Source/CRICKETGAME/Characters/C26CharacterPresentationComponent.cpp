@@ -388,10 +388,8 @@ void UC26CharacterPresentationComponent::UpdateFromMatch(AC26Athlete* Athlete,fl
         if(Athlete->Action==EC26Action::Batting)
         {
             FString Name=State.ToString();const FString Hand=Appearance.LeftHandedBat?TEXT("_L"):TEXT("_R");
-            Fallback=FName(*(Name.Contains(TEXT("COVER"))?TEXT("COVERDRIVE")+Hand:
-                Name.Contains(TEXT("HOOK"))?TEXT("PULL")+Hand:
-                Name.Contains(TEXT("GLANCE"))||Name.Contains(TEXT("FLICK"))?TEXT("LEGGLANCE")+Hand:
-                Name.Contains(TEXT("SWEEP"))?TEXT("SWEEP")+Hand:TEXT("FRONTFOOTDEFENCE")+Hand));
+            // Edge labels (TOP EDGE etc.) have no stroke of their own: a block is the honest pose.
+            Fallback=FName(*(TEXT("FRONTFOOTDEFENCE")+Hand));
         }
         State=Fallback;Clip=Profile->FindClip(State);
     }
