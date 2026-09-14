@@ -360,7 +360,15 @@ float C26Presentation::LockReleaseReach(float RefLegLength)
     // The leg length is measured from the reference pose because segment lengths do not depend on
     // the pose -- the reference pose itself is a straight bind pose and says nothing about how bent
     // the knees are in a stance.
-    return RefLegLength>0.f?RefLegLength*LockoutReachFraction:UnmeasuredLockReach;
+    //
+    // The clamp is not defensive padding: it is the fallback. A leg that could not be measured
+    // (the -1 sentinel) or that measured outside the human band is replaced by the MOST GENEROUS
+    // plausible leg, because holding a mark that should have been released is a far smaller error
+    // than releasing every mark immediately. Lift-off and state changes still release normally, so
+    // an over-generous threshold cannot pin a foot through a stride.
+    const float Leg=(RefLegLength>=MinPlausibleLegLength&&RefLegLength<=MaxPlausibleLegLength)
+        ?RefLegLength:MaxPlausibleLegLength;
+    return Leg*LockoutReachFraction;
 }
 bool UC26CharacterPresentationComponent::StateAllowsFootLock(FName State)
 {
@@ -498,24 +506,41 @@ void UC26CharacterPresentationComponent::UpdateFootStabilization(const AC26Athle
     // release has to be derived from the athlete's real leg: the standing hip-to-ankle distance is
     // ~94% of the true leg length, so a release threshold even slightly below it silently releases
     // every mark on the frame it was taken.
-    if(RefAnkleHeight<0.f)
+    if(!bMeasuredRefPose)
     {
-        RefAnkleHeight=0.f;
+        bMeasuredRefPose=true;
         if(const USkeletalMesh* Asset=Body->GetSkeletalMeshAsset())
         {
             const FReferenceSkeleton& Ref=Asset->GetRefSkeleton();
-            auto RefLoc=[&Ref](FName Bone)
+            // Reports whether the bone resolved, rather than returning a zero vector for a missing
+            // one. A zero vector is NOT a safe default here: the leg is a SUM OF DISTANCES between
+            // three bones, so one unresolved bone silently turns the total into a distance from the
+            // mesh origin. That is a plausible-looking number, which is the worst kind -- too large
+            // and no mark ever releases, too small and every mark dies on arrival.
+            auto RefLoc=[&Ref](FName Bone,FVector& Out)
             {
                 const int32 Index=Ref.FindBoneIndex(Bone);
-                if(Index==INDEX_NONE)return FVector::ZeroVector;
+                if(Index==INDEX_NONE)return false;
                 FTransform Accumulated=FTransform::Identity;
                 for(int32 I=Index;I!=INDEX_NONE;I=Ref.GetParentIndex(I))Accumulated*=Ref.GetRefBonePose()[I];
-                return Accumulated.GetLocation();
+                Out=Accumulated.GetLocation();
+                return true;
             };
-            const FVector LeftFoot=RefLoc(Profile->LeftFootBone),RightFoot=RefLoc(Profile->RightFootBone);
-            RefAnkleHeight=FMath::Min(float(LeftFoot.Z),float(RightFoot.Z));
-            const FVector Thigh=RefLoc(TEXT("thigh_l")),Calf=RefLoc(TEXT("calf_l"));
-            RefLegLength=float((Calf-Thigh).Size()+(LeftFoot-Calf).Size());
+            FVector LeftFoot,RightFoot,Thigh,Calf;
+            // The ankle height and the leg length are measured independently, so a mesh that names
+            // its thigh bones differently still gets a correct ankle height and vice versa.
+            if(RefLoc(Profile->LeftFootBone,LeftFoot)&&RefLoc(Profile->RightFootBone,RightFoot))
+                RefAnkleHeight=FMath::Min(float(LeftFoot.Z),float(RightFoot.Z));
+            // thigh_l/calf_l are the skeleton's own names and are not remapped by the profile, so
+            // the result is only trusted when the whole chain resolved AND lands in the band a real
+            // human leg falls in. Anything else leaves the sentinel, and LockReleaseReach falls back
+            // to the most generous plausible leg instead of guessing.
+            if(RefLoc(TEXT("thigh_l"),Thigh)&&RefLoc(TEXT("calf_l"),Calf)&&RefLoc(Profile->LeftFootBone,LeftFoot))
+            {
+                const float Measured=float((Calf-Thigh).Size()+(LeftFoot-Calf).Size());
+                if(Measured>=C26Presentation::MinPlausibleLegLength&&Measured<=C26Presentation::MaxPlausibleLegLength)
+                    RefLegLength=Measured;
+            }
         }
         UE_LOG(LogTemp,Display,TEXT("C26_CHARACTER_ANKLE_HEIGHT mesh=%s height=%.2fcm legLength=%.2fcm releaseAt=%.2fcm"),
             *GetNameSafe(Body->GetSkeletalMeshAsset()),RefAnkleHeight,RefLegLength,
@@ -561,10 +586,18 @@ void UC26CharacterPresentationComponent::UpdateFootStabilization(const AC26Athle
         // Only take a fresh mark once the previous one has faded out, otherwise the solver would
         // jump the foot from one world point to another inside a single frame. Marking at ground
         // height rather than at the authored height is what conforms the foot to the pitch.
-        if(bAllowNewMarks&&!Lock.bLocked&&Lock.LockAlpha<.25f&&FMath::Abs(AboveGround)<PlantTolerance)
+        //
+        // The mark must also sit within the release distance of the hip. Acquisition and release are
+        // the same predicate applied at different moments, so a mark taken where the release would
+        // already fire is a cycle that can never hold: it is recorded, released on the next frame,
+        // and shows up as held=0. In a match that was 54 of 151 cycles, and every one of them was
+        // the solver being handed work it was guaranteed to throw away.
+        const FVector Candidate=FVector(Foot.X,Foot.Y,PlantedAnkleZ);
+        if(bAllowNewMarks&&!Lock.bLocked&&Lock.LockAlpha<.25f&&FMath::Abs(AboveGround)<PlantTolerance
+            &&FVector::Dist(Hip,Candidate)<=LockReleaseReach)
         {
             Lock.bLocked=true;Lock.MaxDrift=0.f;Lock.MaxAuthoredDrift=0.f;Lock.HeldFrames=0;
-            Lock.LockedWorldPos=FVector(Foot.X,Foot.Y,PlantedAnkleZ);
+            Lock.LockedWorldPos=Candidate;
             // Under the debug CVar only: proof in a log that a mark was really taken in a match,
             // rather than an on-screen weight read off a screenshot. The reach is logged because a
             // mark taken at a hip distance already past the release threshold is dead on arrival.

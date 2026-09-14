@@ -103,15 +103,63 @@ timing, so a cross-run comparison measures the match, not the stabilizer.
 
 > **Rule for future work:** never read a rendered transform from the same tick that authored it.
 
+### Hardening: the leg measurement can now fail safely
+
+`RefLegLength` is a **sum of distances between three bones** (`thigh_l` → `calf_l` → foot), and
+`thigh_l`/`calf_l` are the skeleton's own names, not remapped by the profile. The first version
+returned `ZeroVector` for an unresolved bone, which silently turns the total into a distance from
+the **mesh origin** — a plausible-looking number, which is the dangerous kind. Too large and no mark
+ever releases (the solver drags the foot until the hip tears it off); too small and every mark dies
+on arrival again.
+
+Three changes make the whole path fail safely:
+
+- The bone lookup **reports success** instead of substituting a zero vector, and the result is only
+  trusted when the whole chain resolved **and** lands inside `MinPlausibleLegLength..MaxPlausibleLegLength`
+  (55–120 cm). Otherwise the `-1` sentinel is kept.
+- `LockReleaseReach` **validates its own input** and falls back to the *most generous plausible leg*
+  (120 cm × 0.98 = **117.6 cm**). A caller that forgets to validate cannot produce a threshold that
+  silently never releases. It is safe for any input, including the sentinel and garbage.
+- The reference pose is now measured once behind an explicit `bMeasuredRefPose` flag, because
+  `RefAnkleHeight` has a legitimate value of 0 and therefore cannot double as a "not yet measured"
+  sentinel — a mesh that failed to measure would have been treated as measured at height zero and
+  pressed into the pitch permanently.
+
+`FC26FootSolverTest` asserts the band **contains the real measured leg** (so the guard cannot reject
+the athlete it is running on), that every garbage input fails towards holding, that the fallback
+dominates every plausible leg, and that the threshold genuinely tracks the leg inside the band.
+
+### Acquisition and release are now the same predicate
+
+The release fires when the hip-to-mark distance exceeds the threshold, but acquisition accepted a
+mark at *any* reach. Marks were therefore taken at `reach=87.9 cm` against a `85.84 cm` release —
+recorded, released on the next frame, and logged as `held=0`. In a match that was **54 of 151
+cycles (36%)**: the solver being handed work it was guaranteed to throw away.
+
+Acquisition now requires the mark to sit within the release distance of the hip, so the two rules
+are one predicate evaluated at two moments. Measured effect:
+
+| | before | after |
+|---|---|---|
+| lock cycles | 151 | **97** |
+| cycles holding 0 frames | 54 (36%) | **0 (0%)** |
+| marks held ≥4 frames | 23, 76.5% removed | 23, **76.5% removed** |
+| cycles that added motion | 0 | 0 |
+
+The productive cycles are **byte-identical** (504.8 cm → 118.5 cm either way), which is the point:
+the change removed only dead work. The same stabilization now costs 36% fewer lock cycles and zero
+wasted acquisitions.
+
 ---
 
 ## 4. Result
 
-151 lock cycles, fixed-step 30 fps, `DA_C26_FielderReview`, `-C26CharacterSlice`:
+151 lock cycles before the consistency fix, 97 after, fixed-step 30 fps, `DA_C26_FielderReview`,
+`-C26CharacterSlice`:
 
 | frames held | cycles | authored slide | rendered slide | removed |
 |---|---|---|---|---|
-| 0–1 | 62 | 60.9 cm | 22.1 cm | 63.6% |
+| 0–1 | 8 | 60.9 cm | 22.1 cm | 63.6% |
 | 2–3 | 66 | 1697.8 cm | 606.9 cm | 64.3% |
 | 4–7 | 17 | 388.4 cm | 117.9 cm | 69.6% |
 | 16+ | 6 | 116.4 cm | 0.6 cm | **99.5%** |
@@ -120,12 +168,13 @@ timing, so a cross-run comparison measures the match, not the stabilizer.
 - Marks held **≥4 frames** (the ones that actually do work): 504.8 cm → 118.5 cm,
   **76.5% removed**, worst rendered drift 8.21 cm.
 - **Zero** cycles where locking added motion.
+- **Zero** cycles that hold for no frames — every mark taken is a mark that can hold.
 - Every cycle whose authored foot was still rendered **exactly 0.00 cm** — no new jitter.
 - Symmetric across feet: left 65.3%, right 68.2%.
 
 The number to quote is **76.5% on marks that hold, 99.5% on the longest holds, zero added motion**
-— not the flat 67% over all 151 cycles, which is diluted by the 62 marks that release immediately
-because the foot was never really planted.
+— not the flat 67% over all cycles, which is diluted by the marks that release immediately because
+the foot was never really planted.
 
 ### Foot-locking behaviour, precisely
 
@@ -188,7 +237,15 @@ activated athletes. Pre-existing.
    on that clip's plant. The travel assertions are guarded behind `if (PlantedReach < RefLeg * 0.9f)`
    and the limitation is reported through `AddInfo`. This is an authoring property of the clip, and
    the clip belongs to another workstream.
-4. **`ReviewPremiumCharacter.sh` cannot verify any of this.** `AC26CharacterReviewMode` drives
+4. **The leg-derived release could not be re-verified on a second skeleton in-match.** Only one body
+   (`SK_C26_Athlete_Review`) is in service, and the one other profile (`DA_C26_BatterReview`) fails
+   its own structural gates — `C26_CHARACTER_MIGRATION_BLOCKED … (10 errors)` and
+   `C26_CHARACTER_ASSET_GATE BowlerReady: missing role animation` — so only the batter activates and
+   no locomotion state is ever entered. The robustness gap is instead closed by unit test: the
+   plausibility band is asserted to contain the real leg, and `LockReleaseReach` is asserted safe for
+   sentinel and garbage input. When a second body arrives, re-run the drift log on it and confirm the
+   measured `legLength` differs and `releaseAt` tracks it.
+5. **`ReviewPremiumCharacter.sh` cannot verify any of this.** `AC26CharacterReviewMode` drives
    `UC26CricketerAnimInstance` directly and never creates or ticks the presentation component, so
    `FootIKWeight`/`LockAlpha` stay at their defaults and the foot IK is inert in review captures.
    Only the `-C26CharacterSlice` match path exercises it.

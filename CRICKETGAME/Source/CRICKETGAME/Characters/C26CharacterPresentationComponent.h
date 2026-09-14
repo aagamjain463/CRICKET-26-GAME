@@ -52,12 +52,20 @@ namespace C26Presentation
     /** Locomotion hysteresis: entering costs more speed than leaving it keeps. */
     inline constexpr float StartSpeed=22.f,StopSpeed=10.f;
     /** A locked mark is released once it would need this fraction of the leg's true length, so the
-        knee is allowed to approach extension but never to lock out. */
+        knee is allowed to approach extension but never to lock out.
+
+        This MUST stay above the fraction of the leg that a standing athlete already spans from hip
+        to ankle, because a release below that distance fires on the frame the mark is taken. The
+        shipped code used .94 of a hardcoded 86cm = 80.84cm against a 82.4cm standing reach, so
+        every mark died on arrival. FC26FootSolverTest measures the standing fraction from the real
+        reference pose and asserts this number clears it, rather than trusting the comment. */
     inline constexpr float LockoutReachFraction=.98f;
-    /** Used only when the leg cannot be measured from the reference pose. Deliberately generous:
-        erring towards holding a mark that should have been released is a far smaller error than
-        releasing every mark immediately, and lift-off and state changes still release normally. */
-    inline constexpr float UnmeasuredLockReach=110.f;
+    /** The band a real human leg falls in, in centimetres. The release threshold is derived from a
+        measured leg, so a measurement outside this band means the bone chain did not resolve and
+        the value must be rejected: a too-large leg would never release a mark and the solver would
+        drag the foot until the hip tore it off, and a too-small one reproduces the dead-on-arrival
+        bug above. The band is also the fallback -- see LockReleaseReach. */
+    inline constexpr float MinPlausibleLegLength=55.f,MaxPlausibleLegLength=120.f;
     /** Authored ankle clearance that counts as the stride having genuinely lifted the foot. */
     inline constexpr float LiftHeight=8.f;
     /** A re-aim larger than this inside one frame is a snap, not a turn the athlete ran through. */
@@ -87,7 +95,12 @@ namespace C26Presentation
     /** Hip-to-mark distance at which a held mark must be released, derived from the athlete's own
         measured leg rather than a constant. The leg length is pose-independent, which is why it is
         the input: the reference pose is a straight bind pose, so it says nothing about how bent the
-        athlete's knees are in a real stance. */
+        athlete's knees are in a real stance.
+
+        Safe for ANY input, including the -1 sentinel and a garbage measurement, because it clamps
+        into MinPlausibleLegLength..MaxPlausibleLegLength and falls back to the most generous
+        plausible leg. A caller that forgets to validate cannot therefore produce a threshold that
+        silently never releases. */
     CRICKETGAME_API float LockReleaseReach(float RefLegLength);
 }
 
@@ -150,8 +163,17 @@ private:
         from a constant -- the shipped code used 94% of a hardcoded 86cm = 80.8cm, which sat BELOW
         the 82.4cm the athlete actually stands at, so every mark was released on the frame it was
         taken. That failure is silent: marks are still taken, so the stabilizer looks alive while
-        holding nothing. */
+        holding nothing.
+
+        Stays at the -1 sentinel when the chain does not resolve or measures outside
+        MinPlausibleLegLength..MaxPlausibleLegLength, which makes LockReleaseReach fall back to the
+        most generous plausible leg rather than trusting a number it cannot vouch for. */
     float RefLegLength=-1.f;
+    /** True once the reference pose has been measured, whether or not the measurement succeeded.
+        A separate flag because RefAnkleHeight has a legitimate value of 0, so it cannot double as
+        the "not yet measured" sentinel: a mesh that failed to measure would otherwise be treated
+        as measured at height zero and pressed into the pitch forever. */
+    bool bMeasuredRefPose=false;
     /** Mesh-only yaw lag absorbing authoritative-rotation snaps. Gameplay rotation is untouched. */
     float MeshYawOffset=0.f,LastAuthoritativeYaw=0.f;
     bool bInitializedYaw=false;

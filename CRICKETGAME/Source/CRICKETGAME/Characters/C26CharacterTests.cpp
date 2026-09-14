@@ -264,9 +264,33 @@ bool FC26FootSolverTest::RunTest(const FString& Parameters)
         AddInfo(FString::Printf(TEXT("Lock reach: planted hip reach %.2fcm, leg %.2fcm; release at %.2fcm (%.2fcm of travel); old constant %.2fcm%s"),
             PlantedReach,RefLeg,Release,Release-PlantedReach,OldThreshold,
             PlantedReach<RefLeg*.9f?TEXT(""):TEXT(" -- planted pose uses the whole leg, so no lock can hold on this clip")));
-        // An unmeasurable leg must fail towards holding, never towards releasing everything.
-        Good&=TestTrue(TEXT("An unmeasurable leg does not release every mark"),
-            C26Presentation::LockReleaseReach(0.f)>=C26Presentation::UnmeasuredLockReach);
+        // The measurement guard has to be able to accept the athlete it is actually running on. A
+        // band that excludes the real leg would silently fall back for every athlete in the game,
+        // which is the same dead-mark failure with an extra step.
+        Good&=TestTrue(TEXT("The plausibility band contains the real measured leg"),
+            RefLeg>=C26Presentation::MinPlausibleLegLength&&RefLeg<=C26Presentation::MaxPlausibleLegLength);
+        // LockReleaseReach is safe for ANY input, because the caller can hold a -1 sentinel or a
+        // garbage measurement and the threshold must still never come out below a stance. The leg is
+        // a SUM of distances between three bones, so a single unresolved bone used to turn it into a
+        // distance from the mesh origin -- a plausible-looking number, which is the dangerous kind.
+        const float Garbage[]={-1.f,0.f,1.f,1e6f,-1e6f};
+        bool bAllGarbageSafe=true;
+        for(const float G:Garbage)
+            bAllGarbageSafe&=C26Presentation::LockReleaseReach(G)>=RefLeg*C26Presentation::LockoutReachFraction;
+        Good&=TestTrue(TEXT("An unmeasurable leg fails towards holding, never towards releasing everything"),bAllGarbageSafe);
+        // The fallback IS the most generous plausible leg, so it is above every leg in the band and
+        // cannot be under-cut by a real athlete the band happens to reject.
+        bool bFallbackDominates=true;
+        for(float L=C26Presentation::MinPlausibleLegLength;L<=C26Presentation::MaxPlausibleLegLength;L+=1.f)
+            bFallbackDominates&=C26Presentation::LockReleaseReach(0.f)>=C26Presentation::LockReleaseReach(L);
+        Good&=TestTrue(TEXT("The unmeasured fallback dominates every plausible leg"),bFallbackDominates);
+        // Inside the band the threshold tracks the leg, so the release is genuinely derived rather
+        // than merely clamped to something leg-shaped.
+        Good&=TestTrue(TEXT("The release tracks the leg inside the plausible band"),
+            C26Presentation::LockReleaseReach(70.f)<C26Presentation::LockReleaseReach(90.f));
+        AddInfo(FString::Printf(TEXT("Lock reach: band %.0f-%.0fcm, real leg %.2fcm in band, release %.2fcm, fallback %.2fcm"),
+            C26Presentation::MinPlausibleLegLength,C26Presentation::MaxPlausibleLegLength,RefLeg,Release,
+            C26Presentation::LockReleaseReach(0.f)));
         AddInfo(FString::Printf(TEXT("Solver: half-weight %.2fcm vs full-weight %.2fcm; leg %.1f+%.1fcm"),Half,Full,ThighLen,CalfLen));
     }
     Actor->Destroy();World->DestroyWorld(false);return Good;
