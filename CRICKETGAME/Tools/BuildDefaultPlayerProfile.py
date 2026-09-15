@@ -59,7 +59,15 @@ glove_l_tf = make_transform(raw_offsets.get('BattingGloveL'))
 glove_r_tf = make_transform(raw_offsets.get('BattingGloveR'))
 pad_l_tf = make_transform(raw_offsets.get('BattingPadL'))
 pad_r_tf = make_transform(raw_offsets.get('BattingPadR'))
-helmet_tf = make_transform(raw_offsets.get('Helmet'))
+helmet_tf = u.Transform()
+
+# Ensure canonical Helmet socket on skeleton
+u.C26CharacterProfile.set_equipment_socket(
+    mesh, 'Helmet', 'head',
+    u.Transform(location=u.Vector(10.5, 0.8, 0.0),
+                rotation=u.Rotator(pitch=0.0, yaw=90.0, roll=-90.0),
+                scale=u.Vector(1, 1, 1)))
+LIB.save_loaded_asset(skeleton, only_if_is_dirty=False)
 
 equipment_configs = [
     ('BAT', 'SM_C26_Bat_Hero', 'BatGrip_L', 'BatGrip_R', bat_tf, bat_tf),

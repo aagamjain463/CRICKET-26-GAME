@@ -280,6 +280,13 @@ void UC26CharacterPresentationComponent::DressEquipment(int32 TeamId)
         Dress(Helmet,TEXT("Peak"),Make(ShellMat,Kit*.66f,.28f));
         Dress(Helmet,TEXT("Trim"),Make(GearMat,FLinearColor(.022,.024,.029),.62f));
         Dress(Helmet,TEXT("Pad"),Make(GearMat,FLinearColor(.036,.034,.032),.93f));
+        Dress(Helmet,TEXT("Bar"),Make(ShellMat,FLinearColor(.360,.372,.392),.34f));
+    }
+    if(auto Cap=Find(EC26EquipmentSlot::Headwear))
+    {
+        Dress(Cap,TEXT("Crown"),Make(ClothMat,Kit,.66f));
+        Dress(Cap,TEXT("Peak"),Make(ClothMat,Kit*.82f,.58f));
+        Dress(Cap,TEXT("Trim"),Make(GearMat,FLinearColor(.022,.024,.029),.62f));
     }
     auto* PadFace=Make(GearMat,FLinearColor(.700,.712,.686),.78f);
     auto* PadRoll=Make(GearMat,FLinearColor(.612,.624,.600),.84f);

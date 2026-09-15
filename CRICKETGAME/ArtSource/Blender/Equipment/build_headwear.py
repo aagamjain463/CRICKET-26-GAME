@@ -110,6 +110,28 @@ def build_helmet():
             [(p[0] * 1.022, p[1], p[2] * 1.022) for p in arc],
             [(p[0] * 1.004, p[1] + 0.62, p[2] * 1.004) for p in arc]], SHELL, closed=False)
 
+    # 5-bar round-section titanium grille with side stems and centre stem
+    span = math.radians(62)
+    for i, z in enumerate((-2.9, -5.7, -8.5, -11.3, -14.0)):
+        reach = 10.9 - i * 0.30
+        path, rad = [], []
+        for k in range(11):
+            t = k / 10.0 * 2 - 1
+            a = t * span
+            path.append((reach * math.cos(a) * 0.98, reach * math.sin(a) * 1.02, z + (1 - math.cos(a)) * 1.5))
+            rad.append(0.30)
+        b.loft(tube(path, rad, 6), BAR, cap_start=path[0], cap_end=path[-1])
+    for side in (-1, 1):
+        path, rad = [], []
+        for k in range(6):
+            t = k / 5.0
+            a = side * span
+            path.append((10.9 * math.cos(a) * 0.98, 10.9 * math.sin(a) * 1.02, -2.5 - t * 12.2 + (1 - math.cos(a)) * 1.5))
+            rad.append(0.34)
+        b.loft(tube(path, rad, 6), TRIM, cap_start=path[0], cap_end=path[-1])
+    path = [(11.05, 0, -2.7 - k / 5.0 * 11.9) for k in range(6)]
+    b.loft(tube(path, [0.30] * 6, 6), BAR, cap_start=path[0], cap_end=path[-1])
+
     return b.build('SM_C26_Helmet_Hero', mats, smooth_angle=34.0)
 
 
