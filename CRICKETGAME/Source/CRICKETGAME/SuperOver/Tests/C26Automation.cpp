@@ -701,8 +701,10 @@ bool FC26PresentationPacingAndAntiRepetitionTest::RunTest(const FString& Paramet
 
     // 2. Anti-Repetition Recency History
     const auto& History = PD->GetRecentScenes();
-    TestTrue(TEXT("Played scene logged in recent history"), History.Num() > 0);
-    TestEqual(TEXT("Recent history records Bowled event"), History.Last().Event, EC26PresentationEvent::WicketCelebrationBowled);
+    if (TestTrue(TEXT("Played scene logged in recent history"), History.Num() > 0))
+    {
+        TestEqual(TEXT("Recent history records Bowled event"), History.Last().Event, EC26PresentationEvent::WicketCelebrationBowled);
+    }
 
     // 3. Match Pressure Calculator
     const float HighTension = PD->CalculateMatchPressure(18, 14, 2, 1); // 4 needed off 2 balls

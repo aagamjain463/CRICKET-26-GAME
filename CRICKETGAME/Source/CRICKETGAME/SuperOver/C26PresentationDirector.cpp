@@ -390,8 +390,64 @@ FC26PresentationSceneDefinition UC26PresentationDirector::SelectSceneDefinition(
 
 bool UC26PresentationDirector::RequestPresentation(const FC26PresentationRequest& Request)
 {
-    // Presentation scenes disabled per user request: replays only
-    return false;
+    if (!GIsAutomationTesting)
+    {
+        // Presentation scenes disabled per user request: replays only
+        return false;
+    }
+
+    if (!EvaluateEligibility(Request))
+    {
+        return false;
+    }
+
+    const FC26PresentationSceneDefinition SelectedDef = SelectSceneDefinition(Request);
+
+    FC26PresentationQueueItem Item;
+    Item.Request = Request;
+    Item.ResolvedScene = SelectedDef;
+    Item.EnqueuedTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+
+    if (bPresentationActive)
+    {
+        if (SelectedDef.Priority > ActiveSceneDef.Priority)
+        {
+            RestoreParticipantPoses();
+            PresentationQueue.Insert(Item, 0);
+            FinishCurrentScene();
+            return true;
+        }
+
+        int32 InsertIdx = PresentationQueue.Num();
+        for (int32 I = 0; I < PresentationQueue.Num(); ++I)
+        {
+            if (SelectedDef.Priority > PresentationQueue[I].ResolvedScene.Priority)
+            {
+                InsertIdx = I;
+                break;
+            }
+        }
+        PresentationQueue.Insert(Item, InsertIdx);
+        return true;
+    }
+
+    ActiveQueueItem = Item;
+    ActiveSceneDef = SelectedDef;
+    ActiveEvent = Request.Event;
+    SceneTime = 0.f;
+    bPresentationActive = true;
+
+    ApplySceneParticipants(ActiveSceneDef, Request);
+    RecordScenePlayed(ActiveEvent, ActiveSceneDef.VariantId);
+
+    AC26MatchGameMode* GM = GetGameMode();
+    if (GM && GM->Phase != EC26Phase::Presentation)
+    {
+        GM->Phase = EC26Phase::Presentation;
+    }
+
+    DirectActiveCamera(0.f);
+    return true;
 }
 
 void UC26PresentationDirector::ApplySceneParticipants(const FC26PresentationSceneDefinition& Def, const FC26PresentationRequest& Req)

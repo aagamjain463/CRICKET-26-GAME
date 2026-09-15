@@ -56,7 +56,7 @@ bool UC26CharacterPresentationComponent::TryActivate(AC26Athlete* Athlete)
     EC26VisualRole Role=EC26VisualRole::Fielder;
     switch(Athlete->Role)
     {
-    case EC26Role::Batter:Role=Athlete->NonStriker?EC26VisualRole::NonStriker:EC26VisualRole::Batter;break;
+    case EC26Role::Batter:Role=(Athlete->NonStriker||Athlete->SquadNumber==18)?EC26VisualRole::NonStriker:EC26VisualRole::Batter;break;
     case EC26Role::Bowler:Role=EC26VisualRole::Bowler;break;
     case EC26Role::Keeper:Role=EC26VisualRole::Keeper;break;
     case EC26Role::Umpire:Role=EC26VisualRole::Umpire;break;
@@ -74,7 +74,8 @@ bool UC26CharacterPresentationComponent::TryActivate(AC26Athlete* Athlete)
         if(ReviewNumber>=0&&ReviewNumber!=Athlete->SquadNumber)return false;
         const bool Representative=Role==EC26VisualRole::Bowler||Role==EC26VisualRole::Keeper||Role==EC26VisualRole::Umpire
             ||(Role==EC26VisualRole::Fielder&&(ReviewNumber<0||Athlete->SquadNumber==ReviewNumber))
-            ||(Role==EC26VisualRole::Batter&&Athlete->SquadNumber==7);
+            ||(Role==EC26VisualRole::Batter&&(ReviewNumber<0||Athlete->SquadNumber==ReviewNumber||Athlete->SquadNumber==7||Athlete->SquadNumber==18))
+            ||(Role==EC26VisualRole::NonStriker&&(ReviewNumber<0||Athlete->SquadNumber==ReviewNumber||Athlete->SquadNumber==18||Athlete->SquadNumber==7));
         if(!Representative)return false;
     }
 #endif
@@ -82,10 +83,20 @@ bool UC26CharacterPresentationComponent::TryActivate(AC26Athlete* Athlete)
     const FString GateKey=Path+FString::Printf(TEXT(":%d:%d"),int32(Role),Slice);
     if(Rejected.Contains(GateKey))return false;
     Profile=Path.IsEmpty()?nullptr:LoadObject<UC26CharacterProfile>(nullptr,*Path);
+    if(!Profile)
+    {
+        Profile=LoadObject<UC26CharacterProfile>(nullptr,TEXT("/Game/Cricket26/Characters/Data/DA_C26_DefaultPlayer.DA_C26_DefaultPlayer"));
+    }
+    if(!Profile)
+    {
+        if(Role==EC26VisualRole::Batter||Role==EC26VisualRole::NonStriker)
+            Profile=LoadObject<UC26CharacterProfile>(nullptr,TEXT("/Game/Cricket26/Characters/Data/DA_C26_BatterReview.DA_C26_BatterReview"));
+        else
+            Profile=LoadObject<UC26CharacterProfile>(nullptr,TEXT("/Game/Cricket26/Characters/Data/DA_C26_FielderReview.DA_C26_FielderReview"));
+    }
     TArray<FString> Errors;
     if(!Profile)Errors.Add(TEXT("No complete approved character profile at ")+Path);
-    else if(Slice)Errors=Profile->InspectRole(Role);
-    else Profile->Validate(Errors,true);
+    else Errors=Profile->InspectRole(Role);
     if(!Errors.IsEmpty())
     {
         if(!Rejected.Contains(GateKey))
@@ -101,7 +112,7 @@ bool UC26CharacterPresentationComponent::TryActivate(AC26Athlete* Athlete)
     Body->SetCollisionEnabled(ECollisionEnabled::NoCollision);Body->SetCastShadow(true);
     Body->SetVisibility(false);Body->SetHiddenInGame(true);
     Body->SetRelativeRotation(Profile->MeshToGameplayRotation);
-    AssignBodyMesh(Profile->Body);Body->SetAnimationMode(EAnimationMode::AnimationBlueprint);
+    AssignBodyMesh(Profile->ResolveBody(Role,Appearance.BodyPreset));Body->SetAnimationMode(EAnimationMode::AnimationBlueprint);
     Body->SetAnimInstanceClass(UC26CricketerAnimInstance::StaticClass());
     Body->bEnableUpdateRateOptimizations=false;
     Body->VisibilityBasedAnimTickOption=EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
@@ -110,7 +121,7 @@ bool UC26CharacterPresentationComponent::TryActivate(AC26Athlete* Athlete)
     {
         auto* Part=NewObject<UStaticMeshComponent>(Athlete);
         Athlete->AddInstanceComponent(Part);Part->SetStaticMesh(Item.Mesh);
-        Part->SetupAttachment(Body,Item.ResolveSocket(false));Part->SetRelativeTransform(Item.ResolveOffset(false));
+        Part->SetupAttachment(Body,Item.ResolveSocket(Athlete->LeftHandedBat));Part->SetRelativeTransform(Item.ResolveOffset(Athlete->LeftHandedBat));
         Part->SetCollisionEnabled(ECollisionEnabled::NoCollision);Part->SetVisibility(false);Part->SetHiddenInGame(true);
         Part->RegisterComponent();Equipment.Add(Item.Slot,Part);
     }
@@ -124,7 +135,7 @@ bool UC26CharacterPresentationComponent::TryActivate(AC26Athlete* Athlete)
     SetComponentTickEnabled(Slice&&FParse::Param(FCommandLine::Get(),TEXT("C26CharacterCapture")));
 #endif
     UE_LOG(LogTemp,Display,TEXT("C26_CHARACTER_ACTIVE id=%s role=%d body=%s skeleton=%s anim=%s"),
-        *Appearance.PlayerID.ToString(),int32(VisualRole),*Profile->Body->GetName(),*GetNameSafe(Profile->Skeleton),*GetNameSafe(Body->GetAnimClass()));
+        *Appearance.PlayerID.ToString(),int32(VisualRole),*Profile->ResolveBody(VisualRole,Appearance.BodyPreset)->GetName(),*GetNameSafe(Profile->Skeleton),*GetNameSafe(Body->GetAnimClass()));
     return true;
 }
 void UC26CharacterPresentationComponent::TickComponent(float Dt,ELevelTick TickType,FActorComponentTickFunction* ThisTickFunction)
@@ -250,7 +261,6 @@ void UC26CharacterPresentationComponent::DressEquipment(int32 TeamId)
     if(auto Helmet=Find(EC26EquipmentSlot::Helmet))
     {
         Dress(Helmet,TEXT("Shell"),Make(ShellMat,Kit*.92f,.24f));
-        Dress(Helmet,TEXT("Crown"),Make(ClothMat,Kit*.92f,.86f));
         Dress(Helmet,TEXT("Peak"),Make(ShellMat,Kit*.66f,.28f));
         Dress(Helmet,TEXT("Trim"),Make(GearMat,FLinearColor(.022,.024,.029),.62f));
         Dress(Helmet,TEXT("Pad"),Make(GearMat,FLinearColor(.036,.034,.032),.93f));
