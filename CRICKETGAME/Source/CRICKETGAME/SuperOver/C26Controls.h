@@ -74,26 +74,40 @@ namespace C26Controls
     // ------------------------------------------------------------------
     // Shot direction from gesture (PART I)
     //
-    // The batting camera sits BEHIND THE BOWLER looking down the pitch, so the
-    // picture the player aims at is mirrored against the world axes: for a
-    // right-hander the OFF side (+X world) is on the LEFT of the screen and the
-    // LEG side (-X world) is on the RIGHT. The drag has to follow the SCREEN,
-    // not world X - pulling right plays to leg, pulling left plays to off, and
-    // pulling up (toward the bowler) straightens the shot.
+    // The batting camera is the BOWLING camera: it sits BEHIND THE BOWLER at
+    // (-10, -4400, 640) looking down the pitch at the striker on Y = 900. The
+    // player therefore aims at the picture they bowl at, not at the batter's own
+    // view of the field, and both screen axes are read straight off that picture:
     //
-    // Design space: -X design = batter's off side, +X design = leg side,
-    // -Y design = up (toward the bowler), +Y design = down (toward the keeper).
-    // Returns a continuous aim angle in degrees, -135..135, where POSITIVE is
-    // the batter's off side - the same convention FC26Simulation::Hit and
-    // DirectionZoneName already use.
+    //   * LEFT / RIGHT. A UE camera looking down +Y has RightVector = -X, so
+    //     screen-right is world -X. World +X is a right-hander's OFF side, so the
+    //     off side is on the LEFT of the screen and the leg side on the RIGHT:
+    //     pull right plays leg, pull left plays off.
+    //   * UP / DOWN. The camera stands behind the bowler, so the bottom of the
+    //     screen is the bowler's half of the pitch - the half IN FRONT of the
+    //     batter - and the top of the screen is the far half, behind him. Pull
+    //     DOWN to hit in front (cover, mid-off, straight, mid-on, midwicket);
+    //     pull UP to hit behind the wicket (third man, fine leg).
+    //
+    // Design space: +X design = screen right = batter's LEG side,
+    // -X design = screen left = batter's OFF side,
+    // +Y design = screen down = in front of the batter (toward the bowler),
+    // -Y design = screen up = behind the wicket (toward the keeper).
+    //
+    // Returns a continuous aim angle in degrees, -135..135, where POSITIVE is the
+    // batter's off side - the same convention FC26Simulation::Hit and
+    // DirectionZoneName already use. 0 is straight (past the bowler, in front of
+    // the batter) and |90| is square, so |angle| < 90 always means "in front of
+    // the batter" and |angle| > 90 always means "behind the wicket".
     // ------------------------------------------------------------------
     inline float AimAngleFromPull(const FVector2D& Pull, float DeadZone, float Sensitivity, bool bLeftHandedBatter)
     {
         if (Pull.Size() <= DeadZone) return 0.f;
-        // Angle of pull measured from screen-up (-Y). Screen-right (+X design) is
-        // the batter's LEG side, so X is negated against the world convention:
-        // pulling right yields a negative (leg-side) angle, pulling left positive.
-        const float RawDeg = FMath::RadiansToDegrees(FMath::Atan2(-Pull.X, -Pull.Y));
+        // Angle measured from screen-DOWN (+Y design), which is the direction the
+        // batter faces. Screen-right (+X design) is the batter's LEG side, so X is
+        // negated against the world convention: pulling right yields a negative
+        // (leg-side) angle, pulling left positive, and pulling down straightens.
+        const float RawDeg = FMath::RadiansToDegrees(FMath::Atan2(-Pull.X, Pull.Y));
         float Angle = FMath::Clamp(RawDeg * Sensitivity, -135.f, 135.f);
         if (bLeftHandedBatter) Angle = -Angle;
         return Angle;

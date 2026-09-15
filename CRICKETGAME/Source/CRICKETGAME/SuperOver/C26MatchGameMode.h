@@ -74,6 +74,10 @@ public:
     void AimPitch(float Line,float Length);
     void DebugOutcome(FString Type);
     float TimingCountdown() const;
+    /** Hands the queued stroke's predicted contact to the striker's presentation (never to the simulation). */
+    void CommitStrokeContact();
+    /** Presentation position of a ball in a fielder's hands between the gather and the throw. */
+    FVector HeldBallPosition() const;
     float BowlingMeter() const;
 
     // ---- Major Gameplay Control Overhaul: Gesture Batting & Bowling ----
@@ -479,5 +483,7 @@ private:
     FString GateDirectory;
     TSet<FString> GateShots;
     TArray<float> GateFrameTimes;
+    /** Game-thread cost of posing all athletes (clip selection, evaluation, bat control) per live-ball frame. */
+    TArray<float> GateAnimateTimes;
 #endif
 };

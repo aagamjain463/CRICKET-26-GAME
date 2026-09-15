@@ -92,6 +92,18 @@ private:
     FName Variant(const AC26Athlete* Athlete);
     void UpdateWarp(const AC26Athlete* Athlete,const FC26CricketClip* Clip);
     void LearnWarp(const AC26Athlete* Athlete);
+    /** Bat control inputs for the anim graph: grip lock for anyone holding a bat, and the reach that puts the
+        blade on the simulated contact point, measured once per stroke from the clip's own contact pose. */
+    void UpdateBatControl(const AC26Athlete* Athlete);
+    /** Component-space socket transform of one clip frame, evaluated without blend, life or bat control. */
+    FTransform PosedSocket(UAnimSequence* Sequence,float Time,FName Socket);
+    FTransform EquipmentOffset(const FC26EquipmentDefinition& Item);
+    TOptional<FTransform> LeftBatOffset;
+    const FC26CricketClip* ReachClip=nullptr;
+    FVector ReachTarget=FVector::ZeroVector;
+    uint8 ReachTiming=0xFF;
+    float GripLastReport=-1;
+    int32 QualityTier=0,EvaluationCounter=0;
     UPROPERTY(Transient) TObjectPtr<ACameraActor> ReviewCamera;
     TMap<FName,int32> ReviewSamples;
     float ReviewTime=0,ReviewLastCapture=-1;

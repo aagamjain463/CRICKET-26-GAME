@@ -185,12 +185,15 @@ bool FC26GestureControlsTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("Pull vector"), PullVector(FVector2D(100, 100), FVector2D(160, 40)) == FVector2D(60, -60));
     TestEqual(TEXT("Dead zone swallows micro pulls"), PullMagnitude01(FVector2D(5, 5), 12.f, 220.f), 0.f);
     TestTrue(TEXT("Full pull saturates"), PullMagnitude01(FVector2D(400, 0), 12.f, 220.f) >= 0.999f);
-    // Aim follows the SCREEN: the batting camera is behind the bowler, so a
-    // right-hander's off side is on the left of the screen. Drag right = leg
-    // side (-), drag left = off side (+), up straightens.
+    // Aim follows the BOWLING-VIEW screen. The batting camera is the bowling
+    // camera (behind the bowler looking down the pitch), so:
+    //   screen-right = the batter's LEG side  -> negative angle
+    //   screen-left  = the batter's OFF side  -> positive angle
+    //   screen-down  = the bowler's half, IN FRONT of the batter -> straightens
+    //   screen-up    = beyond the batter, BEHIND the wicket
     TestTrue(TEXT("Leg-side pull aims leg"), AimAngleFromPull(FVector2D(120, 0), 12.f, 1.f, false) < -40.f);
     TestTrue(TEXT("Off-side pull aims off"), AimAngleFromPull(FVector2D(-120, 0), 12.f, 1.f, false) > 40.f);
-    TestTrue(TEXT("Straight pull stays central"), FMath::Abs(AimAngleFromPull(FVector2D(0, -150), 12.f, 1.f, false)) < 8.f);
+    TestTrue(TEXT("Pulling down stays central"), FMath::Abs(AimAngleFromPull(FVector2D(0, 150), 12.f, 1.f, false)) < 8.f);
     TestTrue(TEXT("Left-handed batter mirrors"), AimAngleFromPull(FVector2D(120, 0), 12.f, 1.f, true) > 40.f);
     // Power curve is bounded and monotonic.
     const float P0 = PowerFromPull(0.f, 0.35f, 1.f), P1 = PowerFromPull(1.f, 0.35f, 1.f);
@@ -259,13 +262,24 @@ bool FC26GestureControlsTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("A run-up release reads very early"),
         ReleaseTimingFromDelta(-3200.f, 25.f, 83.f, 190.f, 250.f) == EC26ReleaseTiming::NoShot);
     // Direction naming is batter-relative and mirrors cleanly. A right-hander
-    // drags LEFT to reach cover; a left-hander reaches the same zone by dragging
-    // RIGHT, because their off side is the other way round on screen.
-    TestTrue(TEXT("Cover named"), FString(DirectionZoneName(AimAngleFromPull(FVector2D(-90, -90), 16.f, 1.f, false))) == TEXT("COVER"));
-    TestTrue(TEXT("Midwicket named"), FString(DirectionZoneName(AimAngleFromPull(FVector2D(90, -90), 16.f, 1.f, false))) == TEXT("MIDWICKET"));
+    // drags DOWN-LEFT to reach cover; a left-hander reaches the same zone by
+    // dragging DOWN-RIGHT, because their off side is the other way round on screen.
+    const float DownLeft = AimAngleFromPull(FVector2D(-90, 90), 16.f, 1.f, false);
+    const float DownRight = AimAngleFromPull(FVector2D(90, 90), 16.f, 1.f, false);
+    TestTrue(TEXT("Down-left is the off side and in front"),
+        FString(DirectionZoneName(DownLeft)) == TEXT("COVER") && DownLeft > 0.f && DownLeft < 90.f);
+    TestTrue(TEXT("Down-right is the leg side and in front"),
+        FString(DirectionZoneName(DownRight)) == TEXT("MIDWICKET") && DownRight < 0.f && DownRight > -90.f);
+    // ...and the mirror of it - pulling UP - is behind the wicket, never in front.
+    const float UpLeft = AimAngleFromPull(FVector2D(-90, -90), 16.f, 1.f, false);
+    const float UpRight = AimAngleFromPull(FVector2D(90, -90), 16.f, 1.f, false);
+    TestTrue(TEXT("Up-left is behind the wicket on the off side"),
+        FString(DirectionZoneName(UpLeft)) == TEXT("THIRD MAN") && UpLeft > 90.f);
+    TestTrue(TEXT("Up-right is behind the wicket on the leg side"),
+        FString(DirectionZoneName(UpRight)) == TEXT("FINE LEG") && UpRight < -90.f);
     TestTrue(TEXT("Left-hander sees the same zone for the same intent"),
-        FString(DirectionZoneName(AimAngleFromPull(FVector2D(90, -90), 16.f, 1.f, true)))
-            == FString(DirectionZoneName(AimAngleFromPull(FVector2D(-90, -90), 16.f, 1.f, false))));
+        FString(DirectionZoneName(AimAngleFromPull(FVector2D(90, 90), 16.f, 1.f, true)))
+            == FString(DirectionZoneName(DownLeft)));
     // Shot family: the SAME drag direction produces different strokes by length.
     TestTrue(TEXT("Off-side drag to a full ball drives"),
         FString(ShotFamily(35.f, 620.f, 42.f, .75f, -20.f, false, false)) == TEXT("COVER DRIVE"));

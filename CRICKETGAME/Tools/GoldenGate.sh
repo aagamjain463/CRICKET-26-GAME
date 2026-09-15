@@ -19,5 +19,5 @@ fi
 # grep, not rg: ripgrep is not installed on every machine this runs on, and until this changed
 # the script's own reporting step exited 127 under `set -e`, so the gate could never actually
 # fail a caller. -a because the editor log is not guaranteed to be clean UTF-8.
-grep -aE 'C26_GATE_(PASS|CONTACT|RELEASE|FRAME_TIME)' "$PROJ/Artifacts/$LABEL.log"
+grep -aE 'C26_GATE_(PASS|CONTACT|RELEASE|FRAME_TIME|ANIMATE_TIME)' "$PROJ/Artifacts/$LABEL.log"
 grep -aq 'C26_GATE_PASS failures=0' "$PROJ/Artifacts/$LABEL.log"

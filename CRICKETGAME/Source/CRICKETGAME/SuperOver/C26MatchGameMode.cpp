@@ -147,7 +147,14 @@ void AC26MatchGameMode::BeginPlay()
         // only way PlayerBatting() is false and the bowling controls are live.
         AutoPlay=false;Capture=Smoke=false;GoldenGate=false;BatLab=false;
         PlayerTeam=0;PlayerBatsFirst=false;UseToss=false;
-        Preferences->Difficulty=1;Preferences->Quality=3;Preferences->Apply();Venue->SetQuality(3);
+        // Test hook: the release band widths scale with difficulty, so the release
+        // rail's label layout has to be checked at more than Normal. The labs
+        // otherwise pin difficulty to 1. -C26Difficulty=0..3 (Easy/Hard/Expert).
+        int LabDiff=1;
+        if(FParse::Value(FCommandLine::Get(),TEXT("C26Difficulty="),LabDiff))
+            LabDiff=FMath::Clamp(LabDiff,0,3);
+        Preferences->Difficulty=LabDiff;Preferences->Quality=3;Preferences->Apply();Venue->SetQuality(3);
+        UE_LOG(LogC26,Display,TEXT("C26_BOWLLAB_DIFFICULTY %d"),LabDiff);
         Preferences->ControlScheme=0;
         bDebugControls=true;
         BowlLabShots=FParse::Param(FCommandLine::Get(),TEXT("C26BowlLabShots"));
@@ -683,11 +690,37 @@ void AC26MatchGameMode::ReleaseBall()
         // it is simply a very early swing measured against the real contact time.
         if(bPendingShotFromGesture)ShotInputTime=Simulation.ContactTime-.10f+PendingShotError;
         else if(ShotInputTime<0.f)ShotInputTime=0.f;
-        Athletes[11]->SetShotContact(Simulation.ContactPosition,Intent.Angle,Intent.Loft);
+        CommitStrokeContact();
     }
     ChangePhase(EC26Phase::Delivery);
 }
 float AC26MatchGameMode::TimingCountdown()const{return Simulation.ContactTime-Simulation.Ball.Age;}
+FVector AC26MatchGameMode::HeldBallPosition() const
+{
+    // The gathered ball used to jump ~24 cm from the turf into the hands on the pickup frame, and again from
+    // between the hands into the throwing hand at the wind-up. It is scooped up over 0.1 s instead, then carried
+    // across to the throwing hand, arriving before the release so ThrowFrom is unchanged.
+    const AC26Athlete* F=Athletes[ActiveFielder].Get();
+    const FVector Held=FMath::Lerp(GatherPoint,F->ReceivingPosition(),FMath::SmoothStep(.20f,.30f,ThrowClock));
+    return FMath::Lerp(Held,F->HandPosition(),FMath::SmoothStep(.53f,.63f,ThrowClock));
+}
+void AC26MatchGameMode::CommitStrokeContact()
+{
+    Athletes[11]->SetShotContact(Simulation.ContactPosition,Intent.Angle,Intent.Loft);
+    // The stroke shown is the stroke the simulation will classify at contact (same shared classifier, same
+    // inputs). The gesture's preview label only exists on the gesture path: taking the label from it left
+    // every AI and legacy stroke with an empty label, which snapped the striker back into his stance on the
+    // contact frame.
+    const FVector At=Simulation.ContactPosition;
+    Athletes[11]->ShotLabel=C26Controls::ShotFamily(FMath::Clamp(Intent.Angle,-135.f,135.f),Simulation.Plan.Length,At.Z,
+        FMath::Clamp(Intent.Stride,-1.f,1.f),At.X-FMath::Clamp(Intent.Footwork,-1.f,1.f)*42.f,Intent.Loft,Intent.Defend);
+    // Hit() is purely geometric, so running it on a copy at the predicted contact tells the presentation
+    // whether this stroke will middle, edge or miss the ball before the downswing reaches it.
+    FC26Simulation Probe=Simulation;
+    Probe.Ball.Position=Simulation.ContactPosition;Probe.Ball.Active=true;Probe.Ball.Struck=false;
+    FRandomStream Unused(0);
+    Athletes[11]->ExpectedTiming=Probe.Hit(Intent,ShotInputTime-(Simulation.ContactTime-.10f),Preferences->Difficulty,Unused).Timing;
+}
 void AC26MatchGameMode::Shot(const FC26ShotIntent& NewIntent)
 {
     if(Paused||SettingsOpen||ControlsOpen||(Phase!=EC26Phase::Delivery&&Phase!=EC26Phase::RunUp)||ShotQueued||(!PlayerBatting()&&!AutoPlay))return;
@@ -701,7 +734,7 @@ void AC26MatchGameMode::Shot(const FC26ShotIntent& NewIntent)
         ShotInputTime=bPendingShotFromGesture?(Simulation.ContactTime-.10f+PendingShotError):Simulation.Ball.Age;
     else
         ShotInputTime=-1.f; // resolved against the real contact time in ReleaseBall()
-    if(Phase==EC26Phase::Delivery)Athletes[11]->SetShotContact(Simulation.ContactPosition,Intent.Angle,Intent.Loft);
+    if(Phase==EC26Phase::Delivery)CommitStrokeContact();
 }
 void AC26MatchGameMode::AimPitch(float Line,float Length)
 {
@@ -735,7 +768,7 @@ void AC26MatchGameMode::UpdateDelivery(float Dt)
     const bool AIAtBat=!PlayerBatting()||AutoPlay;
     if(AIAtBat&&!ShotQueued&&Simulation.Ball.Age>=Simulation.ContactTime-.10f+AITiming)
     {
-        ShotQueued=true;ShotInputTime=Simulation.Ball.Age;Athletes[11]->SetShotContact(Simulation.ContactPosition,Intent.Angle,Intent.Loft);
+        ShotQueued=true;ShotInputTime=Simulation.Ball.Age;CommitStrokeContact();
     }
     // Stop precisely at the contact plane before applying a rebound; no jump to a distant bat.
     const float Remaining=Simulation.ContactTime-Simulation.Ball.Age;
@@ -749,6 +782,7 @@ void AC26MatchGameMode::UpdateDelivery(float Dt)
         {
             float Error=ShotInputTime-(Simulation.ContactTime-.10f);
             LastContact=Simulation.Hit(Intent,Error,Preferences->Difficulty,AI.Random);
+            Athletes[11]->ExpectedTiming=LastContact.Timing;
             if(LastContact.Timing!=EC26Timing::Miss)
             {
                 LastTimingDeltaMs = Error * 1000.f;
@@ -758,7 +792,7 @@ void AC26MatchGameMode::UpdateDelivery(float Dt)
             if(LastContact.Timing!=EC26Timing::Miss)
             {
                 Athletes[11]->ContactTarget=Simulation.Ball.Position;Athletes[11]->ShotAngle=LastContact.FaceAngle;
-                Athletes[11]->ShotLabel=BattingShotCandidate;Athletes[11]->ActionTime=C26Field::BatContactPoseTime;Athletes[11]->Animate(0);
+                Athletes[11]->ActionTime=C26Field::BatContactPoseTime;Athletes[11]->Animate(0);
                 // Anchor the replay and the shot cameras to the real moment of contact.
                 Director->MarkContact(LastContact.Quality,Intent.Loft,Simulation.Ball.Position);
                 OnCricketEvent.Broadcast(TEXT("BatContact"),Simulation.Ball.Position);
@@ -970,6 +1004,24 @@ void AC26MatchGameMode::UpdateFielding(float Dt)
     if(ThrowClock>=0)
     {
         ThrowClock+=Dt;
+        {
+            // Cover the receiving wicket from the gather, not from the release: a keeper standing back is ~9 m
+            // behind the stumps and a return takes ~1 s, so starting at the release left the ball arriving at
+            // empty stumps with the take played 6-9 m away. Pace is what reaches the mark by the take (60% of
+            // the flight), never slower than the old 850 cm/s jog.
+            const FVector ReturnStumps(0.f,SelectedThrowTarget==EC26ThrowTarget::KeepersEnd?C26Field::WicketY:-C26Field::WicketY,42.f);
+            const int ReturnReceiver=ReturnStumps.Y>0?1:0;
+            if(ReturnReceiver!=ActiveFielder)
+            {
+                auto* R=Athletes[ReturnReceiver].Get();
+                const FVector ReturnMark=ReturnStumps+FVector(0,ReturnStumps.Y>0?30.f:-30.f,-37.f);
+                const float ReturnFlight=ThrowReleased?ThrowDuration:FMath::Max(.18f,FVector::Dist(Athletes[ActiveFielder]->GetActorLocation(),ReturnStumps)/2600.f);
+                const float ReturnLeft=ThrowReleased?ReturnFlight*.6f-(ThrowClock-.73f):FMath::Max(0.f,.73f-ThrowClock)+ReturnFlight*.6f;
+                const float ReturnPace=FMath::Max(850.f,FVector::Dist2D(R->GetActorLocation(),ReturnMark)/FMath::Max(ReturnLeft,Dt));
+                R->SetActorLocation(FMath::VInterpConstantTo(R->GetActorLocation(),ReturnMark,Dt,ReturnPace));
+                R->SetActorRotation(FRotator(0,ReturnStumps.Y>0?-90.f:90.f,0));R->ContactTarget=ReturnStumps;
+            }
+        }
         if(ThrowClock<.53f)
         {
             auto* F=Athletes[ActiveFielder].Get();F->ActionTime=ThrowClock;F->Animate(0);
@@ -986,7 +1038,7 @@ void AC26MatchGameMode::UpdateFielding(float Dt)
             }
             if(ThrowClock>=.20f)
             {
-                Simulation.Ball.Position=F->ReceivingPosition();
+                Simulation.Ball.Position=HeldBallPosition();
                 if(ThrowClock-Dt<.20f){Audio->CueAt(TEXT("fielder_gather"),GatherPoint,.55f);OnCricketEvent.Broadcast(TEXT("Pickup"),GatherPoint);}
             }
             return;
@@ -995,7 +1047,7 @@ void AC26MatchGameMode::UpdateFielding(float Dt)
         const FRotator Aim=(ThrowTo-Athletes[ActiveFielder]->GetActorLocation()).Rotation();
         Athletes[ActiveFielder]->SetActorRotation(FMath::RInterpTo(Athletes[ActiveFielder]->GetActorRotation(),FRotator(0,Aim.Yaw,0),Dt,12.f));
         Athletes[ActiveFielder]->ActionTime=FMath::Min(.5f,ThrowClock-.53f);Athletes[ActiveFielder]->Animate(0);
-        if(ThrowClock<.73f){Simulation.Ball.Position=Athletes[ActiveFielder]->HandPosition();return;}
+        if(ThrowClock<.73f){Simulation.Ball.Position=HeldBallPosition();return;}
         if(!ThrowReleased)
         {
             bThrowTargetActive = false;
@@ -1018,16 +1070,8 @@ void AC26MatchGameMode::UpdateFielding(float Dt)
         }
         const float T=FMath::Clamp((ThrowClock-.73f)/ThrowDuration,0.f,1.f);
         Simulation.Ball.Position=FMath::Lerp(ThrowFrom,ThrowTo,T)+FVector(0,0,.5f*Tuning.Gravity*ThrowDuration*ThrowDuration*T*(1.f-T));
-        // Cover the receiving wicket with an athlete before the return arrives.
         const int Receiver=ThrowTo.Y>0?1:0;
-        if(Receiver!=ActiveFielder)
-        {
-            auto* R=Athletes[Receiver].Get();
-            const FVector Mark=ThrowTo+FVector(0,ThrowTo.Y>0?30.f:-30.f,-37.f);
-            R->SetActorLocation(FMath::VInterpConstantTo(R->GetActorLocation(),Mark,Dt,850.f));
-            R->SetActorRotation(FRotator(0,ThrowTo.Y>0?-90.f:90.f,0));R->ContactTarget=ThrowTo;
-            if(T>.6f)R->SetAction(EC26Action::Catch,false);
-        }
+        if(Receiver!=ActiveFielder&&T>.6f)Athletes[Receiver]->SetAction(EC26Action::Catch,false);
         if(T>=1)
         {
             const float EndSign=ThrowTo.Y>0?1.f:-1.f;
@@ -1610,8 +1654,10 @@ void AC26MatchGameMode::Tick(float Dt)
         const float PullLoad=bBattingGestureActive?FMath::Clamp(0.25f+BattingPullFrac*0.70f,0.f,1.f):0.f;
         if(!ShotQueued)Athletes[11]->Trigger=FMath::Max(RunUpLoad,PullLoad);
         Athletes[11]->FootworkIntent=Intent.Footwork;Athletes[11]->StrideIntent=Intent.Stride;Athletes[11]->Defending=Intent.Defend;
+        // Not clamped at the contact pose: after a play-and-miss the phase stays Delivery until the keeper
+        // takes, and a clamp froze the striker mid-swing for that whole ~0.9 s instead of following through.
         if(Phase==EC26Phase::Delivery&&ShotQueued)
-            Athletes[11]->ActionTime=C26Field::BatContactPoseTime-FMath::Max(0.f,TimingCountdown())-Dt;
+            Athletes[11]->ActionTime=C26Field::BatContactPoseTime-TimingCountdown()-Dt;
         const bool ReleasedThisFrame=PhaseBeforeUpdate==EC26Phase::RunUp&&Phase==EC26Phase::Delivery;
         const bool ContactThisFrame=PhaseBeforeUpdate==EC26Phase::Delivery&&Phase==EC26Phase::InPlay;
         if((Phase==EC26Phase::Delivery||Phase==EC26Phase::InPlay)&&Athletes[0]->Action==EC26Action::Bowling&&Athletes[0]->ActionTime<1.25f&&!ReleasedThisFrame)
@@ -1631,15 +1677,16 @@ void AC26MatchGameMode::Tick(float Dt)
         for(AC26Athlete* Athlete:Athletes)Athlete->UpdateDetail(ViewPoint);
         // Release/contact already evaluated their exact event poses. Advancing them again here
         // detaches the visible hand from the ball and skips the actual bat-impact frame.
+        const double AnimateStart=FPlatformTime::Seconds();
         for(int I=0;I<Athletes.Num();++I)
         {
             const bool LiveBall=Phase==EC26Phase::RunUp||Phase==EC26Phase::Delivery||Phase==EC26Phase::InPlay;
             const bool EventPose=LiveBall&&((I==0&&ReleasedThisFrame)||(I==11&&ContactThisFrame)||(I==ActiveFielder&&(ThrowClock>=0||CatchClock>=0))||(I==1&&KeeperTakeClock>=0));
-            if(I==11&&!BattingShotCandidate.IsEmpty())Athletes[I]->ShotLabel=BattingShotCandidate;
             Athletes[I]->Animate(EventPose?0.f:Dt);
         }
-        if(ThrowClock>=.53f&&!ThrowReleased)Simulation.Ball.Position=Athletes[ActiveFielder]->HandPosition();
-        else if(ThrowClock>=.20f&&!ThrowReleased)Simulation.Ball.Position=Athletes[ActiveFielder]->ReceivingPosition();
+        if(GoldenGate&&(Phase==EC26Phase::RunUp||Phase==EC26Phase::Delivery||Phase==EC26Phase::InPlay))
+            GateAnimateTimes.Add(float((FPlatformTime::Seconds()-AnimateStart)*1000.));
+        if(ThrowClock>=.20f&&!ThrowReleased)Simulation.Ball.Position=HeldBallPosition();
         if(CatchClock>=0)Simulation.Ball.Position=Athletes[ActiveFielder]->ReceivingPosition();
         if(KeeperTakeClock>=0)Simulation.Ball.Position=Athletes[1]->ReceivingPosition();
         if(Phase==EC26Phase::RunUp||Phase==EC26Phase::Ready)Simulation.Ball.Position=Athletes[0]->HandPosition();
@@ -1965,9 +2012,15 @@ void AC26MatchGameMode::EvaluateBattingGesture()
     }
     else
     {
-        BattingPullScreenAngle = FMath::RadiansToDegrees(FMath::Atan2(BattingPullRaw.X, -BattingPullRaw.Y));
-        // Batter-relative: + off side, - leg side. Mirrored for a left-hander so
-        // "drag toward cover" always means the batter's own cover, never the screen's.
+        // Raw direction the finger is pointing, in the aim's own sign convention:
+        // 0 = straight down the screen (in front of the batter, toward the bowler),
+        // + = toward the off side, - = toward the leg side. Handedness and
+        // DirectionSensitivity are applied below, so the debug readout can show
+        // the raw drag beside the angle the batter actually gets.
+        BattingPullScreenAngle = FMath::RadiansToDegrees(FMath::Atan2(-BattingPullRaw.X, BattingPullRaw.Y));
+        // Batter-relative: + off side, - leg side, and in front of the batter for
+        // |angle| < 90. Mirrored for a left-hander so "drag toward cover" always
+        // means the batter's own cover, never the screen's.
         BattingGestureAngle = FMath::Clamp(
             C26Controls::AimAngleFromPull(BattingPullRaw, GestureTuning.GestureDeadZone,
                 GestureTuning.DirectionSensitivity, bLeftHandedBatter),
@@ -2080,9 +2133,10 @@ void AC26MatchGameMode::ReleaseBattingGesture(int32 PointerId, FVector2D DesignP
     else
     {
         // The pull vector means exactly two things: direction and aggression.
-        // It deliberately does NOT also mean loft - dragging up the screen is how
-        // the player aims STRAIGHT, so overloading it would fight the direction
-        // mapping. Loft stays on its own LOFT / GROUND / DEFEND control.
+        // It deliberately does NOT also mean loft - dragging straight down the
+        // screen is how the player aims STRAIGHT, so overloading it would fight
+        // the direction mapping. Loft stays on its own LOFT / GROUND / DEFEND
+        // control.
         ShotCmd.Angle = FinalAngle;
         ShotCmd.Power = C26Controls::PowerFromAggression(FinalAggression, GestureTuning.MinPower, GestureTuning.MaxPower);
     }

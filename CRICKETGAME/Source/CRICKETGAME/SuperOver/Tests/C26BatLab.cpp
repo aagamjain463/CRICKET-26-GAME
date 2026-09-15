@@ -45,50 +45,54 @@ namespace C26BatLab
 
     static const FCase Cases[] =
     {
-        // Drag vectors are SCREEN drags, and the batting camera is behind the
-        // bowler: dragging LEFT aims off side, dragging RIGHT aims leg side.
+        // Drag vectors are SCREEN drags and the batting camera is the BOWLING
+        // camera, so both axes read off the bowler's picture: dragging LEFT aims
+        // off side, dragging RIGHT aims leg side, and dragging DOWN aims at the
+        // bowler's half - IN FRONT of the batter. Every vector below therefore has
+        // a POSITIVE Y for a stroke in front of the wicket, which is the whole
+        // point of the control: down-left is cover, down-right is midwicket.
         // --- TEST 1: cover drive, full outside off, medium pull, ideal release
-        {TEXT("01_cover_drive"),        EC26Delivery::Pace,   42.f, 620.f, {-96.f, -96.f}, FVector2D::ZeroVector,    0.f, false, true,  TEXT("COVER DRIVE")},
+        {TEXT("01_cover_drive"),        EC26Delivery::Pace,   42.f, 620.f, {-96.f,  96.f}, FVector2D::ZeroVector,    0.f, false, true,  TEXT("COVER DRIVE")},
         // --- TEST 2: leg-side attack, full leg stump, large pull
-        {TEXT("02_legside_attack"),     EC26Delivery::Pace,    -34.f, 620.f, { 150.f, -95.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("FLICK")},
+        {TEXT("02_legside_attack"),     EC26Delivery::Pace,    -34.f, 620.f, { 150.f,  95.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("FLICK")},
         // --- TEST 3: short ball, leg-side square drag
-        {TEXT("03_short_pull"),         EC26Delivery::Bouncer,  -8.f, 120.f, { 165.f, -30.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("PULL")},
+        {TEXT("03_short_pull"),         EC26Delivery::Bouncer,  -8.f, 120.f, { 165.f,  30.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("PULL")},
         // --- TEST 4: change of mind mid-hold (cover -> straight -> leg)
-        {TEXT("04_change_of_mind"),     EC26Delivery::Pace,     -6.f, 600.f, { 120.f, -80.f}, {-130.f, -80.f},         0.f, false, true,  TEXT("FLICK")},
+        {TEXT("04_change_of_mind"),     EC26Delivery::Pace,     -6.f, 600.f, { 120.f,  80.f}, {-130.f,  80.f},         0.f, false, true,  TEXT("FLICK")},
         // --- TEST 5: magnitude ladder on identical deliveries
-        {TEXT("05a_magnitude_20"),      EC26Delivery::Pace,   10.f, 600.f, {  0.f,  -56.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("STRAIGHT DRIVE")},
-        {TEXT("05b_magnitude_50"),      EC26Delivery::Pace,   10.f, 600.f, {  0.f, -120.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("STRAIGHT DRIVE")},
-        {TEXT("05c_magnitude_100"),     EC26Delivery::Pace,   10.f, 600.f, {  0.f, -260.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("STRAIGHT DRIVE")},
+        {TEXT("05a_magnitude_20"),      EC26Delivery::Pace,   10.f, 600.f, {  0.f,   56.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("STRAIGHT DRIVE")},
+        {TEXT("05b_magnitude_50"),      EC26Delivery::Pace,   10.f, 600.f, {  0.f,  120.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("STRAIGHT DRIVE")},
+        {TEXT("05c_magnitude_100"),     EC26Delivery::Pace,   10.f, 600.f, {  0.f,  260.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("STRAIGHT DRIVE")},
         // --- TEST 6: early release
-        {TEXT("06a_early"),             EC26Delivery::Pace,   10.f, 600.f, {-90.f,  -90.f}, FVector2D::ZeroVector, -130.f, false, true, TEXT("COVER DRIVE")},
-        {TEXT("06b_very_early"),        EC26Delivery::Pace,   10.f, 600.f, {-90.f,  -90.f}, FVector2D::ZeroVector, -165.f, false, true, TEXT("COVER DRIVE")},
+        {TEXT("06a_early"),             EC26Delivery::Pace,   10.f, 600.f, {-90.f,   90.f}, FVector2D::ZeroVector, -130.f, false, true, TEXT("COVER DRIVE")},
+        {TEXT("06b_very_early"),        EC26Delivery::Pace,   10.f, 600.f, {-90.f,   90.f}, FVector2D::ZeroVector, -165.f, false, true, TEXT("COVER DRIVE")},
         // --- TEST 7: late release
-        {TEXT("07a_late"),              EC26Delivery::Pace,   10.f, 600.f, {-90.f,  -90.f}, FVector2D::ZeroVector,  130.f, false, true, TEXT("COVER DRIVE")},
-        {TEXT("07b_very_late"),         EC26Delivery::Pace,   10.f, 600.f, {-90.f,  -90.f}, FVector2D::ZeroVector,  165.f, false, true, TEXT("COVER DRIVE")},
+        {TEXT("07a_late"),              EC26Delivery::Pace,   10.f, 600.f, {-90.f,   90.f}, FVector2D::ZeroVector,  130.f, false, true, TEXT("COVER DRIVE")},
+        {TEXT("07b_very_late"),         EC26Delivery::Pace,   10.f, 600.f, {-90.f,   90.f}, FVector2D::ZeroVector,  165.f, false, true, TEXT("COVER DRIVE")},
         // --- TEST 8: left-handed batter, same intents, mirrored screen drags
-        {TEXT("08a_lefty_cover"),       EC26Delivery::Pace,    -42.f, 620.f, { 96.f,  -96.f}, FVector2D::ZeroVector,   0.f, true,  true,  TEXT("COVER DRIVE")},
-        {TEXT("08b_lefty_pull"),        EC26Delivery::Bouncer, 8.f, 120.f, {-165.f,  -30.f}, FVector2D::ZeroVector,   0.f, true,  true,  TEXT("PULL")},
+        {TEXT("08a_lefty_cover"),       EC26Delivery::Pace,    -42.f, 620.f, { 96.f,   96.f}, FVector2D::ZeroVector,   0.f, true,  true,  TEXT("COVER DRIVE")},
+        {TEXT("08b_lefty_pull"),        EC26Delivery::Bouncer, 8.f, 120.f, {-165.f,   30.f}, FVector2D::ZeroVector,   0.f, true,  true,  TEXT("PULL")},
         // --- straight drive, on drive, cut, upper cut, yorker, glance
-        {TEXT("09_straight_drive"),     EC26Delivery::Pace,     -0.f, 640.f, {  0.f, -140.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("STRAIGHT DRIVE")},
-        {TEXT("10_square_cut"),         EC26Delivery::Pace,   55.f, 140.f, {-150.f,  -40.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("SQUARE CUT")},
-        {TEXT("11_bouncer_cut"),        EC26Delivery::Bouncer,40.f, 40.f, {-150.f,  -40.f}, FVector2D::ZeroVector,   0.f, false, true,  nullptr},
-        {TEXT("12_yorker_dig"),         EC26Delivery::Yorker,   -0.f, 790.f, {  0.f, -110.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("DUG-OUT DRIVE")},
-        {TEXT("13_leg_glance"),         EC26Delivery::Pace,    -30.f, 560.f, { 190.f,  20.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("LEG GLANCE")},
+        {TEXT("09_straight_drive"),     EC26Delivery::Pace,     -0.f, 640.f, {  0.f,  140.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("STRAIGHT DRIVE")},
+        {TEXT("10_square_cut"),         EC26Delivery::Pace,   55.f, 140.f, {-150.f,   40.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("SQUARE CUT")},
+        {TEXT("11_bouncer_cut"),        EC26Delivery::Bouncer,40.f, 40.f, {-150.f,   40.f}, FVector2D::ZeroVector,   0.f, false, true,  nullptr},
+        {TEXT("12_yorker_dig"),         EC26Delivery::Yorker,   -0.f, 790.f, {  0.f,  110.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("DUG-OUT DRIVE")},
+        {TEXT("13_leg_glance"),         EC26Delivery::Pace,    -30.f, 560.f, { 190.f, -20.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("LEG GLANCE")},
         // --- controlled defence from a pull inside the commit threshold
-        {TEXT("14_defensive_push"),     EC26Delivery::Pace,   10.f, 480.f, { -6.f,  -16.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("DEFENSIVE PUSH")},
+        {TEXT("14_defensive_push"),     EC26Delivery::Pace,   10.f, 480.f, { -6.f,   16.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("DEFENSIVE PUSH")},
         // --- press only after release (late engagement) still works
-        {TEXT("15_press_after_release"),EC26Delivery::Pace,   30.f, 600.f, {-90.f,  -90.f}, FVector2D::ZeroVector,   0.f, false, false, TEXT("COVER DRIVE")},
+        {TEXT("15_press_after_release"),EC26Delivery::Pace,   30.f, 600.f, {-90.f,   90.f}, FVector2D::ZeroVector,   0.f, false, false, TEXT("COVER DRIVE")},
         // --- multi-touch: a second finger during the drag must be ignored
-        {TEXT("16_multitouch"),         EC26Delivery::Pace,   30.f, 600.f, {-90.f,  -90.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("COVER DRIVE")},
+        {TEXT("16_multitouch"),         EC26Delivery::Pace,   30.f, 600.f, {-90.f,   90.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("COVER DRIVE")},
         // --- cancelled touch: gesture abandoned, next ball must still work
-        {TEXT("17_cancelled_touch"),    EC26Delivery::Pace,   20.f, 600.f, {-90.f,  -90.f}, FVector2D::ZeroVector,   0.f, false, true,  nullptr},
-        {TEXT("18_after_cancel"),       EC26Delivery::Pace,   30.f, 600.f, {-90.f,  -90.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("COVER DRIVE")},
+        {TEXT("17_cancelled_touch"),    EC26Delivery::Pace,   20.f, 600.f, {-90.f,   90.f}, FVector2D::ZeroVector,   0.f, false, true,  nullptr},
+        {TEXT("18_after_cancel"),       EC26Delivery::Pace,   30.f, 600.f, {-90.f,   90.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("COVER DRIVE")},
         // --- release during the run-up: very early, must not stick or double-fire
-        {TEXT("19_runup_release"),      EC26Delivery::Pace,   10.f, 600.f, {-90.f,  -90.f}, FVector2D::ZeroVector,   0.f, false, true,  nullptr},
+        {TEXT("19_runup_release"),      EC26Delivery::Pace,   10.f, 600.f, {-90.f,   90.f}, FVector2D::ZeroVector,   0.f, false, true,  nullptr},
         // --- swing away, off-side drive off an outswinger
-        {TEXT("20_outswing_drive"),     EC26Delivery::Outswing,35.f, 600.f, {-96.f,  -96.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("COVER DRIVE")},
-        {TEXT("21_inswing_flick"),      EC26Delivery::Inswing,  -20.f, 600.f, { 130.f, -80.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("FLICK")},
-        {TEXT("22_slower_drive"),       EC26Delivery::Slower,  20.f, 580.f, {-60.f, -120.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("COVER DRIVE")},
+        {TEXT("20_outswing_drive"),     EC26Delivery::Outswing,35.f, 600.f, {-96.f,   96.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("COVER DRIVE")},
+        {TEXT("21_inswing_flick"),      EC26Delivery::Inswing,  -20.f, 600.f, { 130.f,  80.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("FLICK")},
+        {TEXT("22_slower_drive"),       EC26Delivery::Slower,  20.f, 580.f, {-60.f,  120.f}, FVector2D::ZeroVector,   0.f, false, true,  TEXT("COVER DRIVE")},
     };
     static constexpr int NumCases = UE_ARRAY_COUNT(Cases);
 }

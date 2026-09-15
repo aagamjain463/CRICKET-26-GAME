@@ -1,5 +1,194 @@
 # CRICKET 26 — AI HANDOFF
 
+## Claude (Opus 5) — 2026-09-15. Round 8: final premium character integration and polish.
+
+**Wired into gameplay.** All 14 match athletes (striker, non-striker, bowler, keeper, 9 fielders, umpire)
+activate `DA_C26_DefaultPlayer` (`SK_C26_Athlete_Review` body, candidate skeleton, `UC26CricketerAnimInstance`),
+logged as `C26_CHARACTER_ACTIVE` x14. The fallback to the unapproved `DA_C26_BatterReview`/`DA_C26_FielderReview`
+profiles and the `SquadNumber==18` non-striker hack in `TryActivate` were removed.
+
+**Defects found and fixed (all measured in the real match):**
+- Bat hands between keys. Authored strokes are exact on 30 fps keys only; local-space interpolation between
+  keys moved hands up to 40 cm off the handle and the ONDRIVE blade to 7 cm from the torso (the shot review
+  sampled keys only, so it never saw it). New `FC26BatNode` in `C26CricketerAnimInstance.cpp` drives the top hand
+  from the component-space interpolation of the keyed top hands and holds the keyed grip for the bottom hand
+  (two-bone IK on each arm only). `-C26ShotReview` now samples at 120 Hz: 14/14 strokes PASS (was 7 FAIL).
+- Bat/ball contact. Blade-to-ball gap at contact was 13.6 cm / 19 cm. `UpdateBatControl` measures the blade in
+  the clip's own contact pose once per stroke and the node reaches both hands (bisected so the bottom hand can
+  always follow, max 30 cm) around the contact frame. Only strokes predicted to middle or edge the ball are aimed
+  (`AC26MatchGameMode::CommitStrokeContact` runs `Hit()` on a copy); a play-and-miss stays a miss. Gap 0.86 cm.
+- AI/legacy strokes snapped to the stance on the contact frame: the shown stroke came from the gesture preview
+  label, empty for AI batting. The label now comes from the shared `C26Controls::ShotFamily` classifier.
+- Striker froze at the contact pose for ~0.9 s after every play-and-miss (clamped action clock). Unclamped.
+- Keeper ran for the stumps only after the throw left the hand, so returns arrived at empty stumps and the take
+  played 6-9 m from the ball (950 cm logged). Receiver now starts at the gather at a pace that arrives by the
+  take: 32 cm. Keeper running forward uses the run cycle, not the sideways shuffle.
+- Gathered ball jumped 24 cm from turf to hands, then to the throwing hand: `HeldBallPosition` scoops and carries it.
+- Left-handed bat used the right-handed offset (top hand below bottom hand all innings). Mirrored at runtime
+  from the right-handed stance (`EquipmentOffset`); runtime handedness toggle re-seats the bat.
+- Umpire wore the batting side's shirt: neutral charcoal shirt.
+- GoldenGate stage 0 still pulled UP after the 2026-09-15 aim convention change (pull down = straight): fixed.
+
+**Performance.** Distant (LOD2+/30 m+) non-principal athletes in loops re-pose every 2nd/3rd frame, staggered;
+gear shadows follow the body's shadow toggle. `C26_GATE_ANIMATE_TIME` (new): 14 athletes, mean 1.30 ms, p95 2.16 ms.
+
+**Verification.** GoldenGate `C26_GATE_PASS failures=0` (was 3), BatLab 27/0, BowlLab 39/0, ReactLab PASS,
+ShotReview 120 Hz 14/14, automation all green except pre-existing legacy `Cricket26.Anim.AuthoredClips`,
+~10-match smoke with 0 ensures. New live instrument: `C26_CHARACTER_GRIP_FAIL` (with a pure re-pose to tell
+authored from runtime); remaining hits are 1-2 frame blends into a very late stroke (≤ 11 cm).
+
+**Open.** Double PERFECT timing popup in HUD (UI, needs preview approval first); helmet reads as a grey cap at
+distance; no left-handed shot review; no device profiling.
+
+## WorkBuddy — 2026-09-15. Batting aim vertical axis fixed; bowling release bar rebuilt.
+
+User request, verbatim:
+
+> "Make the pull and release feature in the batting controls normal again. The batting
+> direction should be according to the normal orientation, not from the batting side. It
+> should be from the opposite side, just like from the view from which I am bowling.
+> Whenever I pull my pull and release button to the left side and towards the bottom, it
+> should go to the off side and ahead of the batsman. Whenever I pull and release towards
+> the right side and towards the bottom, the ball should travel and the batsman should hit
+> it at the leg side and in front of him, not behind him. Also while bowling, make the
+> release bar of Good, Perfect, and No Ball much, much more premium and also make it more
+> clean and more minimalistic ... with no overlapping and right spacing as well."
+
+### 1. The aim was mirrored on the VERTICAL axis, not the horizontal one
+
+The 2026-09-12 section below fixed the horizontal axis (negate `Pull.X`) and that part is
+still correct. But `AimAngleFromPull` measured the angle from screen-**UP**, and because the
+batting rig *is* the bowling rig (`AC26CameraDirector`: both `Eye = (-10, -4400, 640)` at
+`FOV 46`), the **bowler's half of the picture is screen-DOWN — and screen-down is *in front
+of* the striker**. Measuring from screen-up therefore inverted latitude: a downward release
+produced behind-the-wicket angles, which is exactly the "not behind him" complaint.
+
+Fix, in `C26Controls.h` (the single source of the gesture→aim mapping):
+
+```cpp
+// Angle measured from screen-DOWN (+Y design), which is the direction the
+// batter faces. Screen-right (+X design) is the batter's LEG side, so X is
+// negated against the world convention: pulling right yields a negative
+// (leg-side) angle, pulling left positive, and pulling down straightens.
+const float RawDeg = FMath::RadiansToDegrees(FMath::Atan2(-Pull.X, Pull.Y));
+```
+
+The same flip went into the debug angle in `AC26MatchGameMode::EvaluateBattingGesture` and
+into the legacy flick path in `AC26PlayerController::EndGesture`. `DirectionZoneName`'s sign
+bands were deliberately **not** touched, so the whole convention now reads:
+
+| Pull | Angle | Zone | Candidate |
+|---|---|---|---|
+| down-left | `+45.0` | COVER | COVER DRIVE |
+| down-right | `-57.7` | MIDWICKET | FLICK |
+| straight down | `-0.0` | STRAIGHT | STRAIGHT DRIVE |
+| up-left | `> +90` | THIRD MAN | behind the wicket |
+| up-right | `< -90` | FINE LEG | behind the wicket |
+
+Invariant worth keeping: **`|Angle| < 90` means in front of the striker.** The `±135` clamp,
+`DirectionSensitivity` and the AI path (`Intent.Angle` written directly, positive = off) are
+all unaffected.
+
+Test vectors mirrored to match — `C26BatLab.cpp` (every in-front stroke now has positive Y;
+the 27 expected stroke names are unchanged), `C26Automation.cpp` (four-way down-left /
+down-right / up-left / up-right zone asserts replacing the old `COVER`/`MIDWICKET` pair),
+`C26GoldenGate.cpp` (mid-hold waypoint `y 440 → 620`).
+
+### 2. The release bar is now the RELEASE RAIL
+
+`AC26HUD::Controls`, RunUp/Delivery branch, rewritten. Locals are `MeterX/MeterW/MeterY/MeterH`
+= `470 / 660 / 786 / 20` — **never rename these to `RailX`/`RailY`**: they shadow the
+anonymous-namespace front-end constants (`RailX = 72.f`) and trip `-Werror,-Wshadow`.
+
+The bar is now one recessed obsidian well with: a sunk "nothing" segment before EARLY, zone
+tints (Gold `.12` / TurfGreen `.34` / Crimson `.26`), one hairline tick per edge, a crimson
+crease line at `NoBall`, a luminous top gleam, a 2 px white cursor blade with a gold notch
+above it, and a single status line.
+
+**No overlap by construction, not by tuning.** The PERFECT band is only 5.7 % of the rail at
+Normal and 3.5 % at Hard, so it is physically too narrow to carry its own name. Therefore:
+
+- Row 1 (`LabelY = MeterY - 20`) holds EARLY and GOOD, centred on their own band, and each is
+  drawn **only if it genuinely fits**: `if (WGood >= WidthT(TEXT("GOOD"), 10.f, .28f, 0) + 12.f)`.
+  Since each label keeps ≥ 6 px inside its band, the two can never reach each other.
+- Row 2 (`CalloutY = MeterY - 42`) holds PERFECT and NO BALL with 1 px leaders down to the
+  rail. PERFECT is right-aligned ending 14 px *left* of its leader; NO BALL is left-aligned
+  starting 14 px *right* of its leader. Their horizontal gap is always `WPerfect/2 + 28 px`,
+  which is > 0 at every difficulty — so they cannot collide however the bands are scaled.
+- Rows are 5.7 px apart vertically, and row 1 sits 5.2 px above the rail.
+- Exactly one status line exists under the rail: the hint `TAP ANYWHERE TO RELEASE` while the
+  meter is live, **or** the verdict `BAND • KM/H` once locked. This is what removed the old
+  three-way overlap of band badge, speed readout and hint.
+- The delivery readout (`DelName` + length • line) moved into the free left gutter, vertically
+  centred on the rail axis, instead of being stacked over the bar.
+
+**The one real collision was with the broadcast lower-third, and it is fixed.** Verified by
+rendering `Artifacts/BowlLab/*_2_runup.png` / `*_3_release.png` at 1600x900 (design units map
+1:1 to pixels) and measuring glyph rows numerically:
+
+- Rail spans x `470..1130` at y `786..806`; its labels occupy y `744..781`.
+- `AC26HUD::DrawBroadcastGraphics` drew its card at x `470..1130`, y `750..808` — the *same*
+  rectangle. Measured pixel proof: at x=700 the card's body `(36,45,49)` runs y 751..784 and
+  the rail's well `(21,24,29)` takes over at 787..807, i.e. the rail was painting over the
+  card's lower half while both label rows sat on the card's face.
+- Fix: `DrawBroadcastGraphics` now returns early for
+  `!Match->PlayerBatting() && (Phase == RunUp || Phase == Delivery)`. A decorative card
+  underneath a timing meter is clutter; it returns with the next phase.
+
+Measured label geometry in the shipped frame (no overlap anywhere):
+
+| Element | x-span | y-span |
+|---|---|---|
+| `PERFECT` callout | 1003..1068 | 748..758 |
+| green leader | 1082 | 759..786 |
+| `NO BALL` callout | 1116..1168 | 748..756 |
+| crimson leader + crease | 1101 | 758..811 |
+| `EARLY` / `GOOD` | centred on their bands | 766..781 |
+| locked verdict `PERFECT` | 770..827 (centred on 800) | 819..834 |
+
+So `PERFECT` and `NO BALL` are **48 px apart** at Normal, which is the `WPerfect/2 + 28`
+guarantee holding in practice — they cannot collide however the bands are scaled.
+
+### 3. Unblocked a pre-existing compile error (not from this session)
+
+`C26MatchGameMode.cpp:1292,1294` would not compile: a `?:` chain mixed `TEXT("DotConfidence")`
+with `NAME_None` (`const char16_t*` vs `EName`, no common type). Every branch is now wrapped in
+`FName(...)` with semantics unchanged (`NAME_None` still means "no reaction"). This came from
+uncommitted work by a concurrent agent on this branch — see the hazard note below.
+
+### Verification
+
+- `Build.sh CRICKETGAMEEditor Mac Development` → `Result: Succeeded`, dylib relinked.
+- `Automation RunTests Cricket26` → 26/27 Success. The single `{Fail}` is
+  `Cricket26.Anim.AuthoredClips`, the documented pre-existing failure — not a regression.
+- `Tools/BatLab.sh` → `C26_LAB_PASS deliveries=27 failures=0`, with the directional proof
+  lines quoted in the table above.
+- `Tools/BowlLab.sh <label> shots` → **`C26_BOWL_PASS deliveries=39 failures=0`**, and it
+  finished inside its 900 s budget this time (5m13 s), so cases 32-39 *were* covered —
+  unlike the previous session's 31/39. Classifying the broadcast card's own body colour at
+  (700,760) across the 149 captured frames gives the overlap proof directly:
+
+  | beat | phase | frames showing the card |
+  |---|---|---|
+  | `_1_plan` | Ready | 22 / 39 (correct — planning still shows it) |
+  | `_2_runup` | RunUp | **0 / 39** |
+  | `_3_release` | Delivery | **0 / 39** |
+  | `_4_flight` | Delivery | **0 / 39** |
+
+  Before/after crop: `Artifacts/rail_before_after.png`.
+
+### Hazards for the next session
+
+- **Another agent edits this working tree live** (it added `C26ReactLab.cpp`, `Tools/ReactLab.sh`
+  and edits `Characters/*`, `C26MatchGameMode.*`, then rebuilds the dylib). It left the branch
+  not compiling once. Expect flaky builds and editor/DDC contention.
+- **`Tools/BowlLab.sh` self-exits at a hard 900 s wall** (`C26_BOWL_TIMEOUT`, C26BowlLab.cpp:195)
+  and prints **no** summary when it trips. A full 39-case pass needs ~19 min, so it cannot
+  finish within its own budget and cases ~32-39 are normally uncovered. Per-case frames
+  (`1_plan`, `2_runup`, `3_release`, `4_flight`) are still written to `Artifacts/BowlLab/`.
+- `rm -rf Artifacts/BowlLab` is blocked by the bulk-delete guard (>50 files); re-run and pick
+  frames by mtime, or pass `-C26BowlLabDir=`.
+
 ## WorkBuddy — 2026-09-12. Three requested fixes: mirrored batting aim, simplified bowling screen, tighter PERFECT band.
 
 User request, verbatim:

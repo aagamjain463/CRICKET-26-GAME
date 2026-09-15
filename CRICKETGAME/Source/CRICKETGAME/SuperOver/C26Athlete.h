@@ -80,6 +80,9 @@ public:
     EC26Delivery DeliveryStyle=EC26Delivery::Pace;
     EC26BowlerKind BowlerKind=EC26BowlerKind::Fast;
     FVector ContactTarget=FVector::ZeroVector;
+    /** What the queued stroke will do to the ball, predicted from the committed intent and timing when the
+        stroke starts and replaced by the real result at contact. Presentation only: a miss must not be aimed. */
+    EC26Timing ExpectedTiming=EC26Timing::Miss;
     /** Optional world point for the head to track. Zero disables head aim. */
     FVector LookAt=FVector::ZeroVector;
     void Configure(EC26Role NewRole,int Team,int Number);

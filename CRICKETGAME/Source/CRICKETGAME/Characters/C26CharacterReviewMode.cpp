@@ -105,6 +105,8 @@ void AC26CharacterReviewMode::TickShotReview(ASkeletalMeshActor* Actor)
     auto Pose=[&](float T)
     {
         Anim->PreviousSequence=Anim->CurrentSequence=Clip->Sequence;Anim->BlendAlpha=1;Anim->CurrentTime=T;
+        // The match's bat control, unless measuring the raw clip (-C26ShotReviewRaw).
+        Anim->BatControl.bGripLock=!FParse::Param(FCommandLine::Get(),TEXT("C26ShotReviewRaw"));Anim->BatControl.bLeftHandTop=true;
         Body->TickAnimation(0.f,false);Body->RefreshBoneTransforms();
         for(UStaticMeshComponent* Part:ReviewGear)Part->UpdateComponentToWorld();
     };
@@ -133,7 +135,9 @@ void AC26CharacterReviewMode::TickShotReview(ASkeletalMeshActor* Actor)
     {
         // Every frame: right-handed grip, bat vs torso/head, hands on the handle.
         MeasuredShot=Shot;int32 TopHandFails=0,TorsoFails=0,HeadFails=0,OffHandle=0;float MinTorso=1e9,MinHead=1e9,MaxOffAxis=0;FString HeadFrames;
-        for(float T=0;T<=Length+1e-3f;T+=1.f/30.f)
+        // Authored keys are 30 fps; sampled at 120 Hz (-C26ShotReviewStep=) so the frames between keys, where the arms interpolate, are measured too.
+        int32 Rate=120;FParse::Value(FCommandLine::Get(),TEXT("C26ShotReviewStep="),Rate);
+        for(float T=0;T<=Length+1e-3f;T+=1.f/FMath::Max(30,Rate))
         {
             Pose(T);
             const FTransform Bat=BatItem->ResolveOffset(false)*Body->GetSocketTransform(BatItem->ResolveSocket(false));

@@ -56,7 +56,7 @@ bool UC26CharacterPresentationComponent::TryActivate(AC26Athlete* Athlete)
     EC26VisualRole Role=EC26VisualRole::Fielder;
     switch(Athlete->Role)
     {
-    case EC26Role::Batter:Role=(Athlete->NonStriker||Athlete->SquadNumber==18)?EC26VisualRole::NonStriker:EC26VisualRole::Batter;break;
+    case EC26Role::Batter:Role=Athlete->NonStriker?EC26VisualRole::NonStriker:EC26VisualRole::Batter;break;
     case EC26Role::Bowler:Role=EC26VisualRole::Bowler;break;
     case EC26Role::Keeper:Role=EC26VisualRole::Keeper;break;
     case EC26Role::Umpire:Role=EC26VisualRole::Umpire;break;
@@ -83,17 +83,9 @@ bool UC26CharacterPresentationComponent::TryActivate(AC26Athlete* Athlete)
     const FString GateKey=Path+FString::Printf(TEXT(":%d:%d"),int32(Role),Slice);
     if(Rejected.Contains(GateKey))return false;
     Profile=Path.IsEmpty()?nullptr:LoadObject<UC26CharacterProfile>(nullptr,*Path);
-    if(!Profile)
-    {
-        Profile=LoadObject<UC26CharacterProfile>(nullptr,TEXT("/Game/Cricket26/Characters/Data/DA_C26_DefaultPlayer.DA_C26_DefaultPlayer"));
-    }
-    if(!Profile)
-    {
-        if(Role==EC26VisualRole::Batter||Role==EC26VisualRole::NonStriker)
-            Profile=LoadObject<UC26CharacterProfile>(nullptr,TEXT("/Game/Cricket26/Characters/Data/DA_C26_BatterReview.DA_C26_BatterReview"));
-        else
-            Profile=LoadObject<UC26CharacterProfile>(nullptr,TEXT("/Game/Cricket26/Characters/Data/DA_C26_FielderReview.DA_C26_FielderReview"));
-    }
+    // One shipped cast: a missing or mistyped override falls back to the approved default player, never to
+    // the unapproved review candidates the rounds were built on.
+    if(!Profile)Profile=LoadObject<UC26CharacterProfile>(nullptr,TEXT("/Game/Cricket26/Characters/Data/DA_C26_DefaultPlayer.DA_C26_DefaultPlayer"));
     TArray<FString> Errors;
     if(!Profile)Errors.Add(TEXT("No complete approved character profile at ")+Path);
     else Errors=Profile->InspectRole(Role);
@@ -194,7 +186,7 @@ void UC26CharacterPresentationComponent::Configure(AC26Athlete* Athlete)
     StyleLife=Calm?.8f:Energetic?1.15f:1.f;
     StyleLookSpeed=Calm?2.6f:Energetic?5.5f:4.f;
     BreathRate=(Energetic?.36f:.28f)*(.92f+.16f*Jitter);    // breaths per second at rest
-    BreathPhase=Jitter*UE_TWO_PI;SwayPhase=Jitter*4.1f;
+    BreathPhase=Jitter*UE_TWO_PI;SwayPhase=Jitter*4.1f;EvaluationCounter=Seed%6;
     EC26VisualRole Role=EC26VisualRole::Fielder;
     switch(Athlete->Role)
     {
@@ -228,10 +220,19 @@ void UC26CharacterPresentationComponent::ApplyMaterialOverrides()
 void UC26CharacterPresentationComponent::ApplyBodyMaterials(int32 Team)
 {
     ApplyMaterialOverrides();
-    if(VisualRole!=EC26VisualRole::Umpire&&Profile->TeamMaterials.IsValidIndex(Team))
+    const int32 Slot=Body->GetMaterialIndex(Profile->JerseyMaterialSlot);
+    if(Slot<0)return;
+    if(VisualRole!=EC26VisualRole::Umpire)
     {
-        const int32 Slot=Body->GetMaterialIndex(Profile->JerseyMaterialSlot);
-        if(Slot>=0)Body->SetMaterial(Slot,Profile->TeamMaterials[Team]);
+        if(Profile->TeamMaterials.IsValidIndex(Team))Body->SetMaterial(Slot,Profile->TeamMaterials[Team]);
+    }
+    else if(!Profile->TeamMaterials.IsEmpty()&&Profile->TeamMaterials[0])
+    {
+        // The umpire shares the athlete body, and its base shirt read as a third member of the batting side.
+        // Officials wear a neutral charcoal shirt that neither team's kit can be confused with.
+        auto* Official=UMaterialInstanceDynamic::Create(Profile->TeamMaterials[0],GetOwner());
+        Official->SetVectorParameterValue(TEXT("Tint"),FLinearColor(.018f,.020f,.024f));
+        Body->SetMaterial(Slot,Official);
     }
 }
 int32 UC26CharacterPresentationComponent::Dress(UStaticMeshComponent* Part,const TCHAR* Key,UMaterialInstanceDynamic* M)
@@ -326,8 +327,46 @@ void UC26CharacterPresentationComponent::RefreshEquipmentAttachments()
     for(const auto& Item:Profile->Equipment)if(auto* Part=Equipment.Find(Item.Slot))
     {
         (*Part)->AttachToComponent(Body,FAttachmentTransformRules::KeepRelativeTransform,Item.ResolveSocket(Appearance.LeftHandedBat));
-        (*Part)->SetRelativeTransform(Item.ResolveOffset(Appearance.LeftHandedBat));
+        (*Part)->SetRelativeTransform(EquipmentOffset(Item));
     }
+}
+FTransform UC26CharacterPresentationComponent::PosedSocket(UAnimSequence* Sequence,float Time,FName Socket)
+{
+    auto* Anim=Cast<UC26CricketerAnimInstance>(Body->GetAnimInstance());
+    if(!Anim||!Sequence)return FTransform::Identity;
+    const TObjectPtr<UAnimSequence> SavedPrevious=Anim->PreviousSequence,SavedCurrent=Anim->CurrentSequence;
+    const float SavedPreviousTime=Anim->PreviousTime,SavedTime=Anim->CurrentTime,SavedAlpha=Anim->BlendAlpha;
+    const FC26SecondaryMotion SavedLife=Anim->Life;const FC26BatControl SavedControl=Anim->BatControl;
+    Anim->PreviousSequence=Anim->CurrentSequence=Sequence;Anim->PreviousTime=Anim->CurrentTime=Time;
+    Anim->BlendAlpha=1;Anim->Life=FC26SecondaryMotion();Anim->BatControl=FC26BatControl();
+    Body->TickAnimation(0.f,false);Body->RefreshBoneTransforms();
+    const FTransform Result=Body->GetSocketTransform(Socket,RTS_Component);
+    Anim->PreviousSequence=SavedPrevious;Anim->CurrentSequence=SavedCurrent;Anim->PreviousTime=SavedPreviousTime;
+    Anim->CurrentTime=SavedTime;Anim->BlendAlpha=SavedAlpha;Anim->Life=SavedLife;Anim->BatControl=SavedControl;
+    return Result;
+}
+FTransform UC26CharacterPresentationComponent::EquipmentOffset(const FC26EquipmentDefinition& Item)
+{
+    const bool Left=Appearance.LeftHandedBat;
+    if(Item.Slot!=EC26EquipmentSlot::Bat||!Left||!Item.Mesh||Item.LeftHandedSocket.IsNone()||Item.LeftHandedSocket==Item.Socket
+        ||!Item.LeftHandedOffset.Equals(Item.Offset,1e-3f))return Item.ResolveOffset(Left);
+    // The profile carries no authored left-handed bat offset (it repeats the right-handed one, which put the
+    // left-hander's top hand below his bottom hand for the whole innings). The left-handed clips are the
+    // sagittal mirror of the right-handed ones, so the left-handed bat is the mirror of the right-handed bat:
+    // reflect the right-handed stance bat across the mesh's sagittal plane (X; the mesh faces +Y), flip the
+    // bat's own face axis to keep it a proper rotation, and express that in the left-handed grip socket.
+    if(!LeftBatOffset.IsSet())
+    {
+        const auto* Right=Profile->FindClip(TEXT("BatterReady_R"));const auto* Mirror=Profile->FindClip(TEXT("BatterReady_L"));
+        if(!Right||!Mirror||!Right->Sequence||!Mirror->Sequence)return Item.ResolveOffset(Left);
+        const FTransform RightBat=Item.Offset*PosedSocket(Right->Sequence,0.f,Item.Socket);
+        const FTransform MirrorGrip=PosedSocket(Mirror->Sequence,0.f,Item.LeftHandedSocket);
+        const FVector Extent=Item.Mesh->GetBoundingBox().GetExtent();
+        const FMatrix Face=FScaleMatrix(Extent.X>=Extent.Y?FVector(-1,1,1):FVector(1,-1,1));
+        const FMatrix Reflected=Face*RightBat.ToMatrixWithScale()*FScaleMatrix(FVector(-1,1,1));
+        LeftBatOffset=FTransform(Reflected).GetRelativeTransform(MirrorGrip);
+    }
+    return LeftBatOffset.GetValue();
 }
 FName UC26CharacterPresentationComponent::ReadyKey() const
 {
@@ -478,9 +517,11 @@ FName UC26CharacterPresentationComponent::IdleState(const AC26Athlete* Athlete,f
         if(Batter)return Appearance.LeftHandedBat?TEXT("BatterRun_L"):TEXT("BatterRun_R");
         if(VisualRole==EC26VisualRole::Keeper)
         {
-            // Square-on lateral shuffle: the athlete's left is -Right.
-            const FName Shuffle=FVector::DotProduct(Locomotion.Velocity,Athlete->GetActorRightVector())<0?TEXT("KeeperShuffle_L"):TEXT("KeeperShuffle_R");
-            if(Profile->FindClip(Shuffle))return Shuffle;
+            // Square-on lateral shuffle: the athlete's left is -Right. Running up to the stumps for a return is
+            // forward travel and uses the run cycle; a sideways shuffle there skates.
+            const float Side=FVector::DotProduct(Locomotion.Velocity,Athlete->GetActorRightVector());
+            const FName Shuffle=Side<0?TEXT("KeeperShuffle_L"):TEXT("KeeperShuffle_R");
+            if(FMath::Abs(Side)>FMath::Abs(FVector::DotProduct(Locomotion.Velocity,Athlete->GetActorForwardVector()))&&Profile->FindClip(Shuffle))return Shuffle;
         }
         if(VisualRole==EC26VisualRole::Umpire&&Profile->FindClip(TEXT("UmpireWalk")))return TEXT("UmpireWalk");
         return Locomotion.GroundSpeed<180.f?TEXT("Walk"):TEXT("Run");
@@ -521,6 +562,11 @@ void UC26CharacterPresentationComponent::UpdateFromMatch(AC26Athlete* Athlete,fl
     if(Athlete->ActionTime+1e-3f<PreviousActionTime)bRecovered=false;
     PreviousActionTime=Athlete->ActionTime;
     Appearance.LeftArmBowl=Athlete->LeftArmBowl;
+    // The batting hand can be switched between balls: re-seat the bat on the other grip and re-measure reach.
+    if(Appearance.LeftHandedBat!=Athlete->LeftHandedBat)
+    {
+        Appearance.LeftHandedBat=Athlete->LeftHandedBat;RefreshEquipmentAttachments();ReachClip=nullptr;CurrentClip=nullptr;
+    }
     if(Locomotion.Teleported)ResetMotion();
     Clock+=FMath::Max(0.f,Dt);
     FName State=SelectState(Athlete,Dt);const FC26CricketClip* Clip=Profile->FindClip(State);
@@ -601,7 +647,15 @@ void UC26CharacterPresentationComponent::UpdateFromMatch(AC26Athlete* Athlete,fl
     if(Dt==0.f&&!Clip->Event.IsNone()&&FMath::Abs(Time-Clip->EventTime())<=1.f/30.f)Anim->BlendAlpha=1.f;
     Anim->GroundSpeed=Locomotion.GroundSpeed;Anim->MovementDirection=Locomotion.Direction;
     Anim->Acceleration=Locomotion.Acceleration;Anim->TurnRate=Locomotion.TurnRate;Anim->State=State;
+    UpdateBatControl(Athlete);
     UpdateLife(Athlete,Dt);
+    // Pose evaluation is the per-athlete cost. A distant athlete holding a ready loop or running (LOD 2+, i.e.
+    // beyond 30 m of the lens) is re-posed every second or third frame, staggered across the squad; the clip
+    // time is still advanced every frame, so nothing drifts. Principals, one-shots, reactions, transitions and
+    // every event pose (Dt==0) evaluate every frame.
+    const bool Principal=VisualRole==EC26VisualRole::Batter||VisualRole==EC26VisualRole::Bowler||VisualRole==EC26VisualRole::Keeper;
+    const int32 Interval=(Dt>0.f&&!Principal&&Clip->Loop&&ReactionClock<0.f&&State!=Transition&&BlendClock>=ActiveBlend)?(QualityTier>=3?3:QualityTier>=2?2:1):1;
+    if(Interval>1&&(++EvaluationCounter%Interval)!=0)return;
     Body->TickAnimation(FMath::Max(0.f,Dt),false);Body->RefreshBoneTransforms();
     LearnWarp(Athlete);
     Debug(Athlete,Dt);
@@ -690,6 +744,49 @@ void UC26CharacterPresentationComponent::LearnWarp(const AC26Athlete* Athlete)
         *CurrentState.ToString(),*Event.ToString(),*ReceivePosition().ToString(),*Athlete->ContactTarget.ToString(),
         *Miss.ToString(),Miss.Size());
 }
+void UC26CharacterPresentationComponent::UpdateBatControl(const AC26Athlete* Athlete)
+{
+    auto* Anim=Cast<UC26CricketerAnimInstance>(Body->GetAnimInstance());if(!Anim)return;
+    FC26BatControl& Control=Anim->BatControl;
+    const UStaticMeshComponent* Bat=GetBat();
+    bool Enabled=Bat&&Bat->IsVisible()&&Bat->GetStaticMesh();
+#if !UE_BUILD_SHIPPING
+    Enabled&=!FParse::Param(FCommandLine::Get(),TEXT("C26NoBatControl"));
+#endif
+    Control.bGripLock=Enabled;Control.bLeftHandTop=!Appearance.LeftHandedBat;
+    // A play-and-miss is shown as one: only a stroke that will meet the ball (middle or edge) is aimed at it.
+    const bool Stroke=Enabled&&Athlete->Action==EC26Action::Batting&&CurrentClip&&CurrentClip->Sequence
+        &&CurrentClip->Event==TEXT("BatContact")&&!Athlete->ContactTarget.IsZero()&&Athlete->ExpectedTiming!=EC26Timing::Miss;
+    if(!Stroke)
+    {
+        // Outside a stroke the last reach is kept, gated to its own clip, so the replay of that ball shows it.
+        if(!Enabled||Athlete->Action==EC26Action::Batting){Control.ReachSequence=nullptr;ReachClip=nullptr;}
+        return;
+    }
+    if(ReachClip==CurrentClip&&ReachTiming==uint8(Athlete->ExpectedTiming)&&FVector::DistSquared(ReachTarget,Athlete->ContactTarget)<4.f)return;
+    ReachClip=CurrentClip;ReachTarget=Athlete->ContactTarget;ReachTiming=uint8(Athlete->ExpectedTiming);
+    // Measure the blade in the clip's own authored contact pose (no blend, no life, no reach).
+    const FTransform Blade=Bat->GetRelativeTransform()*PosedSocket(CurrentClip->Sequence,CurrentClip->EventTime(),Bat->GetAttachSocketName())
+        *Body->GetComponentTransform();
+    // Bat space: the handle is +Z and the blade runs below Z=-24 (the GoldenGate blade measurement uses the
+    // same split). The wider horizontal extent is the face, the narrower one the thickness.
+    const FBox Box=Bat->GetStaticMesh()->GetBoundingBox();
+    const FVector Centre=Box.GetCenter(),Extent=Box.GetExtent();
+    const int32 Face=Extent.X>=Extent.Y?0:1,Depth=1-Face;
+    const FVector Local=Blade.InverseTransformPosition(ReachTarget);
+    FVector Aim=Local;
+    if(Athlete->ExpectedTiming==EC26Timing::Edge)Aim[Face]=Centre[Face]+(Local[Face]>=Centre[Face]?Extent[Face]:-Extent[Face]);
+    else Aim[Face]=FMath::Clamp(Local[Face],Centre[Face]-Extent[Face]*.35f,Centre[Face]+Extent[Face]*.35f);
+    Aim[Depth]=FMath::Clamp(Local[Depth],Centre[Depth]-Extent[Depth]*.5f,Centre[Depth]+Extent[Depth]*.5f);
+    Aim.Z=FMath::Clamp(Local.Z,Box.Min.Z+10.f,-32.f);
+    // A clip that is authored nowhere near the ball stays authored: reach is a correction, not a teleport.
+    const FVector World=ReachTarget-Blade.TransformPosition(Aim);
+    const FVector Applied=World.GetClampedToMaxSize(30.f);
+    Control.ReachSequence=CurrentClip->Sequence;Control.ReachTime=CurrentClip->EventTime();
+    Control.Reach=Body->GetComponentTransform().InverseTransformVector(Applied);
+    UE_LOG(LogTemp,Display,TEXT("C26_CHARACTER_REACH id=%s clip=%s timing=%d need=%.1fcm applied=%.1fcm"),
+        *Appearance.PlayerID.ToString(),*CurrentState.ToString(),int32(Athlete->ExpectedTiming),World.Size(),Applied.Size());
+}
 void UC26CharacterPresentationComponent::UpdateWarp(const AC26Athlete* Athlete,const FC26CricketClip* Clip)
 {
     // No visual shifting: per-ball root warps were built for a broken metric
@@ -709,11 +806,18 @@ void UC26CharacterPresentationComponent::SetQualityForView(const FVector& ViewPo
     const float Distance=FVector::Distance(ViewPoint,Body->GetComponentLocation());
     const bool Active=Locomotion.GroundSpeed>12.f||VisualRole==EC26VisualRole::Batter||VisualRole==EC26VisualRole::Bowler||VisualRole==EC26VisualRole::Keeper;
     const int32 Count=Body->GetSkeletalMeshAsset()->GetLODNum();
-    const int32 Tier=Distance>6000.f?3:Distance>3000.f?2:Distance>1400.f?1:0;
+    const int32 Tier=Distance>6000.f?3:Distance>3000.f?2:Distance>1400.f?1:0;QualityTier=Tier;
     const int32 Bias=Quality==EC26CharacterQuality::Low?1:0;
-    Body->SetForcedLOD(FMath::Clamp(Tier+Bias,0,FMath::Max(0,Count-1))+1);
+    int32 Lod=FMath::Clamp(Tier+Bias,0,FMath::Max(0,Count-1));
+#if !UE_BUILD_SHIPPING
+    FParse::Value(FCommandLine::Get(),TEXT("C26CharacterLOD="),Lod);
+#endif
+    Body->SetForcedLOD(Lod+1);
     Body->UpdateLODStatus();
-    Body->SetCastShadow(Active||Distance<4000.f);
+    const bool Shadow=Active||Distance<4000.f;
+    Body->SetCastShadow(Shadow);
+    // Gear shadows go with the body's: a cap or pad shadow without the athlete's is both wrong and wasted.
+    for(const auto& Pair:Equipment)if(Pair.Value)Pair.Value->SetCastShadow(Shadow);
     // Quality NEVER changes role visibility or freezes active motion. Hair/face reduction belongs
     // in the imported LODs; no runtime strand-hair dependency is introduced.
 }
@@ -740,6 +844,39 @@ void UC26CharacterPresentationComponent::Debug(const AC26Athlete* Athlete,float 
         const bool Frozen=Locomotion.GroundSpeed>100.f&&(L-LastLeftFoot).Size()+(R-LastRightFoot).Size()<.03f;
         FrozenSeconds=Frozen?FrozenSeconds+Dt:0.f;LastLeftFoot=L;LastRightFoot=R;
         if(FrozenSeconds>.5f){UE_LOG(LogTemp,Error,TEXT("C26_CHARACTER_FROZEN id=%s speed=%.1f state=%s"),*Appearance.PlayerID.ToString(),Locomotion.GroundSpeed,*CurrentState.ToString());FrozenSeconds=0;}
+    }
+    // Two-handed grip, measured on what renders: the top hand stays above the bottom hand on the handle and
+    // neither hand leaves the handle axis (same thresholds as the -C26ShotReview gate, here in live play).
+    // Reactions may take a hand off the bat on purpose (BatterBeaten, BatterAcknowledge), so only technique is checked.
+    const bool TwoHanded=Athlete->Action==EC26Action::Batting||CurrentState==ReadyKey();
+    if(const UStaticMeshComponent* Bat=GetBat();TwoHanded&&Bat&&Bat->IsVisible()&&(VisualRole==EC26VisualRole::Batter||VisualRole==EC26VisualRole::NonStriker))
+    {
+        const auto Measure=[&](float& Order,float& Off)
+        {
+            const FTransform Grip=Bat->GetRelativeTransform()*Body->GetSocketTransform(Bat->GetAttachSocketName());
+            const FVector Origin=Grip.GetLocation(),Axis=Grip.GetUnitAxis(EAxis::Z);
+            const FVector Top=Body->GetBoneLocation(Appearance.LeftHandedBat?TEXT("hand_r"):TEXT("hand_l"));
+            const FVector Bottom=Body->GetBoneLocation(Appearance.LeftHandedBat?TEXT("hand_l"):TEXT("hand_r"));
+            const auto OffAxis=[&](const FVector& H){const FVector Rel=H-Origin;return (Rel-Axis*FVector::DotProduct(Rel,Axis)).Size();};
+            Order=FVector::DotProduct(Top-Bottom,Axis);Off=FMath::Max(OffAxis(Top),OffAxis(Bottom));
+        };
+        float Order=0,Off=0;Measure(Order,Off);
+        if((Order<3.f||Off>10.f)&&Clock-GripLastReport>.25f)
+        {
+            GripLastReport=Clock;
+            auto* Anim=Cast<UC26CricketerAnimInstance>(Body->GetAnimInstance());
+            const float Alpha=Anim->BlendAlpha,Time=Anim->CurrentTime;
+            // Re-pose the current clip alone at the same time: tells an authored defect from a runtime one.
+            const TObjectPtr<UAnimSequence> SavedPrevious=Anim->PreviousSequence;const float SavedPreviousTime=Anim->PreviousTime;
+            const FC26SecondaryMotion SavedLife=Anim->Life;const FC26BatControl SavedControl=Anim->BatControl;
+            Anim->PreviousSequence=Anim->CurrentSequence;Anim->PreviousTime=Time;Anim->BlendAlpha=1;Anim->Life=FC26SecondaryMotion();Anim->BatControl=FC26BatControl();
+            Body->TickAnimation(0.f,false);Body->RefreshBoneTransforms();
+            float PureOrder=0,PureOff=0;Measure(PureOrder,PureOff);
+            Anim->PreviousSequence=SavedPrevious;Anim->PreviousTime=SavedPreviousTime;Anim->BlendAlpha=Alpha;Anim->Life=SavedLife;Anim->BatControl=SavedControl;
+            Body->TickAnimation(0.f,false);Body->RefreshBoneTransforms();
+            UE_LOG(LogTemp,Warning,TEXT("C26_CHARACTER_GRIP_FAIL id=%s state=%s prev=%s alpha=%.2f clip=%.3f order=%.1fcm offaxis=%.1fcm pure_order=%.1fcm pure_offaxis=%.1fcm lod=%d"),
+                *Appearance.PlayerID.ToString(),*CurrentState.ToString(),*PreviousState.ToString(),Alpha,Time,Order,Off,PureOrder,PureOff,Body->GetPredictedLODLevel());
+        }
     }
     if(C26CharacterDebug.GetValueOnGameThread())
     {

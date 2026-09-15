@@ -63,6 +63,11 @@ void AC26MatchGameMode::UpdateGoldenGate(float Dt)
             const int Count=GateFrameTimes.Num();
             UE_LOG(LogC26,Display,TEXT("C26_GATE_FRAME_TIME samples=%d mean_ms=%.2f p95_ms=%.2f max_ms=%.2f screenshots=%d fixed_step=%d (desktop only)"),
                 Count,Count?Sum/Count:0,Count?GateFrameTimes[FMath::Min(Count-1,FMath::FloorToInt(Count*.95f))]:0,Count?GateFrameTimes.Last():0,!GateNoScreens,FApp::UseFixedTimeStep());
+            GateAnimateTimes.Sort();
+            float AnimateSum=0;for(float Ms:GateAnimateTimes)AnimateSum+=Ms;
+            const int AnimateCount=GateAnimateTimes.Num();
+            UE_LOG(LogC26,Display,TEXT("C26_GATE_ANIMATE_TIME athletes=%d samples=%d mean_ms=%.3f p95_ms=%.3f max_ms=%.3f"),Athletes.Num(),
+                AnimateCount,AnimateCount?AnimateSum/AnimateCount:0,AnimateCount?GateAnimateTimes[FMath::Min(AnimateCount-1,FMath::FloorToInt(AnimateCount*.95f))]:0,AnimateCount?GateAnimateTimes.Last():0);
             UE_LOG(LogC26,Display,TEXT("C26_GATE_%s failures=%d frames=%d"),GateFailures?TEXT("FAIL"):TEXT("PASS"),GateFailures,GateShots.Num());
             GoldenGate=false;FPlatformMisc::RequestExitWithStatus(false,GateFailures?1:0);return;
         }
@@ -120,7 +125,10 @@ void AC26MatchGameMode::UpdateGoldenGate(float Dt)
         {
             // Change of mind mid-hold: aim off side (screen-LEFT, because the
             // camera is behind the bowler), then settle back to straight.
-            UpdateBattingGesture(0,FVector2D(PhaseTime<2.f?1110.f:1200.f,440.f));
+            // Both waypoints pull DOWN the screen: the bowler's half of the picture
+            // is in front of the batter, so down is the forward direction and a
+            // straight-down pull is the straight drive.
+            UpdateBattingGesture(0,FVector2D(PhaseTime<2.f?1110.f:1200.f,620.f));
             Check(!ShotQueued,TEXT("dragging never commits a shot"));
         }
     }
@@ -139,14 +147,14 @@ void AC26MatchGameMode::UpdateGoldenGate(float Dt)
         // Keep holding through the flight, still adjusting: no shot may fire yet.
         if(GateStage==0&&bBattingGestureActive&&!ShotQueued)
         {
-            UpdateBattingGesture(0,FVector2D(1200.f,420.f));
+            UpdateBattingGesture(0,FVector2D(1200.f,620.f));
             Check(!ShotQueued,TEXT("holding through the flight never commits a shot"));
             Check(BattingState==EC26BattingState::Armed,TEXT("armed while pulling outside the dead zone"));
         }
         if(GateStage==0&&!ShotQueued&&bBattingGestureActive&&TimingCountdown()<=.10f+Dt*.5f)
         {
             const int32 CommitsBefore=GestureCommitCount;
-            ReleaseBattingGesture(0,FVector2D(1200.f,420.f));
+            ReleaseBattingGesture(0,FVector2D(1200.f,620.f));
             GateGestureArmed=false;
             Check(ShotQueued,TEXT("gesture release commits the shot"));
             Check(GestureCommitCount==CommitsBefore+1,TEXT("release commits exactly one shot"));
@@ -155,7 +163,7 @@ void AC26MatchGameMode::UpdateGoldenGate(float Dt)
                 TEXT("release timing band matches the measured delta"));
             Check(BouncePrediction.BounceTime>0.f,TEXT("bounce predicted from real trajectory"));
             // A second release from the same pointer must be a no-op.
-            ReleaseBattingGesture(0,FVector2D(1200.f,420.f));
+            ReleaseBattingGesture(0,FVector2D(1200.f,620.f));
             Check(GestureCommitCount==CommitsBefore+1,TEXT("duplicate release is ignored"));
             UE_LOG(LogC26,Display,TEXT("C26_GATE_GESTURE aim=%+.1f power=%.2f mag=%.2f delta_ms=%+.1f timing=%s shot=%s state=%d"),
                 BattingGestureAngle,BattingGesturePower,BattingPullFrac,BattingReleaseDeltaMs,

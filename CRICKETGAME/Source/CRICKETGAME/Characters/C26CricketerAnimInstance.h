@@ -17,6 +17,17 @@ struct FC26SecondaryMotion
     bool IsZero() const{return Breath<=0&&Sway<=0&&LookYaw==0&&LookPitch==0&&LeanPitch==0&&LeanRoll==0;}
 };
 
+/** Two-handed bat control, applied after the clip blend (see FC26BatNode): hands driven from the clip's keys so
+    interpolation between keys cannot pull them off the handle, and a reach offset around one clip's contact
+    frame so the blade meets the simulated ball. */
+struct FC26BatControl
+{
+    bool bGripLock=false,bLeftHandTop=true;
+    TObjectPtr<UAnimSequence> ReachSequence=nullptr;
+    float ReachTime=0;
+    FVector Reach=FVector::ZeroVector;   // component space, cm
+};
+
 /** Native animation graph: previous full-body clip -> current full-body clip, with a smooth
     entry blend controlled by the presentation component, then the secondary-motion layer.
     Authored sequences own the entire pose. Animation time represents simulation time. It never
@@ -37,6 +48,7 @@ public:
     UPROPERTY(Transient, BlueprintReadOnly) float TurnRate=0;
     UPROPERTY(Transient, BlueprintReadOnly) FName State;
     FC26SecondaryMotion Life;
+    FC26BatControl BatControl;
 protected:
     virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override;
     virtual void DestroyAnimInstanceProxy(FAnimInstanceProxy* InProxy) override;
