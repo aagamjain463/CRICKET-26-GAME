@@ -91,6 +91,13 @@ public:
     EDetail Detail=EDetail::Hero;
     void UpdateDetail(const FVector& ViewPoint);
     void SetAction(EC26Action NewAction,bool ResetTime=true);
+    /** Presentation-only reaction cue for the outcome just committed (Wicket, Six, PlayAndMiss...), with the beat
+        this athlete takes before reacting. SetAction clears it, so a new gameplay action always wins. */
+    FName Reaction;
+    float ReactionDelay=0.f;
+    /** Base is the action legacy bodies have always shown for this outcome. PresentationOnly cues are new beats
+        with no legacy pose: they only apply to an active premium body, which reacts from its ready state. */
+    void React(EC26Action Base,FName Cue,float Delay=0.f,bool PresentationOnly=false);
     void Animate(float Dt);
     void ResetAt(const FVector& Position,float Yaw);
     FVector HandPosition() const;

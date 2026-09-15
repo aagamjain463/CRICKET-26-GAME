@@ -57,6 +57,8 @@ public:
     void ApplyReplayPose(const FC26CharacterPoseSample& A,const FC26CharacterPoseSample& B,float Alpha);
     UStaticMeshComponent* GetBat() const;
     const FC26LocomotionSample& GetLocomotion() const{return Locomotion;}
+    bool IsRecovered() const{return bRecovered;}
+    float GetReactionClock() const{return ReactionClock;}
 private:
     bool bActive=false,bWasMoving=false;
     FC26LocomotionSample Locomotion;
@@ -73,6 +75,20 @@ private:
     EC26Action LatchedAction=EC26Action::Ready;
     FName LatchedKey;
     float EntrySpeed=0.f,LastActionTime=0.f;
+    /** Round 7 presentation layer. A one-shot (stroke, delivery, reaction, signal) that has played out hands
+        back to the ready loop instead of freezing on its last frame; latched until the action changes. */
+    bool bRecovered=false;
+    /** Clip time of the reaction being shown, after this athlete's beat and temperament rate; <0 otherwise. */
+    float ReactionClock=-1.f;
+    float ActiveBlend=.12f,PreviousActionTime=0.f;
+    /** Temperament-driven presentation (never gameplay): reaction playback rate, extra beat, idle amplitude. */
+    float StyleRate=1.f,StyleDelay=0.f,StyleLife=1.f,StyleLookSpeed=4.f;
+    float BreathWeight=0,SwayWeight=0,LookWeight=0,LeanWeight=0,BreathPhase=0,SwayPhase=0,BreathRate=1.f;
+    FVector2D Look=FVector2D::ZeroVector,Lean=FVector2D::ZeroVector,LeanVelocity=FVector2D::ZeroVector;
+    FVector SmoothedAcceleration=FVector::ZeroVector;
+    FName ReactionState(const AC26Athlete* Athlete);
+    FName IdleState(const AC26Athlete* Athlete,float Dt);
+    void UpdateLife(const AC26Athlete* Athlete,float Dt);
     FName Variant(const AC26Athlete* Athlete);
     void UpdateWarp(const AC26Athlete* Athlete,const FC26CricketClip* Clip);
     void LearnWarp(const AC26Athlete* Athlete);

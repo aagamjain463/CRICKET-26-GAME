@@ -59,6 +59,42 @@ FName BowlingKey(EC26Delivery Delivery,bool Left)
     const bool Finger=Delivery==EC26Delivery::OffBreak||Delivery==EC26Delivery::ArmBall||Delivery==EC26Delivery::TopSpinner||Delivery==EC26Delivery::Doosra;
     return FName(*(FString(Wrist?TEXT("LegSpin"):Finger?TEXT("OffSpin"):TEXT("FastBowl"))+(Left?TEXT("_L"):TEXT("_R"))));
 }
+FName Temperament(int32 Team,int32 SquadNumber)
+{
+    static const FName Styles[3]={TEXT("Calm"),TEXT("Aggressive"),TEXT("Energetic")};
+    return Styles[uint32(Team*7+SquadNumber*5+1)%3];
+}
+FName ReactionKey(FName Cue,EC26VisualRole Role,FName Style,bool LeftHanded)
+{
+    if(Cue.IsNone()||Role==EC26VisualRole::Umpire)return NAME_None;
+    const bool Calm=Style==TEXT("Calm"),Energetic=Style==TEXT("Energetic");
+    if(Role==EC26VisualRole::Batter||Role==EC26VisualRole::NonStriker)
+    {
+        const auto Hand=[LeftHanded](const TCHAR* Base){return FName(*(FString(Base)+(LeftHanded?TEXT("_L"):TEXT("_R"))));};
+        if(Cue==TEXT("Boundary")||Cue==TEXT("Support"))return Hand(TEXT("BatterAcknowledge"));
+        if(Cue==TEXT("Six"))return Calm?Hand(TEXT("BatterAcknowledge")):Hand(TEXT("BatterCelebrate"));
+        if(Cue==TEXT("Milestone"))return Hand(TEXT("BatterCelebrate"));
+        if(Cue==TEXT("Dot"))return Hand(TEXT("BatterReset"));
+        if(Cue==TEXT("PlayAndMiss")||Cue==TEXT("Beaten"))return Hand(TEXT("BatterBeaten"));
+        if(Cue==TEXT("Edge"))return Hand(TEXT("BatterEdge"));
+        if(Cue==TEXT("Dismissed"))return Hand(TEXT("BatterDismissed"));
+        return NAME_None;
+    }
+    const bool Bowler=Role==EC26VisualRole::Bowler;
+    if(Cue==TEXT("Wicket"))return Calm?TEXT("CelebrateRestrained"):(Energetic&&!Bowler)?TEXT("Celebrate"):TEXT("CelebrateEnergetic");
+    if(Cue==TEXT("Catch"))return Calm?TEXT("Celebrate"):TEXT("CelebrateEnergetic");
+    if(Cue==TEXT("Appeal"))return TEXT("Appeal");
+    if(Cue==TEXT("NearMiss"))return Style==TEXT("Aggressive")?TEXT("Appeal"):TEXT("HandsOnHead");
+    if(Cue==TEXT("Dropped"))return TEXT("HandsOnHead");
+    if(Cue==TEXT("BoundaryConceded"))return Energetic?TEXT("HandsOnHead"):TEXT("Frustrated");
+    if(Cue==TEXT("DotConfidence"))return Calm?NAME_None:FName(TEXT("Clap"));
+    if(Cue==TEXT("Support")||Cue==TEXT("GoodStop"))return TEXT("Clap");
+    return NAME_None;
+}
+bool HoldsFinalPose(FName Key)
+{
+    return Key==TEXT("BatterDismissed_R")||Key==TEXT("BatterDismissed_L");
+}
 float MapEventTime(float ActionTime,float MatchEventTime,float ClipEventTime,float ClipLength)
 {
     if(MatchEventTime<=0.f||ClipEventTime<0.f)return FMath::Clamp(ActionTime,0.f,ClipLength);

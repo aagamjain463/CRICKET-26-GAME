@@ -1570,6 +1570,234 @@ UMPIRE_WALK = _locomotion(reach=20, lift=10, drop=2.6, lean=3,
                           fwd=(.72, .26, .38, -.89), back=(.76, .28, -.34, -.90), cycle=34)
 
 
+# ================================================================= Round 7: reactions
+#
+# A small premium set, each shaped as event beat -> hold -> recovery that ENDS on the pose the
+# match idles in, so the runtime can hand back to the ready loop with an ordinary blend. Feet stay
+# planted throughout (no stepping): a reaction never moves the gameplay root, and planted feet are
+# what the action lab can prove never skate. Batter clips are right-handed sources mirrored to _L.
+
+# Upright, relaxed, arms hanging: the between-beats pose of a standing athlete.
+STAND = dict(FIELDER_READY, **{
+    'pelvis': (3, 0, 0, 0, 0, -4), 'spine': (4, 0, 0), 'chest': (2, 0, 0), 'neck': (-4, 0, 0),
+    'hand_l': R(.90, .20, .10, -.97), 'hand_r': R(.90, -.20, .10, -.97),
+    'elbow_l': (40, -24, 100), 'elbow_r': (-40, -24, 100),
+    'grip_l': 'open', 'grip_r': 'open',
+})
+
+
+def _clap(frame, apart):
+    """Palms meeting in front of the chest; `apart` is the half gap between them in cm."""
+    return (frame, dict(STAND, **{
+        'spine': (6, 0, 0), 'neck': (-2, 0, 0),
+        'hand_l': (apart, 34, 120), 'hand_r': (-apart, 34, 120),
+        'elbow_l': (46, -10, 96), 'elbow_r': (-46, -10, 96),
+        'grip_l': 'flat', 'grip_r': 'flat'}))
+
+
+# Restrained wicket: one tight fist at the chest, a nod, three claps. The calm professional.
+CELEBRATE_RESTRAINED = [
+    (0, FIELDER_READY),
+    (8, STAND),
+    (14, dict(STAND, **{'spine': (8, 0, -6), 'neck': (6, 0, 0), 'head': (8, 0, 0),
+                        'hand_r': (-10, 26, 128), 'elbow_r': (-44, -6, 92), 'grip_r': 'ball'})),
+    (20, dict(STAND, **{'spine': (4, 0, -4), 'neck': (-4, 0, 0),
+                        'hand_r': (-12, 24, 124), 'elbow_r': (-44, -6, 92), 'grip_r': 'ball'})),
+    _clap(25, 11), _clap(28, 3), _clap(31, 11), _clap(34, 3), _clap(37, 11), _clap(40, 3),
+    (48, STAND),
+    (58, FIELDER_READY),
+]
+
+# Energetic wicket: load, arms thrown up and wide, two fist pumps, settle. Feet stay planted.
+_ARMS_UP = dict(STAND, **{
+    'pelvis': (-4, 0, 0, 0, 0, -2), 'spine': (-12, 0, 0), 'chest': (-6, 0, 0),
+    'neck': (-12, 0, 0), 'head': (-10, 0, 0),
+    'hand_l': R(.97, .48, .12, .87), 'hand_r': R(.97, -.48, .12, .87),
+    'elbow_l': (60, -20, 160), 'elbow_r': (-60, -20, 160),
+    'grip_l': 'open', 'grip_r': 'open'})
+_FISTS = dict(STAND, **{
+    'pelvis': (10, 0, 0, 0, 0, -12), 'spine': (14, 0, 0), 'chest': (4, 0, 0), 'neck': (-12, 0, 0),
+    'hand_l': R(.62, .34, .40, .10), 'hand_r': R(.62, -.34, .40, .10),
+    'elbow_l': (52, -10, 90), 'elbow_r': (-52, -10, 90),
+    'grip_l': 'ball', 'grip_r': 'ball'})
+CELEBRATE_ENERGETIC = [
+    (0, FIELDER_READY),
+    (6, dict(_FISTS, **{'pelvis': (14, 0, 0, 0, 0, -13), 'spine': (16, 0, 0),
+                        'hand_l': R(.70, .30, .30, -.30), 'hand_r': R(.70, -.30, .30, -.30)})),
+    (14, _ARMS_UP),
+    (22, _FISTS),
+    (29, dict(_ARMS_UP, **{'hand_l': R(.97, .40, .18, .90), 'hand_r': R(.97, -.40, .18, .90)})),
+    (37, _FISTS),
+    (48, STAND),
+    (62, FIELDER_READY),
+]
+
+# Appeal: lean back, both arms up and forward at the umpire, hold, drop.
+_APPEAL = dict(STAND, **{
+    'pelvis': (-6, 0, 8, 0, 0, -6), 'spine': (-10, 0, 8), 'chest': (-6, 0, 6),
+    'neck': (-14, 0, 0), 'head': (-10, 0, 0),
+    'hand_l': R(.96, .22, .48, .85), 'hand_r': R(.96, -.26, .48, .83),
+    'elbow_l': (52, 30, 160), 'elbow_r': (-52, 30, 160),
+    'grip_l': 'open', 'grip_r': 'flat'})
+APPEAL = [
+    (0, FIELDER_READY),
+    (5, dict(STAND, **{'pelvis': (-2, 0, 4, 0, 0, -6), 'spine': (-2, 0, 4),
+                       'hand_l': R(.80, .30, .40, .20), 'hand_r': R(.80, -.30, .40, .20)})),
+    (11, _APPEAL),
+    (22, dict(_APPEAL, **{'hand_l': R(.97, .20, .40, .90), 'hand_r': R(.97, -.24, .40, .88)})),
+    (30, dict(STAND, **{'hand_l': R(.82, .34, .40, -.30), 'hand_r': R(.82, -.34, .40, -.30)})),
+    (44, FIELDER_READY),
+]
+
+# Near miss / put-down chance: both hands onto the head, look to the sky, turn away, let go.
+_ON_HEAD = dict(STAND, **{
+    'pelvis': (-3, 0, 0, 0, 0, -3), 'spine': (-8, 0, 0), 'chest': (-4, 0, 0),
+    'neck': (-12, 0, 0), 'head': (-10, 0, 0),
+    'hand_l': (11, -3, 172), 'hand_r': (-11, -3, 172),
+    'elbow_l': (62, -8, 176), 'elbow_r': (-62, -8, 176),
+    'grip_l': 'flat', 'grip_r': 'flat'})
+HANDS_ON_HEAD = [
+    (0, FIELDER_READY),
+    (8, dict(STAND, **{'hand_l': R(.80, .40, .30, .30), 'hand_r': R(.80, -.40, .30, .30)})),
+    (16, _ON_HEAD),
+    (27, dict(_ON_HEAD, **{'pelvis': (-2, 0, 10, 0, 0, -3), 'spine': (-6, 0, 8), 'neck': (-4, 0, 6),
+                           'head': (-2, 0, 4)})),
+    (31, dict(_ON_HEAD, **{'pelvis': (-2, 0, 8, 0, 0, -3), 'spine': (-2, 0, 6), 'neck': (2, 0, 4),
+                           'hand_l': (22, 10, 150), 'hand_r': (-22, 10, 150),
+                           'elbow_l': (52, -16, 124), 'elbow_r': (-52, -16, 124)})),
+    (40, dict(STAND, **{'neck': (6, 0, 0), 'head': (4, 0, 0)})),
+    (52, FIELDER_READY),
+]
+
+# Boundary conceded: hands to the hips, head down and turned away, one breath, back to work.
+_HIPS = dict(STAND, **{
+    'pelvis': (2, 0, -14, 0, 0, -4), 'spine': (12, 0, -18), 'neck': (26, 0, -10), 'head': (14, 0, -6),
+    'hand_l': (21, -2, 102), 'hand_r': (-21, -2, 102),
+    'elbow_l': (52, -26, 112), 'elbow_r': (-52, -26, 112),
+    'grip_l': 'flat', 'grip_r': 'flat'})
+FRUSTRATED = [
+    (0, FIELDER_READY),
+    (8, STAND),
+    (15, _HIPS),
+    (22, dict(_HIPS, **{'head': (12, 0, -12)})),
+    (27, dict(_HIPS, **{'head': (12, 0, 4)})),
+    (34, dict(_HIPS, **{'spine': (4, 0, -6), 'neck': (-2, 0, -2), 'head': (-4, 0, 0)})),
+    (48, FIELDER_READY),
+]
+
+# Support: a few claps. Dot-ball confidence, a good stop, "bowled, keep going".
+CLAP = [
+    (0, FIELDER_READY),
+    (7, STAND),
+    _clap(11, 12), _clap(14, 3), _clap(17, 12), _clap(20, 3), _clap(23, 12), _clap(26, 3),
+    (30, STAND),
+    (40, FIELDER_READY),
+]
+
+
+def _stand_bat_r(pelvis=(2, 0, -34, 0, 0, -3), spine=(2, 0, -4), neck=(-8, 0, 16), head=(-4, 0, 10), hand_r=None,
+                 hand_l=(4, 10, 98), grip_r='open'):
+    """Batter standing out of the stance, bat hanging from the top (left) hand, blade down."""
+    return {'pelvis': pelvis, 'spine': spine, 'chest': (0, 0, -2), 'neck': neck, 'head': head,
+            **_foot('l', 3, 15, toe=-62), **_foot('r', -1, -21, toe=-86),
+            'hand_l': hand_l, 'shaft': (0.0, 0.10, 0.99), 'face': (0.0, 1.0, 0.0),
+            'hand_r': hand_r or R(.88, -.24, .12, -.95),
+            'elbow_l': (34, -18, 104), 'elbow_r': (-40, -22, 102),
+            'grip_l': 'bat', 'grip_r': grip_r}
+
+
+# Boundary acknowledgement: stand up out of the stance, a small glove clench and nod, back in.
+BATTER_ACKNOWLEDGE_R = [
+    (0, BATTER_READY_R),
+    (9, dict(BATTER_READY_R, **{'pelvis': (4, 0, -46, 0, 0, -6), 'spine': (8, 0, -8), 'neck': (-10, 0, 24),
+                                **_bat_held((-22, 4, 100), (0.10, 0.24, 0.97), (0.10, 0.99, -0.05))})),
+    (18, _stand_bat_r(hand_r=(-14, 22, 132), grip_r='ball', neck=(-4, 0, 14))),
+    (26, _stand_bat_r(hand_r=(-14, 22, 128), grip_r='ball', neck=(8, 0, 12), head=(6, 0, 8))),
+    (34, _stand_bat_r(neck=(-6, 0, 16))),
+    (42, dict(BATTER_READY_R, **{'pelvis': (4, 0, -46, 0, 0, -6), 'spine': (8, 0, -8), 'neck': (-10, 0, 24),
+                                 **_bat_held((-22, 4, 100), (0.10, 0.24, 0.97), (0.10, 0.99, -0.05))})),
+    (52, BATTER_READY_R),
+]
+
+# Beaten / play-and-miss: rock back upright, bat lifted off the turf, head drops then turns back after
+# the ball towards the keeper, a breath, and down into the stance again.
+BATTER_BEATEN_R = [
+    (0, BATTER_READY_R),
+    (6, dict(BATTER_READY_R, **{'pelvis': (2, 0, -50, 0, -4, -5), 'spine': (6, 0, -12),
+                                'neck': (10, 0, 12), 'head': (12, 0, 4),
+                                **_bat_held((-18, 8, 112), (0.10, 0.20, 0.97), (0.12, 0.99, -0.05))})),
+    (13, _stand_bat_r(pelvis=(0, 0, -40, 0, -4, -2), spine=(2, 0, -16), neck=(4, 0, -22), head=(8, 0, -24),
+                      hand_l=(-14, 10, 112), hand_r=R(.82, -.30, .30, -.40))),
+    (22, _stand_bat_r(pelvis=(2, 0, -44, 0, -2, -3), spine=(6, 0, -8), neck=(16, 0, 6), head=(12, 0, 4),
+                      hand_l=(-12, 10, 108), hand_r=R(.82, -.30, .30, -.40))),
+    (30, dict(BATTER_READY_R, **{'pelvis': (5, 0, -54, 0, -2, -6), 'spine': (12, 0, -12), 'neck': (-8, 0, 28),
+                                 **_bat_held((-24, 4, 100), (0.14, 0.28, 0.95), (0.12, 0.99, -0.05))})),
+    (40, BATTER_READY_R),
+]
+
+# Edge: an instant look back over the shoulder where it flew, standing tall with the chest opened to
+# the slips, bottom hand shaken off the handle; then back in.
+BATTER_EDGE_R = [
+    (0, BATTER_READY_R),
+    (5, dict(BATTER_READY_R, **{'pelvis': (2, 0, -64, 0, -4, -6), 'spine': (8, 0, -24), 'chest': (2, 2, -18),
+                                'neck': (-6, 0, -24), 'head': (-4, 0, -30),
+                                **_bat_held((-20, 8, 108), (0.12, 0.26, 0.96), (0.12, 0.99, -0.05))})),
+    (11, _stand_bat_r(pelvis=(-2, 0, -70, 0, -6, -1), spine=(-2, 0, -26), neck=(-8, 0, -32), head=(-6, 0, -34),
+                      hand_r=R(.86, -.62, -.10, -.34), hand_l=(-16, 4, 116))),
+    (17, _stand_bat_r(pelvis=(-2, 0, -70, 0, -6, -1), spine=(-2, 0, -26), neck=(-8, 0, -30), head=(-6, 0, -30),
+                      hand_r=R(.88, -.58, -.16, -.46), hand_l=(-16, 4, 114))),
+    (27, dict(BATTER_READY_R, **{'pelvis': (5, 0, -56, 0, -2, -6), 'spine': (12, 0, -12), 'neck': (-8, 0, 26),
+                                 **_bat_held((-24, 4, 98), (0.14, 0.30, 0.94), (0.12, 0.99, -0.05))})),
+    (38, BATTER_READY_R),
+]
+
+# Dot-ball reset: stand right up out of the stance, bottom glove tightens the top glove's strap,
+# a tap back at the crease and down into the stance.
+BATTER_RESET_R = [
+    (0, BATTER_READY_R),
+    (9, _stand_bat_r(pelvis=(2, 0, -40, 0, 0, -2), neck=(-6, 0, 20), hand_l=(-6, 16, 110),
+                     hand_r=R(.72, -.14, .50, .06))),
+    (16, _stand_bat_r(pelvis=(2, 0, -40, 0, 0, -2), spine=(8, 0, -2), neck=(18, 0, 10), head=(8, 0, 4),
+                      hand_l=(-4, 18, 112), hand_r=(-2, 22, 112), grip_r='flat')),
+    (22, _stand_bat_r(pelvis=(2, 0, -40, 0, 0, -2), spine=(8, 0, -2), neck=(16, 0, 8), head=(8, 0, 4),
+                      hand_l=(-4, 18, 112), hand_r=(-1, 20, 110), grip_r='flat')),
+    (29, dict(BATTER_READY_R, **{'pelvis': (6, 0, -54, 0, -2, -6), 'spine': (12, 0, -10), 'neck': (-10, 0, 30),
+                                 **_bat_held((-26, 2, 96), (0.16, 0.30, 0.94), (0.12, 0.99, -0.05))})),
+    (33, BATTER_READY_TAP),
+    (40, BATTER_READY_R),
+]
+
+# Dismissed: stand up, head drops, bottom hand off, a look at the pitch, turn towards the pavilion.
+# Deliberately does not return to the stance - the runtime holds the last pose (breathing on top).
+BATTER_DISMISSED_R = [
+    (0, BATTER_READY_R),
+    (10, dict(BATTER_READY_R, **{'pelvis': (4, 0, -46, 0, 0, -6), 'spine': (12, 0, -8), 'neck': (14, 0, 16),
+                                 'head': (10, 0, 8),
+                                 **_bat_held((-20, 6, 100), (0.10, 0.24, 0.97), (0.10, 0.99, -0.05))})),
+    (22, _stand_bat_r(pelvis=(3, 0, -30, 0, 0, -3), spine=(8, 0, -4), neck=(24, 0, 6), head=(14, 0, 4))),
+    (36, _stand_bat_r(pelvis=(3, 0, -16, 0, 0, -3), spine=(6, 0, 2), neck=(22, 0, -4), head=(12, 0, -6),
+                      hand_r=R(.88, -.28, .06, -.95))),
+    (54, _stand_bat_r(pelvis=(3, 0, -8, 0, 0, -3), spine=(6, 0, 4), neck=(18, 0, -8), head=(10, 0, -8),
+                      hand_r=R(.88, -.28, .06, -.95))),
+]
+
+REACTIONS_R7 = [
+    {'name': 'CelebrateRestrained', 'keys': CELEBRATE_RESTRAINED},
+    {'name': 'CelebrateEnergetic', 'keys': CELEBRATE_ENERGETIC},
+    {'name': 'Appeal', 'keys': APPEAL},
+    {'name': 'HandsOnHead', 'keys': HANDS_ON_HEAD},
+    {'name': 'Frustrated', 'keys': FRUSTRATED},
+    {'name': 'Clap', 'keys': CLAP},
+]
+BATTER_REACTIONS_R7 = [   # right-handed sources; _L is the mirror
+    {'name': 'BatterAcknowledge', 'keys': BATTER_ACKNOWLEDGE_R},
+    {'name': 'BatterBeaten', 'keys': BATTER_BEATEN_R},
+    {'name': 'BatterEdge', 'keys': BATTER_EDGE_R},
+    {'name': 'BatterReset', 'keys': BATTER_RESET_R},
+    {'name': 'BatterDismissed', 'keys': BATTER_DISMISSED_R},
+]
+
+
 # ================================================================= assembly
 
 def _loopclip(name, keys, speed=0.0, dense=False):
@@ -1640,6 +1868,12 @@ def build_manifest():
         [(0, BATTER_READY_R), (30, BATTER_READY_TAP), (64, BATTER_READY_R)]), dense=True))
     clips.append(_loopclip('BatterRun_L', _mirror_keys(BATTER_RUN_R), 300.0))
     clips.append(_oneshot('BatterCelebrate_L', _mirror_keys(BATTER_CELEBRATE_R)))
+    # Round 7 reactions: whole-body sources, batter ones mirrored for the left-hander.
+    for reaction in REACTIONS_R7:
+        clips.append(_oneshot(reaction['name'], reaction['keys']))
+    for reaction in BATTER_REACTIONS_R7:
+        clips.append(_oneshot(reaction['name'] + '_R', reaction['keys']))
+        clips.append(_oneshot(reaction['name'] + '_L', _mirror_keys(reaction['keys'])))
 
     for shot in SHOTS:
         clips.append(_oneshot(f"{shot['name']}_R", shot['keys'], shot['event'], shot['contact'], dense=True))

@@ -318,6 +318,10 @@ public:
 
     // System 6: Match Presentation Callbacks
     void OnPresentationCompleted();
+    /** Round 7: presentation-only player reactions staged from the committed outcome (never the reverse). */
+    void StageReactions(const C26::DeliveryOutcome& Official,const FVector& Focus);
+    /** Fielders who put down a chance / made a stop this delivery, for the reactions. Reset every ball. */
+    int32 DroppedBy=-1,StoppedBy=-1;
     void TriggerPresentationForOutcome(const C26::DeliveryOutcome& Outcome);    bool bFiftyCelebrated[3] = { false, false, false };
     bool bCenturyCelebrated[3] = { false, false, false };
     int32 ConsecutiveBoundaries = 0;
@@ -406,6 +410,16 @@ private:
 #if !UE_BUILD_SHIPPING
     // Opt-in integration probe: uses real input commands, simulation, fielding and scoring.
     void UpdateGoldenGate(float Dt);
+    /** Round 7 reaction lab (-C26ReactLab): real AI delivery, then committed outcomes forced through Resolve. */
+    void UpdateReactLab(float Dt);
+    bool ReactLab=false;
+    int32 ReactStage=0,ReactFailures=0;
+    double ReactStarted=0;
+    EC26Phase ReactPrevPhase=EC26Phase::Menu;
+    TMap<int32,TArray<FVector>> ReactPrevBones;
+    TMap<int32,FName> ReactPrevState;
+    TSet<FString> ReactShots;
+    TWeakObjectPtr<class ACameraActor> ReactCamera;
     bool GoldenGate=false,GateCollected=false,GateThrown=false,GateNoScreens=false,GateSuite=false;
     bool GateSawFour=false,GateSawSix=false,GateSawWicket=false;
     bool GateGestureArmed=false,GateGestureLogged=false,GateMarkerRunUpChecked=false,GateGesturePressed=false;

@@ -927,7 +927,12 @@ void AC26Athlete::CurlFingers(const FString& Side,float Amount)
         }
     }
 }
-void AC26Athlete::SetAction(EC26Action NewAction,bool ResetTime){if(NewAction!=Action||ResetTime)ActionTime=0;Action=NewAction;}
+void AC26Athlete::SetAction(EC26Action NewAction,bool ResetTime){if(NewAction!=Action||ResetTime)ActionTime=0;Action=NewAction;Reaction=NAME_None;ReactionDelay=0.f;}
+void AC26Athlete::React(EC26Action Base,FName Cue,float Delay,bool PresentationOnly)
+{
+    if(PresentationOnly&&!(Presentation&&Presentation->IsActive()))return;
+    SetAction(Base);Reaction=Cue;ReactionDelay=FMath::Max(0.f,Delay);
+}
 void AC26Athlete::ResetAt(const FVector& Position,float Yaw)
 {SetActorLocationAndRotation(Position,FRotator(0,Yaw,0));if(Presentation&&Presentation->IsActive())Presentation->ResetMotion();MotionTime=0;MoveSpeed=0;GaitPhase=0;Trigger=0;ContactTarget=FVector::ZeroVector;SetAction(EC26Action::Ready);Animate(0);}
 void AC26Athlete::SetShotContact(const FVector& Target,float Angle,bool bLoft)

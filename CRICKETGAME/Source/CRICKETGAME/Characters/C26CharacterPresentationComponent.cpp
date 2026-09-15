@@ -180,6 +180,21 @@ void UC26CharacterPresentationComponent::Configure(AC26Athlete* Athlete)
     Appearance.JerseyNumber=Athlete->SquadNumber;
     Appearance.LeftHandedBat=Athlete->LeftHandedBat;
     Appearance.LeftArmBowl=Athlete->LeftArmBowl;
+    // Temperament rides on the profile's existing AnimationStyle. An explicitly authored style is kept;
+    // the default "Professional" is resolved per squad slot so eleven players never react in unison.
+    static const FName DefaultStyle=TEXT("Professional");
+    FName Style=Appearance.AnimationStyle;
+    if(Style.IsNone()||Style==DefaultStyle||Style==TEXT("Calm")||Style==TEXT("Aggressive")||Style==TEXT("Energetic"))
+        Style=Appearance.AnimationStyle=C26Character::Temperament(Athlete->TeamId,Athlete->SquadNumber);
+    const uint32 Seed=FCrc::StrCrc32(*NewID.ToString());
+    const float Jitter=float(Seed%1000)/1000.f;              // 0..1, stable per player
+    const bool Calm=Style==TEXT("Calm"),Energetic=Style==TEXT("Energetic");
+    StyleRate=(Calm?.94f:Energetic?1.08f:1.04f)*(.98f+.04f*Jitter);
+    StyleDelay=Calm?.10f:Energetic?0.f:.03f;
+    StyleLife=Calm?.8f:Energetic?1.15f:1.f;
+    StyleLookSpeed=Calm?2.6f:Energetic?5.5f:4.f;
+    BreathRate=(Energetic?.36f:.28f)*(.92f+.16f*Jitter);    // breaths per second at rest
+    BreathPhase=Jitter*UE_TWO_PI;SwayPhase=Jitter*4.1f;
     EC26VisualRole Role=EC26VisualRole::Fielder;
     switch(Athlete->Role)
     {
@@ -383,7 +398,8 @@ FName UC26CharacterPresentationComponent::Variant(const AC26Athlete* Athlete)
 }
 FName UC26CharacterPresentationComponent::SelectState(const AC26Athlete* Athlete,float Dt)
 {
-    const bool Batter=VisualRole==EC26VisualRole::Batter||VisualRole==EC26VisualRole::NonStriker;
+    ReactionClock=-1.f;
+    if(bRecovered)return IdleState(Athlete,Dt);
     switch(Athlete->Action)
     {
     case EC26Action::Batting:
@@ -394,14 +410,55 @@ FName UC26CharacterPresentationComponent::SelectState(const AC26Athlete* Athlete
         return C26Character::ShotKey(Athlete->ShotLabel,Appearance.LeftHandedBat);
     case EC26Action::Bowling:case EC26Action::Pickup:case EC26Action::Throw:case EC26Action::Catch:
     case EC26Action::Dive:case EC26Action::Slide:return Variant(Athlete);
-    case EC26Action::Celebrate:return Batter?(Appearance.LeftHandedBat?TEXT("BatterCelebrate_L"):TEXT("BatterCelebrate_R")):TEXT("Celebrate");
-    case EC26Action::Disappointed:return TEXT("Disappointed");
+    case EC26Action::Ready:case EC26Action::Celebrate:case EC26Action::Disappointed:case EC26Action::BatRaise:
+    case EC26Action::GloveTap:case EC26Action::FistPump:case EC26Action::Handshake:case EC26Action::Discuss:
+    {
+        const FName Key=ReactionState(Athlete);
+        if(!Key.IsNone())return Key;
+        break;
+    }
     case EC26Action::SignalFour:return TEXT("SignalFour");
     case EC26Action::SignalSix:return TEXT("SignalSix");
     case EC26Action::SignalOut:return TEXT("SignalOut");
     case EC26Action::SignalWide:return TEXT("SignalWide");
     default:break;
     }
+    return IdleState(Athlete,Dt);
+}
+FName UC26CharacterPresentationComponent::ReactionState(const AC26Athlete* Athlete)
+{
+    const bool Batter=VisualRole==EC26VisualRole::Batter||VisualRole==EC26VisualRole::NonStriker;
+    FName Cue=Athlete->Reaction;
+    FName Key=C26Character::ReactionKey(Cue,VisualRole,Appearance.AnimationStyle,Appearance.LeftHandedBat);
+    if(Cue.IsNone())
+    {
+        // Uncued base actions keep their pre-Round 7 clips; the ceremonial ones map onto the reaction set.
+        switch(Athlete->Action)
+        {
+        case EC26Action::Celebrate:Key=Batter?(Appearance.LeftHandedBat?TEXT("BatterCelebrate_L"):TEXT("BatterCelebrate_R")):TEXT("Celebrate");break;
+        case EC26Action::Disappointed:Key=TEXT("Disappointed");break;
+        case EC26Action::BatRaise:Key=C26Character::ReactionKey(TEXT("Milestone"),VisualRole,Appearance.AnimationStyle,Appearance.LeftHandedBat);break;
+        case EC26Action::FistPump:Key=Batter?NAME_None:FName(TEXT("CelebrateEnergetic"));break;
+        case EC26Action::GloveTap:Key=C26Character::ReactionKey(TEXT("Support"),VisualRole,Appearance.AnimationStyle,Appearance.LeftHandedBat);break;
+        default:break;
+        }
+    }
+    else if(!Key.IsNone()&&!Profile->FindClip(Key))
+    {
+        if(!ReportedMissing.Contains(Key)){ReportedMissing.Add(Key);UE_LOG(LogTemp,Warning,TEXT("C26_CHARACTER_MISSING_CLIP %s"),*Key.ToString());}
+        Key=NAME_None;
+    }
+    if(Key.IsNone()||!Profile->FindClip(Key))return NAME_None;
+    // Each athlete takes his own beat before reacting (distance to the event plus temperament), and plays
+    // the clip at his own pace; until then he holds his ready state.
+    const float T=(Athlete->ActionTime-Athlete->ReactionDelay-(Cue.IsNone()?0.f:StyleDelay))*(Cue.IsNone()?1.f:StyleRate);
+    if(T<0.f)return NAME_None;
+    ReactionClock=T;
+    return Key;
+}
+FName UC26CharacterPresentationComponent::IdleState(const AC26Athlete* Athlete,float Dt)
+{
+    const bool Batter=VisualRole==EC26VisualRole::Batter||VisualRole==EC26VisualRole::NonStriker;
     const bool Moving=Locomotion.GroundSpeed>12.f;
     if(Dt>0.f)
     {
@@ -434,6 +491,7 @@ void UC26CharacterPresentationComponent::ResetMotion()
 {
     Locomotion.Reset(GetOwner()->GetActorTransform());Clock=BlendClock=0;Transition=NAME_None;bWasMoving=false;
     CurrentClip=nullptr;CurrentState=NAME_None;FrozenSeconds=0;LatchedKey=NAME_None;
+    bRecovered=false;ReactionClock=-1.f;Lean=LeanVelocity=FVector2D::ZeroVector;SmoothedAcceleration=FVector::ZeroVector;
     if(Body)Body->SetRelativeLocation(FVector::ZeroVector);
 }
 void UC26CharacterPresentationComponent::UpdateFromMatch(AC26Athlete* Athlete,float Dt)
@@ -457,7 +515,11 @@ void UC26CharacterPresentationComponent::UpdateFromMatch(AC26Athlete* Athlete,fl
             &&(Athlete->Action==EC26Action::Pickup||Athlete->Action==EC26Action::Catch);
         LatchedAction=Athlete->Action;EntrySpeed=PreviousSpeed;
         if(!DiveTake)LatchedKey=NAME_None;
+        bRecovered=false;
     }
+    // The same action restarted (a fresh stroke, a new reaction) is a new one-shot too.
+    if(Athlete->ActionTime+1e-3f<PreviousActionTime)bRecovered=false;
+    PreviousActionTime=Athlete->ActionTime;
     Appearance.LeftArmBowl=Athlete->LeftArmBowl;
     if(Locomotion.Teleported)ResetMotion();
     Clock+=FMath::Max(0.f,Dt);
@@ -476,12 +538,39 @@ void UC26CharacterPresentationComponent::UpdateFromMatch(AC26Athlete* Athlete,fl
         State=Fallback;Clip=Profile->FindClip(State);
     }
     if(!Clip||!Clip->Sequence)return; // Activation validation guarantees all fallback sequences.
+    // Played-out one-shots recover to the ready loop: strokes and deliveries (after their authored
+    // follow-through and recovery), reactions and umpire signals. Gathers, throws and dives stay under the
+    // match's own clock. A dismissed batter keeps his final pose.
+    const EC26Action Act=Athlete->Action;
+    const bool Recoverable=Act==EC26Action::Batting||Act==EC26Action::Bowling||ReactionClock>=0.f
+        ||Act==EC26Action::SignalFour||Act==EC26Action::SignalSix||Act==EC26Action::SignalOut||Act==EC26Action::SignalWide;
+    if(!bRecovered&&Recoverable&&!Clip->Loop&&State!=Transition&&!C26Character::HoldsFinalPose(State))
+    {
+        const float Length=Clip->Sequence->GetPlayLength();
+        float Raw=ReactionClock>=0.f?ReactionClock:Athlete->ActionTime;
+        if(ReactionClock<0.f&&!Clip->Event.IsNone())
+        {
+            const float MatchEvent=Clip->Event==TEXT("BatContact")?C26Field::BatContactPoseTime:
+                Clip->Event==TEXT("BallRelease")?C26Field::ReleasePoseTime:Clip->Event==TEXT("ThrowRelease")?.2f:.18f;
+            const float ClipEvent=Clip->EventTime();
+            if(MatchEvent>0.f&&ClipEvent>=0.f)Raw=Athlete->ActionTime<=MatchEvent?Athlete->ActionTime/MatchEvent*ClipEvent:ClipEvent+Athlete->ActionTime-MatchEvent;
+        }
+        if(Raw>=Length&&Dt>0.f)
+        {
+            bRecovered=true;
+            const FName Idle=IdleState(Athlete,0.f);
+            if(const auto* IdleClip=Profile->FindClip(Idle)){State=Idle;Clip=IdleClip;ReactionClock=-1.f;}
+        }
+    }
     auto* Anim=Cast<UC26CricketerAnimInstance>(Body->GetAnimInstance());if(!Anim)return;
     if(CurrentClip!=Clip)
     {
         PreviousState=CurrentState.IsNone()?State:CurrentState;
         Anim->PreviousSequence=Anim->CurrentSequence?Anim->CurrentSequence:Clip->Sequence;
         Anim->PreviousTime=Anim->CurrentTime;CurrentClip=Clip;CurrentState=State;BlendClock=0;
+        // Entering or leaving a reaction, or settling out of a played-out one-shot, is a body shift rather
+        // than a technique change: it gets a longer, softer blend than a stroke or gather entry.
+        ActiveBlend=(ReactionClock>=0.f||bRecovered)?.32f:Clip->BlendSeconds;
         UpdateWarp(Athlete,Clip);
     }
     // The match poses event-driven athletes (pickup, catch, throw, keeper take) with Dt==0 and drives
@@ -490,7 +579,8 @@ void UC26CharacterPresentationComponent::UpdateFromMatch(AC26Athlete* Athlete,fl
     BlendClock+=Dt>0.f?Dt:FMath::Clamp(Athlete->ActionTime-LastActionTime,0.f,.1f);
     LastActionTime=Athlete->ActionTime;
     float Time=Athlete->ActionTime;
-    if(State==Transition)Time=TransitionAge;
+    if(ReactionClock>=0.f)Time=FMath::Min(ReactionClock,Clip->Sequence->GetPlayLength());
+    else if(State==Transition)Time=TransitionAge;
     else if(Clip->Loop)
     {
         const bool Move=State==TEXT("Run")||State==TEXT("Walk")||State==TEXT("BatterRun_R")||State==TEXT("BatterRun_L")||State==TEXT("KeeperShuffle_L")||State==TEXT("KeeperShuffle_R")||State==TEXT("UmpireWalk");
@@ -506,14 +596,72 @@ void UC26CharacterPresentationComponent::UpdateFromMatch(AC26Athlete* Athlete,fl
     }
     else Time=FMath::Min(Time,Clip->Sequence->GetPlayLength());
     Anim->CurrentSequence=Clip->Sequence;Anim->CurrentTime=Time;
-    Anim->BlendAlpha=FMath::SmoothStep(0.f,FMath::Max(.02f,Clip->BlendSeconds),BlendClock);
+    Anim->BlendAlpha=FMath::SmoothStep(0.f,FMath::Max(.02f,ActiveBlend),BlendClock);
     // An exact authoritative contact sample must render that event pose this frame.
     if(Dt==0.f&&!Clip->Event.IsNone()&&FMath::Abs(Time-Clip->EventTime())<=1.f/30.f)Anim->BlendAlpha=1.f;
     Anim->GroundSpeed=Locomotion.GroundSpeed;Anim->MovementDirection=Locomotion.Direction;
     Anim->Acceleration=Locomotion.Acceleration;Anim->TurnRate=Locomotion.TurnRate;Anim->State=State;
+    UpdateLife(Athlete,Dt);
     Body->TickAnimation(FMath::Max(0.f,Dt),false);Body->RefreshBoneTransforms();
     LearnWarp(Athlete);
     Debug(Athlete,Dt);
+}
+void UC26CharacterPresentationComponent::UpdateLife(const AC26Athlete* Athlete,float Dt)
+{
+    auto* Anim=Cast<UC26CricketerAnimInstance>(Body->GetAnimInstance());if(!Anim)return;
+    const EC26Action Act=Athlete->Action;
+    // Gameplay-owned poses carry the contact, release, gather and throw events: no procedural layer at all,
+    // so hand, bat and ball alignment and foot locking are exactly what the authored clip delivers.
+    const bool Gameplay=!bRecovered&&(Act==EC26Action::Batting||Act==EC26Action::Bowling||Act==EC26Action::Pickup
+        ||Act==EC26Action::Throw||Act==EC26Action::Catch||Act==EC26Action::Dive||Act==EC26Action::Slide);
+    const bool Batter=VisualRole==EC26VisualRole::Batter||VisualRole==EC26VisualRole::NonStriker;
+    const bool Moving=Locomotion.GroundSpeed>12.f;
+    const bool Reacting=ReactionClock>=0.f;
+    float Breath=1,Sway=1,LookW=1,LeanW=1;
+    if(Gameplay)Breath=Sway=LookW=LeanW=0;
+    else if(Reacting){Breath=.5f;Sway=0;LookW=0;LeanW=.5f;}
+    else if(Moving){Breath=.35f;Sway=0;LookW=.45f;LeanW=1;}
+    // The striker's head is already authored onto the bowler; the keeper watches from his crouch.
+    if(VisualRole==EC26VisualRole::Batter&&!Reacting&&!Moving)LookW=0;
+    if(VisualRole==EC26VisualRole::Keeper)LookW*=.5f;
+    if(VisualRole==EC26VisualRole::Umpire)Sway*=.5f;
+    const float Step=Dt>0.f?1.f-FMath::Exp(-Dt*(Gameplay?18.f:3.f)):0.f;
+    // The exact event frames are posed with Dt==0: the layer must already be gone there.
+    const bool Hard=Gameplay&&Dt<=0.f;
+    const auto Approach=[&](float& W,float Target){W=Hard?0.f:W+(Target-W)*Step;};
+    Approach(BreathWeight,Breath*StyleLife);Approach(SwayWeight,Sway*StyleLife);Approach(LookWeight,LookW);Approach(LeanWeight,LeanW);
+    if(Dt>0.f)
+    {
+        // Breathing deepens and quickens after a sprint and settles back over a few seconds.
+        const float Exertion=FMath::Clamp(Locomotion.GroundSpeed/450.f,0.f,1.f);
+        BreathPhase=FMath::Fmod(BreathPhase+Dt*UE_TWO_PI*BreathRate*(1.f+.8f*Exertion),UE_TWO_PI);
+        SwayPhase=FMath::Fmod(SwayPhase+Dt*UE_TWO_PI*.11f,UE_TWO_PI);
+        // Head and eyes to the match's look target, limited to what a neck does without turning the chest.
+        FVector2D Want=FVector2D::ZeroVector;
+        if(!Athlete->LookAt.IsZero())
+        {
+            const FVector Local=Athlete->GetActorTransform().InverseTransformPosition(Athlete->LookAt);
+            Want.X=FMath::Clamp(FMath::RadiansToDegrees(FMath::Atan2(Local.Y,Local.X)),-50.f,50.f);
+            Want.Y=FMath::Clamp(FMath::RadiansToDegrees(FMath::Atan2(Local.Z-160.f,FVector2D(Local.X,Local.Y).Size())),-14.f,12.f);
+            if(FMath::Abs(FMath::RadiansToDegrees(FMath::Atan2(Local.Y,Local.X)))>120.f)Want=FVector2D::ZeroVector; // behind: don't owl
+        }
+        Look+=(Want-Look)*(1.f-FMath::Exp(-Dt*StyleLookSpeed));
+        // Follow-through inertia: the trunk lags a change of speed and leans into a turn, on a lightly
+        // under-damped spring so a stop settles instead of snapping upright.
+        SmoothedAcceleration+=(Locomotion.Acceleration-SmoothedAcceleration)*(1.f-FMath::Exp(-Dt*8.f));
+        const FVector Fwd=Athlete->GetActorForwardVector();
+        const float Along=FVector::DotProduct(SmoothedAcceleration,Fwd);
+        const float Centripetal=Locomotion.GroundSpeed*FMath::DegreesToRadians(Locomotion.TurnRate);
+        const FVector2D Target(FMath::Clamp(-Along*.004f,-4.f,5.f),FMath::Clamp(Centripetal*.0025f,-4.f,4.f));
+        const float Stiff=190.f,Damp=15.f,H=FMath::Min(Dt,.05f);
+        LeanVelocity+=((Target-Lean)*Stiff-LeanVelocity*Damp)*H;Lean+=LeanVelocity*H;
+    }
+    FC26SecondaryMotion& Life=Anim->Life;
+    Life.Breath=BreathWeight;Life.Sway=SwayWeight;Life.BreathPhase=BreathPhase;Life.SwayPhase=SwayPhase+(Batter?1.3f:0.f);
+    Life.BreathDegrees=Batter?.6f:.9f;Life.SwayDegrees=Batter?.4f:.7f;
+    Life.LookYaw=Look.X*LookWeight;Life.LookPitch=Look.Y*LookWeight;
+    Life.LeanPitch=Lean.X*LeanWeight;Life.LeanRoll=Lean.Y*LeanWeight;
+    if(Hard||(Life.Breath<1e-3f&&Life.Sway<1e-3f&&LookWeight<1e-3f&&LeanWeight<1e-3f))Life=FC26SecondaryMotion();
 }
 void UC26CharacterPresentationComponent::LearnWarp(const AC26Athlete* Athlete)
 {
@@ -630,7 +778,7 @@ void UC26CharacterPresentationComponent::ApplyReplayPose(const FC26CharacterPose
     // A looping clip wraps to zero; interpolation across that boundary must not reverse a stride.
     if(Clip->Loop&&A.State==B.State&&B.Time<A.Time)
         Anim->CurrentTime=FMath::Fmod(FMath::Lerp(A.Time,B.Time+Clip->Sequence->GetPlayLength(),Alpha),Clip->Sequence->GetPlayLength());
-    Anim->PreviousTime=Frame.PreviousTime;Anim->BlendAlpha=Frame.Alpha;
+    Anim->PreviousTime=Frame.PreviousTime;Anim->BlendAlpha=Frame.Alpha;Anim->Life=FC26SecondaryMotion();
     CurrentState=Frame.State;PreviousState=Frame.PreviousState;CurrentClip=Clip;
     Clock=FMath::Lerp(A.Clock,B.Clock,Alpha);BlendClock=Frame.Alpha*Clip->BlendSeconds;
     Locomotion.Reset(GetOwner()->GetActorTransform());Locomotion.Distance=FMath::Lerp(A.Distance,B.Distance,Alpha);

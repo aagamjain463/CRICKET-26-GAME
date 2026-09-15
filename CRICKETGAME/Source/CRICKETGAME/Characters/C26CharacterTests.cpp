@@ -157,4 +157,63 @@ bool FC26RetargetedRunTest::RunTest(const FString& Parameters)
     AddInfo(FString::Printf(TEXT("New body: cumulative feet travel %.1fcm, lowest ankle %.1fcm; visual quality still requires review"),FootTravel,LowestFoot));
     Actor->Destroy();World->DestroyWorld(false);return Good&&Errors.IsEmpty();
 }
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FC26ReactionSelectionTest,"Cricket26.Characters.Reactions",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
+bool FC26ReactionSelectionTest::RunTest(const FString& Parameters)
+{
+    using namespace C26Character;
+    const FName Calm=TEXT("Calm"),Aggressive=TEXT("Aggressive"),Energetic=TEXT("Energetic");
+    TestEqual(TEXT("Right-hander play-and-miss"),ReactionKey(TEXT("PlayAndMiss"),EC26VisualRole::Batter,Calm,false),FName(TEXT("BatterBeaten_R")));
+    TestEqual(TEXT("Left-hander mirrors the batter reaction"),ReactionKey(TEXT("Edge"),EC26VisualRole::Batter,Calm,true),FName(TEXT("BatterEdge_L")));
+    TestEqual(TEXT("Boundary acknowledgement"),ReactionKey(TEXT("Boundary"),EC26VisualRole::Batter,Energetic,false),FName(TEXT("BatterAcknowledge_R")));
+    TestEqual(TEXT("Calm batter does not over-celebrate a six"),ReactionKey(TEXT("Six"),EC26VisualRole::Batter,Calm,false),FName(TEXT("BatterAcknowledge_R")));
+    TestEqual(TEXT("Milestone raises the bat"),ReactionKey(TEXT("Milestone"),EC26VisualRole::Batter,Calm,false),FName(TEXT("BatterCelebrate_R")));
+    TestEqual(TEXT("Non-striker acknowledges his partner"),ReactionKey(TEXT("Support"),EC26VisualRole::NonStriker,Calm,true),FName(TEXT("BatterAcknowledge_L")));
+    TestEqual(TEXT("Dismissed batter"),ReactionKey(TEXT("Dismissed"),EC26VisualRole::Batter,Aggressive,false),FName(TEXT("BatterDismissed_R")));
+    TestTrue(TEXT("Dismissal holds its final pose"),HoldsFinalPose(TEXT("BatterDismissed_L"))&&!HoldsFinalPose(TEXT("BatterBeaten_R")));
+    TestEqual(TEXT("Calm bowler restrained wicket"),ReactionKey(TEXT("Wicket"),EC26VisualRole::Bowler,Calm,false),FName(TEXT("CelebrateRestrained")));
+    TestEqual(TEXT("Energetic bowler energetic wicket"),ReactionKey(TEXT("Wicket"),EC26VisualRole::Bowler,Energetic,false),FName(TEXT("CelebrateEnergetic")));
+    TestEqual(TEXT("Energetic fielder joins the team celebration"),ReactionKey(TEXT("Wicket"),EC26VisualRole::Fielder,Energetic,false),FName(TEXT("Celebrate")));
+    TestEqual(TEXT("Catcher celebrates"),ReactionKey(TEXT("Catch"),EC26VisualRole::Fielder,Aggressive,false),FName(TEXT("CelebrateEnergetic")));
+    TestEqual(TEXT("Dropped chance"),ReactionKey(TEXT("Dropped"),EC26VisualRole::Keeper,Calm,false),FName(TEXT("HandsOnHead")));
+    TestEqual(TEXT("Aggressive bowler appeals a near miss"),ReactionKey(TEXT("NearMiss"),EC26VisualRole::Bowler,Aggressive,false),FName(TEXT("Appeal")));
+    TestEqual(TEXT("Boundary conceded"),ReactionKey(TEXT("BoundaryConceded"),EC26VisualRole::Bowler,Calm,false),FName(TEXT("Frustrated")));
+    TestTrue(TEXT("Calm bowler just walks back after a dot"),ReactionKey(TEXT("DotConfidence"),EC26VisualRole::Bowler,Calm,false).IsNone());
+    TestTrue(TEXT("Fielders never pick up a batter-only cue"),ReactionKey(TEXT("PlayAndMiss"),EC26VisualRole::Fielder,Calm,false).IsNone());
+    TestTrue(TEXT("Umpire never reacts"),ReactionKey(TEXT("Wicket"),EC26VisualRole::Umpire,Energetic,false).IsNone());
+    TSet<FName> Seen;
+    for(int32 N=1;N<=11;++N){Seen.Add(Temperament(1,N));TestEqual(TEXT("Temperament is deterministic"),Temperament(1,N),Temperament(1,N));}
+    TestEqual(TEXT("An eleven carries all three temperaments"),Seen.Num(),3);
+
+    // Secondary motion must be exactly absent at zero weight and never move the feet when present.
+    auto* Profile=LoadObject<UC26CharacterProfile>(nullptr,TEXT("/Game/Cricket26/Characters/Data/DA_C26_DefaultPlayer.DA_C26_DefaultPlayer"));
+    const auto* Ready=Profile?Profile->FindClip(TEXT("FielderReady")):nullptr;
+    if(!TestTrue(TEXT("Default profile with FielderReady"),Ready&&Ready->Sequence&&Profile->Body))return false;
+    UWorld* World=UWorld::CreateWorld(EWorldType::Game,false);
+    AActor* Actor=World->SpawnActor<AActor>();
+    auto* Body=NewObject<USkeletalMeshComponent>(Actor);Actor->SetRootComponent(Body);
+    Body->SetSkeletalMesh(Profile->Body);Body->SetAnimInstanceClass(UC26CricketerAnimInstance::StaticClass());Body->RegisterComponent();
+    auto* Anim=Cast<UC26CricketerAnimInstance>(Body->GetAnimInstance());
+    bool Good=TestNotNull(TEXT("Native graph"),Anim);
+    if(Anim)
+    {
+        const auto Pose=[&](const FC26SecondaryMotion& Life)
+        {
+            Anim->PreviousSequence=Anim->CurrentSequence=Ready->Sequence;Anim->BlendAlpha=1;Anim->CurrentTime=.5f;Anim->Life=Life;
+            Body->TickAnimation(.016f,false);Body->RefreshBoneTransforms();
+            return TArray<FVector>{Body->GetBoneLocation(TEXT("head")),Body->GetBoneLocation(Profile->LeftFootBone),
+                Body->GetBoneLocation(Profile->RightFootBone),Body->GetSocketLocation(Profile->RightHandSocket)};
+        };
+        const TArray<FVector> Base=Pose(FC26SecondaryMotion());
+        const TArray<FVector> Same=Pose(FC26SecondaryMotion());
+        FC26SecondaryMotion Life;Life.Breath=Life.Sway=1;Life.BreathPhase=Life.SwayPhase=HALF_PI;Life.LookYaw=30;Life.LeanPitch=4;
+        const TArray<FVector> Alive=Pose(Life);
+        Good&=TestTrue(TEXT("Zero layer is bit-identical to the authored pose"),Base[0].Equals(Same[0],0)&&Base[3].Equals(Same[3],0));
+        Good&=TestTrue(TEXT("Life layer moves the head"),FVector::Dist(Base[0],Alive[0])>1.f);
+        Good&=TestTrue(TEXT("Life layer never moves planted feet"),FVector::Dist(Base[1],Alive[1])<.01f&&FVector::Dist(Base[2],Alive[2])<.01f);
+        Good&=TestTrue(TEXT("Life layer stays subtle at the hand"),FVector::Dist(Base[3],Alive[3])<12.f);
+        AddInfo(FString::Printf(TEXT("Life layer: head %.2fcm, hand %.2fcm, feet %.4f/%.4fcm"),FVector::Dist(Base[0],Alive[0]),
+            FVector::Dist(Base[3],Alive[3]),FVector::Dist(Base[1],Alive[1]),FVector::Dist(Base[2],Alive[2])));
+    }
+    Actor->Destroy();World->DestroyWorld(false);return Good;
+}
 #endif

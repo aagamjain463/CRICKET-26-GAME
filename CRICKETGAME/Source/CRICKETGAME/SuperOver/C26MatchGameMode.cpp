@@ -172,6 +172,17 @@ void AC26MatchGameMode::BeginPlay()
         StartMatch();Skip();
         UE_LOG(LogC26,Display,TEXT("C26_BOWLLAB_BEGIN_SUITE scripted bowling playtest"));
     }
+    ReactLab=FParse::Param(FCommandLine::Get(),TEXT("C26ReactLab"));
+    if(ReactLab)
+    {
+        AutoPlay=true;Capture=Smoke=GoldenGate=BatLab=BowlLab=false;PlayerTeam=0;PlayerBatsFirst=true;UseToss=false;
+        Preferences->Difficulty=1;Preferences->Quality=3;Preferences->Apply();Venue->SetQuality(3);
+        GateDirectory=FPaths::ProjectDir()/TEXT("Artifacts/ReactLab");
+        FParse::Value(FCommandLine::Get(),TEXT("C26GateDir="),GateDirectory);
+        FApp::SetFixedDeltaTime(1.0/30);FApp::SetUseFixedTimeStep(true);
+        ReactStarted=FPlatformTime::Seconds();StartMatch();Skip();
+        UE_LOG(LogC26,Display,TEXT("C26_REACTLAB_BEGIN"));
+    }
     if(FParse::Value(FCommandLine::Get(),TEXT("C26Probe="),ProbeName))
     {
         AutoPlay=false;Preferences->Quality=3;Preferences->Apply();Venue->SetQuality(3);
@@ -456,7 +467,7 @@ void AC26MatchGameMode::PrepareDelivery()
     Director->SetFieldingTarget(FVector::ZeroVector,false,false);
     Pending={};Pending.Epoch=Rules.Epoch;Pending.Id=++DeliveryId;
     Resolved=Important=ShotQueued=ReleaseLocked=Running=Returning=false;RunProgress=0;RequestedRuns=CompletedRuns=0;
-    ActiveFielder=BackupFielder=-1;ThrowClock=CatchClock=-1;ThrowReleased=false;RunVelocity=0;
+    ActiveFielder=BackupFielder=-1;ThrowClock=CatchClock=-1;ThrowReleased=false;RunVelocity=0;DroppedBy=StoppedBy=-1;
     BallReleased=KeeperTake=false;KeeperTakeClock=-1;MissTakeAge=0;MissTakeTarget=GatherPoint=FVector::ZeroVector;
     FieldDecisionClock=0;FieldForecast.Reset();LastContact={};Callout.Empty();Detail.Empty();FieldCreep=0.f;
     FootPlanted=false;ClearHitStop();if(Effects)Effects->Clear();
@@ -1114,6 +1125,7 @@ void AC26MatchGameMode::UpdateFielding(float Dt)
                     F->SetAction(EC26Action::Dive);
                     float SpeedDamp = 0.22f;
                     const int32 DiveRes = C26Fielding::EvaluateDiveQuality(0.04f, GroundDist, Simulation.Ball.Velocity.Size(), SpeedDamp);
+                    StoppedBy = I;
                     if(DiveRes == 0)
                     {
                         Collect(I, false);
@@ -1143,12 +1155,12 @@ void AC26MatchGameMode::UpdateFielding(float Dt)
                     {
                         Simulation.Ball.Velocity *= 0.35f;
                         Simulation.Ball.PostHitBounce = true;
-                        Detail = TEXT("DROPPED CATCH!");
+                        Detail = TEXT("DROPPED CATCH!");DroppedBy = I;
                         return;
                     }
                 }
                 else if(Catch&&AI.Random.FRand()>(Preferences->Difficulty==0?.82f:.94f))
-                {Simulation.Ball.Velocity*=.35f;Simulation.Ball.PostHitBounce=true;Detail=TEXT("PUT DOWN!");}
+                {Simulation.Ball.Velocity*=.35f;Simulation.Ball.PostHitBounce=true;Detail=TEXT("PUT DOWN!");DroppedBy=I;}
                 else{Collect(I,Catch);return;}
             }
         }
@@ -1177,14 +1189,13 @@ void AC26MatchGameMode::Resolve()
     {
         Callout=TEXT("WICKET");Detail=Official.Wicket==C26::Dismissal::Bowled?TEXT("BOWLED"):Official.Wicket==C26::Dismissal::Caught?TEXT("CAUGHT"):TEXT("RUN OUT");
         Important=true;++SmokeWickets;Athletes[13]->SetAction(EC26Action::SignalOut);
-        Athletes[11]->SetAction(EC26Action::Disappointed);for(int I=0;I<11;++I)Athletes[I]->SetAction(EC26Action::Celebrate);
         if(Venue){Venue->SetCrowdState(EC26CrowdState::Wicket);Venue->PulseLED(.8f);}
     }
     else if(Official.Rope!=C26::Boundary::None)
     {
         bool Six=Official.Rope==C26::Boundary::Six;Callout=Six?TEXT("SIX"):TEXT("FOUR");Detail=LastContact.Shot;
         Important=true;++SmokeBoundaries;
-        Athletes[13]->SetAction(Six?EC26Action::SignalSix:EC26Action::SignalFour);Athletes[11]->SetAction(EC26Action::Celebrate);
+        Athletes[13]->SetAction(Six?EC26Action::SignalSix:EC26Action::SignalFour);
         if(Venue){Venue->SetCrowdState(Six?EC26CrowdState::Six:EC26CrowdState::Boundary);Venue->PulseLED(Six?1.f:.6f);}
     }
     else if(Official.NoBall){Callout=TEXT("NO BALL");Detail=TEXT("FREE HIT NEXT DELIVERY");++SmokeExtras;Athletes[13]->SetAction(EC26Action::SignalWide);}
@@ -1223,9 +1234,7 @@ void AC26MatchGameMode::Resolve()
         }
         Audio->NoteBallCompleted(RCtx.RunsScored,RCtx.bWicket,RCtx.bFour||RCtx.bSix);
     }
-    if(!Important&&Official.Wicket==C26::Dismissal::None&&Official.BatRuns==0)
-        Athletes[11]->SetAction(EC26Action::Disappointed);
-    else if(Official.Rope!=C26::Boundary::None)Athletes[0]->SetAction(EC26Action::Disappointed);
+    StageReactions(Official,Focus);
     if(Official.Wicket!=C26::Dismissal::None)OnCricketEvent.Broadcast(TEXT("Wicket"),Focus);
     else if(Official.Rope!=C26::Boundary::None)OnCricketEvent.Broadcast(TEXT("Boundary"),Focus);
     if(Rules.Now().Closed)OnCricketEvent.Broadcast(TEXT("OverComplete"),Focus);
@@ -1245,6 +1254,60 @@ void AC26MatchGameMode::Resolve()
     TriggerPresentationForOutcome(Official);
     UpdateBroadcastGraphics(Official);
     Venue->React(Important?1.f:.22f);OnMatchChanged.Broadcast();ChangePhase(EC26Phase::Reaction);
+}
+void AC26MatchGameMode::StageReactions(const C26::DeliveryOutcome& Official,const FVector& Focus)
+{
+    // Every cue here follows the committed ledger entry, so a reaction can never contradict the scoreboard.
+    // Base actions are exactly what the legacy bodies always showed for the outcome; PresentationOnly beats
+    // only reach an active premium body. Near players react first, the far outfield a beat later.
+    const auto Beat=[&](int I){return .08f+FMath::Clamp(FVector::Dist2D(Athletes[I]->GetActorLocation(),Focus)/7000.f,0.f,.32f);};
+    const bool Wicket=Official.Wicket!=C26::Dismissal::None,Rope=Official.Rope!=C26::Boundary::None;
+    const bool Played=ShotQueued,Missed=Played&&LastContact.Timing==EC26Timing::Miss,Edged=Played&&LastContact.Timing==EC26Timing::Edge;
+    const bool Extra=Official.NoBall||Official.WideRuns>0;
+    // Past the bat and within a ball or two of off/leg stump at the crease: the bowler's near miss.
+    const bool Close=!Wicket&&!Extra&&(Missed||!Played)&&FMath::Abs(Simulation.ContactPosition.X)<24.f&&KeeperTake;
+    const int32 Scorer=FMath::Clamp(RunnerAId,0,2);
+    const int32 Runs=Rules.Now().BatterRuns[Scorer],Before=Runs-Official.BatRuns;
+    const bool Milestone=Official.BatRuns>0&&((Before<50&&Runs>=50)||(Before<100&&Runs>=100));
+    FName Striker=NAME_None,Bowler=NAME_None,Keeper=NAME_None;
+    if(Wicket)
+    {
+        Athletes[11]->React(EC26Action::Disappointed,TEXT("Dismissed"),.3f);
+        const bool Caught=Official.Wicket==C26::Dismissal::Caught;
+        for(int I=0;I<11;++I)
+        {
+            const bool Catcher=Caught&&I==ActiveFielder;
+            Athletes[I]->React(EC26Action::Celebrate,Catcher?TEXT("Catch"):TEXT("Wicket"),Catcher?0.f:I==0?.05f:Beat(I));
+        }
+        UE_LOG(LogC26,Display,TEXT("C26_REACTION_STAGE outcome=wicket kind=%d catcher=%d"),int(Official.Wicket),Caught?ActiveFielder:-1);
+        return;
+    }
+    if(Rope)
+    {
+        Athletes[11]->React(EC26Action::Celebrate,Milestone?TEXT("Milestone"):Official.Rope==C26::Boundary::Six?TEXT("Six"):TEXT("Boundary"),.15f);
+        Athletes[0]->React(EC26Action::Disappointed,DroppedBy>=0?TEXT("Dropped"):TEXT("BoundaryConceded"),.2f);
+        Athletes[12]->React(EC26Action::Ready,TEXT("Support"),.45f,true);
+        if(DroppedBy>0&&DroppedBy<11)Athletes[DroppedBy]->React(EC26Action::Ready,TEXT("Dropped"),.1f,true);
+        UE_LOG(LogC26,Display,TEXT("C26_REACTION_STAGE outcome=%s milestone=%d dropped=%d"),Official.Rope==C26::Boundary::Six?TEXT("six"):TEXT("four"),Milestone?1:0,DroppedBy);
+        return;
+    }
+    if(!Important&&Official.BatRuns==0)
+    {
+        Striker=Edged?TEXT("Edge"):Missed?TEXT("PlayAndMiss"):Close?TEXT("Beaten"):TEXT("Dot");
+        Athletes[11]->React(EC26Action::Disappointed,Striker,.12f);
+    }
+    else if(Milestone)Athletes[11]->React(EC26Action::Celebrate,Striker=TEXT("Milestone"),.2f,true);
+    if(!Extra)
+    {
+        Bowler=DroppedBy>=0?FName(TEXT("Dropped")):(Close||Missed||Edged)?FName(TEXT("NearMiss")):StoppedBy>=0&&Official.BatRuns<=1?FName(TEXT("GoodStop"))
+            :Official.BatRuns==0?FName(TEXT("DotConfidence")):FName(NAME_None);
+        if(!Bowler.IsNone())Athletes[0]->React(EC26Action::Ready,Bowler,.1f,true);
+        Keeper=Close?FName(TEXT("Appeal")):(Missed||Edged)?FName(TEXT("Support")):FName(NAME_None);
+        if(!Keeper.IsNone())Athletes[1]->React(EC26Action::Ready,Keeper,.05f,true);
+        if(DroppedBy>0&&DroppedBy<11)Athletes[DroppedBy]->React(EC26Action::Ready,TEXT("Dropped"),.1f,true);
+    }
+    UE_LOG(LogC26,Display,TEXT("C26_REACTION_STAGE outcome=runs%d striker=%s bowler=%s keeper=%s played=%d timing=%d lineX=%.1f dropped=%d stopped=%d"),
+        Official.BatRuns,*Striker.ToString(),*Bowler.ToString(),*Keeper.ToString(),Played?1:0,int(LastContact.Timing),Simulation.ContactPosition.X,DroppedBy,StoppedBy);
 }
 void AC26MatchGameMode::AfterPresentation()
 {
@@ -1523,7 +1586,7 @@ void AC26MatchGameMode::Tick(float Dt)
     {
         AfterPresentation();
     }
-    else if(Phase==EC26Phase::Reaction&&PhaseTime>(Important?1.5f:1.1f))
+    else if(Phase==EC26Phase::Reaction&&PhaseTime>(Important?2.4f:1.6f))
     {
         if(Important&&Director->BeginReplay(Athletes,Simulation.Ball.Position)){++SmokeReplays;ChangePhase(EC26Phase::Replay);Audio->Cue(TEXT("ui_button_click"),.25f);}else AfterPresentation();
     }
@@ -1557,7 +1620,7 @@ void AC26MatchGameMode::Tick(float Dt)
         {
             const FVector Focus=Simulation.Ball.Active?Simulation.Ball.Position:Phase==EC26Phase::RunUp||Phase==EC26Phase::Delivery?Athletes[0]->HandPosition():Athletes[0]->GetActorLocation();
             Athletes[11]->LookAt=Focus;
-            Athletes[0]->LookAt=Athletes[11]->GetActorLocation();
+            Athletes[0]->LookAt=Simulation.Ball.Active&&Phase==EC26Phase::InPlay?Simulation.Ball.Position:Athletes[11]->GetActorLocation();
             for(int I=1;I<11;++I)Athletes[I]->LookAt=Simulation.Ball.Active?Simulation.Ball.Position:Athletes[11]->GetActorLocation();
         }
         // Presentation budget. The director's own position is the view the frame is composed
@@ -1570,7 +1633,8 @@ void AC26MatchGameMode::Tick(float Dt)
         // detaches the visible hand from the ball and skips the actual bat-impact frame.
         for(int I=0;I<Athletes.Num();++I)
         {
-            const bool EventPose=(I==0&&ReleasedThisFrame)||(I==11&&ContactThisFrame)||(I==ActiveFielder&&(ThrowClock>=0||CatchClock>=0))||(I==1&&KeeperTakeClock>=0);
+            const bool LiveBall=Phase==EC26Phase::RunUp||Phase==EC26Phase::Delivery||Phase==EC26Phase::InPlay;
+            const bool EventPose=LiveBall&&((I==0&&ReleasedThisFrame)||(I==11&&ContactThisFrame)||(I==ActiveFielder&&(ThrowClock>=0||CatchClock>=0))||(I==1&&KeeperTakeClock>=0));
             if(I==11&&!BattingShotCandidate.IsEmpty())Athletes[I]->ShotLabel=BattingShotCandidate;
             Athletes[I]->Animate(EventPose?0.f:Dt);
         }
@@ -1620,6 +1684,7 @@ void AC26MatchGameMode::Tick(float Dt)
     if(GoldenGate)UpdateGoldenGate(Dt);
     if(BatLab)UpdateBatLab(Dt);
     if(BowlLab)UpdateBowlLab(Dt);
+    if(ReactLab)UpdateReactLab(Dt);
 #endif
 }
 void AC26MatchGameMode::UIAction(FName Action)

@@ -58,6 +58,14 @@ def clips():
     for a in actions.BOWLING_R5:
         out.append((a['name'] + '_R', a, a['keys'], False))
         out.append((a['name'] + '_L', a, actions._mirror_keys(a['keys']), True))
+    # Round 7 reactions: baked exactly as authored (sparse keys, no event), gated on the same generic checks
+    # plus a clean return to the idle pose they hand back to.
+    for a in actions.REACTIONS_R7:
+        out.append((a['name'], dict(a, contact=0, dense=False, returns=True), a['keys'], False))
+    for a in actions.BATTER_REACTIONS_R7:
+        src = dict(a, contact=0, dense=False, returns=not a['name'].endswith('Dismissed'))
+        out.append((a['name'] + '_R', src, a['keys'], False))
+        out.append((a['name'] + '_L', src, actions._mirror_keys(a['keys']), True))
     return out
 
 
@@ -92,7 +100,8 @@ def yaw(h, a, b):
 
 def check(rig, name, src, keys, mirrored, forearm):
     travel = src.get('travel')
-    action = rig_lib.bake(rig, f'LAB_{name}', keys, dense=True, travel=travel, resolve_mixed=True)
+    dense = src.get('dense', True)
+    action = rig_lib.bake(rig, f'LAB_{name}', keys, dense=dense, travel=travel, resolve_mixed=dense)
     first, last = int(keys[0][0]), int(keys[-1][0])
     frames = [(f,) + sample(rig, f, travel) for f in range(first, last + 1)]
     fails, notes = [], {}
@@ -141,6 +150,22 @@ def check(rig, name, src, keys, mirrored, forearm):
         fail(f'planted foot skates {worst_slide[0]:.1f}cm/frame ({worst_slide[1]})')
     if worst_root[0] > 75.0:
         fail(f'body drifts {worst_root[0]:.0f}cm off the gameplay root ({worst_root[1]})')
+
+    if src.get('returns'):
+        # Gameplay-ready: the last frame is the idle pose the clip started from, so the runtime blend
+        # back to the ready loop has nothing to hide.
+        h0, h1 = at[first][0], at[last][0]
+        back = max((h1[n] - h0[n]).length for n in ('pelvis', 'head', 'hand_l', 'hand_r', 'foot_l', 'foot_r'))
+        notes['return_to_idle_cm'] = round(back, 2)
+        if back > 2.0:
+            fail(f'does not return to its idle pose ({back:.1f}cm)')
+    if 'returns' in src and worst_jump > 26.0:
+        # A reaction is a gesture, not a strike: at up to 1.1x temperament playback it must stay under the
+        # in-match continuity limit (30cm/frame at 30fps).
+        fail(f'reaction hand moves {worst_jump:.0f}cm in one frame (gesture too snappy)')
+    if src.get('keys') is not None and 'returns' in src:
+        top = max(at[f][0][f'hand_{s}'].z for f in range(first, last + 1) for s in 'lr')
+        notes['highest_hand_cm'] = round(top, 1)
 
     kind = src.get('kind')
     if kind:
@@ -275,10 +300,15 @@ def main():
     for a, b in (('FastBowl_R', 'FastMedium_R'), ('FastBowl_R', 'OffSpin_R'), ('FastBowl_R', 'LegSpin_R'),
                  ('OffSpin_R', 'LegSpin_R'), ('FastBowl_R', 'FastBowl_L'), ('OffSpin_R', 'OffSpin_L'),
                  ('Throw', 'ThrowQuick'), ('Catch', 'CatchHigh'), ('Catch', 'CatchLow'),
-                 ('Pickup', 'PickupRunning'), ('DiveCatch_L', 'DiveCatch_R')):
+                 ('Pickup', 'PickupRunning'), ('DiveCatch_L', 'DiveCatch_R'),
+                 ('CelebrateRestrained', 'CelebrateEnergetic'), ('Appeal', 'HandsOnHead'), ('Frustrated', 'Clap'),
+                 ('BatterBeaten_R', 'BatterEdge_R'), ('BatterReset_R', 'BatterBeaten_R'),
+                 ('BatterAcknowledge_R', 'BatterAcknowledge_L')):
         if a in trajs and b in trajs:
             pairs[f'{a}|{b}'] = distinct(trajs[a], trajs[b])
-            if pairs[f'{a}|{b}'] < 8.0:
+            # Batter reactions keep both feet and the pelvis planted at the crease by design, so four of the six
+            # tracked points cannot differ; their readable difference is in the hands and head alone.
+            if pairs[f'{a}|{b}'] < (4.0 if a.startswith('Batter') else 8.0):
                 too_close[f'{a}|{b}'] = pairs[f'{a}|{b}']
     (OUT / 'report.json').write_text(json.dumps({'clips': report, 'distinctness_cm': pairs,
                                                  'too_similar': too_close}, indent=1))

@@ -32,6 +32,14 @@ namespace C26Character
     CRICKETGAME_API FName ShotKey(const FString& MatchLabel, bool LeftHanded);
     CRICKETGAME_API FName BowlingKey(EC26Delivery Delivery, bool LeftHanded);
     CRICKETGAME_API float MapEventTime(float ActionTime, float MatchEventTime, float ClipEventTime, float ClipLength);
+    /** Presentation temperament for a squad slot: Calm, Aggressive or Energetic. Deterministic, so the
+        same player always carries himself the same way; never read by gameplay. */
+    CRICKETGAME_API FName Temperament(int32 Team, int32 SquadNumber);
+    /** Reaction cue (set by the match on a committed outcome) -> authored reaction clip key, or None when
+        this role has nothing to say about that event. Batter keys follow batting hand. */
+    CRICKETGAME_API FName ReactionKey(FName Cue, EC26VisualRole Role, FName Style, bool LeftHanded);
+    /** Reactions that end in a held pose instead of handing back to the ready loop. */
+    CRICKETGAME_API bool HoldsFinalPose(FName ClipKey);
 }
 
 USTRUCT(BlueprintType)
